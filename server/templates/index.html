@@ -13,6 +13,11 @@
       <button id="tab-gallery" class="active">Gallery</button>
       <button id="tab-config">Config</button>
       <button id="tab-export">Export / Launch</button>
+      <select id="themeSelect">
+        <option value="theme-dark">Dark</option>
+        <option value="theme-light">Light</option>
+        <option value="theme-vn">Visual Novel</option>
+      </select>
     </nav>
   </header>
 
@@ -38,7 +43,11 @@
     </section>
   </main>
 
-  <footer id="statusbar">Loading status...</footer>
+  <footer id="statusbar">
+    <div id="statusText">Connecting...</div>
+    <div id="progress"><div id="progressFill"></div></div>
+  </footer>
+
   <script src="/static/js/main.js"></script>
 </body>
 </html>
