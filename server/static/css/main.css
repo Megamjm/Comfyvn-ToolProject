@@ -4,3 +4,9 @@ button { margin:4px; cursor:pointer; }
 .tile { display:inline-block; margin:8px; background:#333; padding:8px; border-radius:8px; }
 .tile img { width:200px; height:auto; border-radius:6px; }
 footer { background:#222; padding:8px; position:fixed; bottom:0; left:0; right:0; text-align:center; color:#aaa; }
+.tab{display:none;padding:10px;}
+.tab.active{display:block;}
+nav button.active{background:#444;}
+.cfgrow{margin:4px 0;display:flex;justify-content:space-between;}
+.cfgrow label{flex:1;}
+.cfgrow input{flex:2;background:#222;color:#eee;border:1px solid #444;padding:4px;}
