@@ -1,0 +1,6 @@
+Flask>=3.0.0
+itsdangerous>=2.2.0
+Werkzeug>=3.0.0
+requests>=2.31.0
+pydantic>=2.8.0
+typing-extensions>=4.10.0
