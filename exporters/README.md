@@ -1,1 +1,0 @@
-Place exported Ren'Py script files here.
