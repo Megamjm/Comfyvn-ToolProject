@@ -10,3 +10,16 @@ nav button.active{background:#444;}
 .cfgrow{margin:4px 0;display:flex;justify-content:space-between;}
 .cfgrow label{flex:1;}
 .cfgrow input{flex:2;background:#222;color:#eee;border:1px solid #444;padding:4px;}
+/* ---------- THEMES ---------- */
+.theme-dark { background:#111; color:#eee; }
+.theme-dark header, .theme-dark footer { background:#222; }
+
+.theme-light { background:#f8f8f8; color:#111; }
+.theme-light header, .theme-light footer { background:#ddd; color:#000; }
+
+.theme-vn { background:#1b0e2e; color:#f4dfff; font-family:"Segoe UI", sans-serif; }
+.theme-vn header, .theme-vn footer { background:#3a2260; color:#ffeef8; }
+
+/* ---------- PROGRESS BAR ---------- */
+#progress { height:6px; background:#333; margin-top:4px; border-radius:3px; overflow:hidden; }
+#progressFill { height:100%; width:0%; background:#3af; transition:width 0.5s ease; }

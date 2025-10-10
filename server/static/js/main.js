@@ -200,3 +200,63 @@ api("/api/config").then(cfg=>{
   pollInterval=(cfg.poll_interval_seconds||5)*1000;
   setInterval(()=>{updateStatus();syncComfy();},pollInterval);
 });
+
+// -----------------------------
+// THEME SWITCHING
+// -----------------------------
+const themeSelect=document.getElementById("themeSelect");
+themeSelect.onchange=()=>{
+  document.body.className=themeSelect.value;
+  api("/api/config","POST",{theme_mode:themeSelect.value});
+};
+
+// Load theme from config
+api("/api/config").then(cfg=>{
+  const mode=cfg.theme_mode||"theme-dark";
+  document.body.className=mode;
+  themeSelect.value=mode;
+});
+
+// -----------------------------
+// LIVE RENDER MONITOR
+// -----------------------------
+let renderState={jobs:0,progress:0};
+
+async function pollRenderStatus(){
+  try{
+    const h=await api("/health");
+    const gal=await api("/api/gallery");
+    const bar=document.getElementById("progressFill");
+    const text=document.getElementById("statusText");
+
+    // heuristic: if new items appeared in gallery, show “rendering” briefly
+    renderState.jobs = (gal.items||[]).filter(x=>x.status==="pending").length;
+    renderState.progress = renderState.jobs>0 ? Math.min(100,renderState.jobs*20) : 100;
+
+    bar.style.width = renderState.progress + "%";
+    if(renderState.jobs>0){
+      text.textContent=`Rendering ${renderState.jobs} job${renderState.jobs>1?'s':''}...`;
+      bar.style.background="#3af";
+    } else {
+      text.textContent=`Idle — ComfyUI ${h.comfyui_ok?'✅ Online':'❌ Offline'}`;
+      bar.style.background="#4a4";
+    }
+  }catch(e){
+    console.warn("Poll failed:",e);
+  }
+}
+setInterval(pollRenderStatus,4000);
+
+@app.get("/api/render_state")
+def api_render_state():
+    """Placeholder ComfyUI render monitor."""
+    try:
+        outputs = list(Path(CONFIG.get("comfyui_output_dir")).glob("*.png"))
+        return jsonify({
+            "ok": True,
+            "active_jobs": 0,
+            "outputs": len(outputs),
+            "last_output": outputs[-1].name if outputs else None
+        })
+    except Exception:
+        return jsonify({"ok": False})
