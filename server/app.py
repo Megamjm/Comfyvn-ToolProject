@@ -12,7 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, request, jsonify, send_file, session, redirect, url_for, render_template
+from functools import wraps
+
 import requests
 
 # --- Optional thumbnail support (Pillow). If not installed, thumbnails are skipped gracefully.
@@ -97,6 +99,57 @@ def save_config(cfg: Dict[str, Any]) -> None:
 
 CONFIG = load_config()
 save_config(CONFIG)  # ensure any missing defaults get written
+
+# -------------------------------
+# Secret & Helper App
+# -------------------------------
+
+app.secret_key = os.environ.get("VN_SECRET_KEY", os.urandom(24))
+AUTH_ENABLED = os.environ.get("VN_AUTH", "0") == "1"
+
+def require_auth(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not AUTH_ENABLED:
+            return func(*args, **kwargs)
+        if session.get("user"):
+            return func(*args, **kwargs)
+        return redirect(url_for("login_page"))
+    return wrapper
+
+# -------------------------------
+# Api Gallery
+# -------------------------------
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if not AUTH_ENABLED:
+        return redirect(url_for("ui_index"))
+    if request.method == "POST":
+        user = request.form.get("username","").strip()
+        pwd = request.form.get("password","").strip()
+        if user and pwd == CONFIG.get("admin_password", "admin"):
+            session["user"] = user
+            return redirect(url_for("ui_index"))
+        return render_template("login.html", error="Invalid credentials")
+    return render_template("login.html", error=None)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
+
+# -------------------------------
+# Gallery Functions
+# -------------------------------
+
+def user_dir(subfolder="gallery"):
+    user = session.get("user", "default")
+    base = DATA_DIR / "users" / user
+    (base / subfolder).mkdir(parents=True, exist_ok=True)
+    return base / subfolder
+
 
 # -------------------------------
 # Flask App
