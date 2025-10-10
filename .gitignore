@@ -205,3 +205,89 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# ─────────────────────────────
+# VN Toolchain / Flask Project
+# ─────────────────────────────
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+*.db-journal
+
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# IDE / Editor junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ─────────────────────────────
+# Local data and generated content
+# ─────────────────────────────
+# All generated runtime assets, ComfyUI renders, summaries, etc.
+
+data/
+!data/.gitkeep   # keep the folder structure only
+
+# Ren'Py build outputs
+*.rpyc
+*.rpa
+*.bak
+*.autosave
+saves/
+tmp/
+cache/
+log.txt
+
+# Optional if you use local Ren'Py SDK
+renpy/
+RenPySDK*/
+RenPy-*/
+
+# ─────────────────────────────
+# Node / Web (if you later add npm tooling)
+# ─────────────────────────────
+node_modules/
+dist/
+build/
+*.map
+
+# ─────────────────────────────
+# ComfyUI or LLM temp files
+# ─────────────────────────────
+ComfyUI/output/
+ComfyUI/temp/
+ComfyUI/cache/
+LMStudio/logs/
+LMStudio/output/
+
+# ─────────────────────────────
+# System Files
+# ─────────────────────────────
+*.swp
+*.tmp
+*.bak
+*.old
+*.orig
+*.lock
+
+# ─────────────────────────────
+# Exports / Releases
+# ─────────────────────────────
+*.zip
+*.7z
+*.rar
+export/
+releases/
+renpy_project/game/scripts/*.rpy.bak
