@@ -1,61 +1,44 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset='utf-8' />
-  <title>VN Tools Drawer</title>
-  <meta name='viewport' content='width=device-width, initial-scale=1' />
-  <link rel='stylesheet' href='/static/css/main.css' />
+  <meta charset="UTF-8">
+  <title>ComfyVN Toolchain</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/css/main.css">
 </head>
-<body class='theme-default'>
+<body class="theme-dark">
   <header>
-    <h1>VN Tools</h1>
+    <h1>🎮 ComfyVN</h1>
     <nav>
-      <button id="themeBtn">Theme</button>
-      <a href="/logout" id="logout" style="display:none">Logout</a>
+      <button id="tab-gallery" class="active">Gallery</button>
+      <button id="tab-config">Config</button>
+      <button id="tab-export">Export / Launch</button>
     </nav>
   </header>
+
   <main>
-    <aside id='drawer'>
-      <h2>Presets</h2>
-      <select id='preset'>
-        <option value='/workflows/preset_sprite_flux.json'>Sprite (FLUX Fill)</option>
-        <option value='/workflows/preset_action_vn.json'>Action Scene (GLIGEN)</option>
-        <option value='/workflows/preset_hires_fix.json'>Hi-Res Fix (Latent)</option>
-        <option value='/workflows/preset_qwen_union_lora.json'>Qwen Image + LoRA</option>
-        <option value='/workflows/preset_wan22_5b_low_vram.json'>Video (Wan2.2 5B)</option>
-        <option value='/workflows/preset_wan22_14b_i2v.json'>Video (Wan2.2 14B i2v)</option>
-      </select>
-      <textarea id="meta" placeholder='Optional meta JSON (tags, character, scene)'></textarea>
-      <input id='title' placeholder='Render title'/>
-      <div class="row">
-        <button id='queueBtn'>Queue Render</button>
-        <label class="chk"><input type="checkbox" id="approveOnDone"/> Auto-approve</label>
+    <section id="galleryTab" class="tab active">
+      <div class="toolbar">
+        <button id="syncBtn">🔄 Sync Now</button>
+        <button id="refresh">Refresh</button>
       </div>
-      <hr/>
-      <h2>Gallery</h2>
-      <div class="filters">
-        <button data-f="all">All</button>
-        <button data-f="queued">Queued</button>
-        <button data-f="approved">Approved</button>
-        <button data-f="rejected">Rejected</button>
-      </div>
-      <input id="tagFilter" placeholder="filter by tag"/>
-      <button id="refresh">Refresh</button>
-      <div id='gallery'></div>
-    </aside>
-    <section id='content'>
-      <p>Pick a preset and queue a render, or ingest a finished PNG to pair with a sidecar.</p>
-      <div id="ingestBox">
-        <input type="text" id="ingestId" placeholder="Asset ID to pair"/>
-        <input type="file" id="ingestPng" accept="image/png"/>
-        <button id="ingestBtn">Ingest PNG</button>
-      </div>
-      <div id="editor">
-        <h2>Workflow JSON</h2>
-        <textarea id="wf"></textarea>
-      </div>
+      <div id="gallery"></div>
+    </section>
+
+    <section id="configTab" class="tab">
+      <h2>Configuration</h2>
+      <form id="configForm"></form>
+      <button id="saveConfig">💾 Save Config</button>
+    </section>
+
+    <section id="exportTab" class="tab">
+      <h2>VN Export / Ren’Py Control</h2>
+      <button id="exportBtn">🧩 Export Approved to Ren’Py</button>
+      <button id="launchBtn">🎬 Launch Ren’Py</button>
     </section>
   </main>
-  <script src='/static/js/main.js'></script>
+
+  <footer id="statusbar">Loading status...</footer>
+  <script src="/static/js/main.js"></script>
 </body>
 </html>

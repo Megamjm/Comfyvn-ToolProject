@@ -109,3 +109,94 @@ setInterval(refreshGallery, 15000);
 
 // Initial load
 refreshGallery();
+
+// -----------------------------
+// Tabs
+// -----------------------------
+document.querySelectorAll("nav button").forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll("nav button").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    btn.classList.add("active");
+    const id=btn.id.replace("tab-","");
+    document.getElementById(id+"Tab").classList.add("active");
+  };
+});
+
+// -----------------------------
+// Config Editor
+// -----------------------------
+async function loadConfig(){
+  const form=document.getElementById("configForm");
+  const cfg=await api("/api/config");
+  form.innerHTML="";
+  Object.entries(cfg).forEach(([k,v])=>{
+    const row=document.createElement("div");
+    row.className="cfgrow";
+    row.innerHTML=`<label>${k}</label>
+      <input id="cfg-${k}" value="${v}"/>`;
+    form.appendChild(row);
+  });
+}
+
+async function saveConfig(){
+  const inputs=document.querySelectorAll("#configForm input");
+  const data={};
+  inputs.forEach(i=>{
+    let val=i.value;
+    if(!isNaN(val)) val=Number(val);
+    if(val==="true") val=true;
+    if(val==="false") val=false;
+    data[i.id.replace("cfg-","")]=val;
+  });
+  const r=await api("/api/config","POST",data);
+  alert(r.ok?"Config saved — reload to apply.":"Save failed.");
+}
+
+// -----------------------------
+// Sync + Status
+// -----------------------------
+async function syncComfy(){
+  const r=await api("/api/sync/comfyui","POST");
+  alert(r.ok?`Imported ${r.imported.length} files.`:"Sync failed.");
+  refreshGallery();
+}
+
+async function updateStatus(){
+  const s=await api("/health");
+  const sb=document.getElementById("statusbar");
+  sb.textContent=`🕒 ${s.time} | ComfyUI: ${s.comfyui_ok?'✅':'❌'}`;
+}
+
+// -----------------------------
+// Export / Launch
+// -----------------------------
+document.getElementById("exportBtn").onclick=async()=>{
+  const r=await api("/api/export_renpy","POST");
+  alert(r.ok?"Exported to Ren’Py.":"Export failed.");
+};
+document.getElementById("launchBtn").onclick=async()=>{
+  const r=await api("/api/launch_renpy","POST");
+  alert(r.ok?"Launched Ren’Py.":"Launch failed.");
+};
+
+// -----------------------------
+// Bindings
+// -----------------------------
+document.getElementById("syncBtn").onclick=syncComfy;
+document.getElementById("refresh").onclick=refreshGallery;
+document.getElementById("saveConfig").onclick=saveConfig;
+
+// -----------------------------
+// Init
+// -----------------------------
+loadConfig();
+refreshGallery();
+updateStatus();
+
+// auto-sync interval (from config poll_interval_seconds)
+let pollInterval=5000;
+api("/api/config").then(cfg=>{
+  pollInterval=(cfg.poll_interval_seconds||5)*1000;
+  setInterval(()=>{updateStatus();syncComfy();},pollInterval);
+});
