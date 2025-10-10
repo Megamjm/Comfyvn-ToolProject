@@ -1,22 +1,6 @@
-:root{--bg:#0b0e13;--fg:#e7e7ea;--muted:#9aa0aa;--panel:#141923;--accent:#6aa2ff}
-body{font-family:Inter,ui-sans-serif,system-ui;-webkit-font-smoothing:antialiased;margin:0;background:var(--bg);color:var(--fg);}
-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#0f131b;border-bottom:1px solid #1f2530}
-h1{font-size:18px;margin:0}
-main{display:grid;grid-template-columns:360px 1fr}
-#drawer{border-right:1px solid #1f2530;padding:12px;height:calc(100vh - 54px);overflow:auto;background:#0e1219}
-#content{padding:12px;height:calc(100vh - 54px);overflow:auto}
-select,input,textarea,button{background:#141923;border:1px solid #232a36;color:var(--fg);padding:8px;border-radius:8px;width:100%;box-sizing:border-box}
-textarea#meta{height:80px}
-#editor textarea#wf{min-height:360px}
-.row{display:flex;gap:8px;align-items:center}
-.chk{display:flex;gap:8px;align-items:center}
-.filters{display:flex;gap:8px;margin:8px 0}
-.card{background:var(--panel);border:1px solid #232a36;border-radius:12px;padding:8px;margin:8px 0;display:flex;gap:12px}
-.thumb{width:96px;height:96px;background:#0a0f15;border-radius:8px;object-fit:cover;border:1px solid #222}
-.panel{background:var(--panel);padding:16px;border-radius:12px;border:1px solid #232a36;min-width:320px}
-.center{display:grid;place-items:center;height:100vh}
-button{cursor:pointer}
-.error{color:#ff7a7a}
-/* themes */
-body.theme-sakura{--accent:#ff7ab3;--panel:#19121b;background:#0c0710}
-body.theme-neon{--accent:#00f2ff;--panel:#0a0e14;background:#06080d}
+body { font-family: sans-serif; background:#111; color:#eee; margin:0; }
+header { background:#222; padding:10px; display:flex; align-items:center; justify-content:space-between; }
+button { margin:4px; cursor:pointer; }
+.tile { display:inline-block; margin:8px; background:#333; padding:8px; border-radius:8px; }
+.tile img { width:200px; height:auto; border-radius:6px; }
+footer { background:#222; padding:8px; position:fixed; bottom:0; left:0; right:0; text-align:center; color:#aaa; }

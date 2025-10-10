@@ -1,541 +1,517 @@
-from __future__ import annotations
-
-# ── stdlib ────────────────────────────────────────────────────────────────────
+# app.py
 import os
+import io
 import json
-import glob
-import time
-import uuid
-import base64
+import shutil
 import sqlite3
 import subprocess
-import platform
+import threading
+import time
+import uuid
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-# ── third-party ───────────────────────────────────────────────────────────────
+from flask import Flask, jsonify, request, send_file
 import requests
-from flask import (
-    Flask,
-    request,
-    jsonify,
-    send_from_directory,
-    render_template,
-    session,
-    redirect,
-    url_for,
+
+# --- Optional thumbnail support (Pillow). If not installed, thumbnails are skipped gracefully.
+try:
+    from PIL import Image
+    PIL_OK = True
+except Exception:
+    PIL_OK = False
+
+# -------------------------------
+# Paths & Defaults
+# -------------------------------
+ROOT = Path(__file__).resolve().parent
+DATA_DIR = ROOT / "data"
+CONFIG_PATH = DATA_DIR / "config.json"
+DB_PATH = DATA_DIR / "vn.sqlite3"  # not required for Phases 1–2, but kept if you already use it
+GALLERY_DIR = DATA_DIR / "gallery"
+APPROVED_DIR = GALLERY_DIR / "approved"
+REJECTED_DIR = GALLERY_DIR / "rejected"
+SUMMARIES_DIR = DATA_DIR / "summaries"
+EXPORT_QUEUE_DIR = DATA_DIR / "export_queue"
+ASSETS_DIR = DATA_DIR / "assets"
+THUMBS_DIR = GALLERY_DIR / "_thumbs"
+LOGS_DIR = ROOT / "logs"
+
+RENPI_BIN_DIR = ROOT / "renpy"        # contains renpy.exe
+RENPI_EXE = RENPI_BIN_DIR / "renpy.exe"
+RENPI_PROJECT = ROOT / "renpy_project"  # we generate a minimal project here
+RENPI_GAME = RENPI_PROJECT / "game"
+RENPI_IMAGES = RENPI_GAME / "images"
+
+# For ComfyUI outputs. This can be overridden in config.json
+DEFAULT_COMFY_OUTPUT = (ROOT / "ComfyUI" / "output")  # typical structure if ComfyUI lives alongside this repo
+
+# Ensure directories
+for p in [DATA_DIR, GALLERY_DIR, APPROVED_DIR, REJECTED_DIR, SUMMARIES_DIR, EXPORT_QUEUE_DIR, ASSETS_DIR, THUMBS_DIR, LOGS_DIR, RENPI_PROJECT, RENPI_GAME, RENPI_IMAGES]:
+    p.mkdir(parents=True, exist_ok=True)
+
+# -------------------------------
+# Logging (simple file logger)
+# -------------------------------
+import logging
+LOG_FILE = LOGS_DIR / "app.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s",
+    handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler()]
 )
+logger = logging.getLogger("comfyvn")
 
-# ── configuration & paths ─────────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(__file__)
-ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
+# -------------------------------
+# Config Helpers
+# -------------------------------
+DEFAULT_CONFIG = {
+    "comfyui_url": "http://127.0.0.1:8188",
+    "comfyui_output_dir": str(DEFAULT_COMFY_OUTPUT),
+    "thumbnail_max": 512,
+    "poll_interval_seconds": 3,
+    "ui_theme": "dark",
+    "renpy_exe": str(RENPI_EXE),
+    "renpy_project_dir": str(RENPI_PROJECT),
+    "save_fullsize_in_approved": True
+}
 
-COMFY_HOST = os.environ.get("COMFY_HOST", "http://127.0.0.1:8188")
-DATA_DIR = os.environ.get("VN_DATA_DIR", os.path.join(ROOT_DIR, "data"))
-ASSET_DIR = os.path.join(DATA_DIR, "assets")
-DB_PATH = os.path.join(DATA_DIR, "vn.sqlite3")
-CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
+def load_config() -> Dict[str, Any]:
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            # merge defaults to keep new keys
+            for k, v in DEFAULT_CONFIG.items():
+                cfg.setdefault(k, v)
+            return cfg
+        except Exception as e:
+            logger.exception("Failed to read config.json, using defaults.")
+    return DEFAULT_CONFIG.copy()
 
-AUTH_ENABLED = os.environ.get("VN_AUTH", "0") == "1"
-ADMIN_PASSWORD = os.environ.get("VN_PASSWORD", "admin")
+def save_config(cfg: Dict[str, Any]) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
 
-# File-system gallery roots
-GALLERY_DIR = os.path.join(DATA_DIR, "gallery")
-APPROVED_DIR = os.path.join(GALLERY_DIR, "approved")
-REJECTED_DIR = os.path.join(GALLERY_DIR, "rejected")
+CONFIG = load_config()
+save_config(CONFIG)  # ensure any missing defaults get written
 
-# Ren'Py export roots
-RENPY_PROJECT_DIR = os.path.join(DATA_DIR, "renpy_project")
-SCRIPT_DIR = os.path.join(RENPY_PROJECT_DIR, "game", "scripts")
+# -------------------------------
+# Flask App
+# -------------------------------
+app = Flask(__name__)
 
-# Other data dirs
-SUMMARIES_DIR = os.path.join(DATA_DIR, "summaries")
-EXPORT_QUEUE_DIR = os.path.join(DATA_DIR, "export_queue")
+# -------------------------------
+# Utilities
+# -------------------------------
+def is_image_file(p: Path) -> bool:
+    return p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
 
-# Ensure directories exist
-for p in [DATA_DIR, ASSET_DIR, GALLERY_DIR, APPROVED_DIR, REJECTED_DIR,
-          SUMMARIES_DIR, EXPORT_QUEUE_DIR, SCRIPT_DIR]:
-    os.makedirs(p, exist_ok=True)
+def new_id() -> str:
+    return uuid.uuid4().hex[:16]
 
-# ── db helpers ────────────────────────────────────────────────────────────────
-def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def ts() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-def init_db():
-    with db() as conn:
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS assets (
-            id TEXT PRIMARY KEY,
-            status TEXT NOT NULL,
-            title TEXT,
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            png_path TEXT,
-            json_sidecar_path TEXT,
-            meta_json TEXT,
-            tags TEXT
+def make_thumb(src: Path, dst: Path, max_size: int) -> None:
+    if not PIL_OK:
+        return
+    try:
+        with Image.open(src) as im:
+            im.thumbnail((max_size, max_size))
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            # Preserve format where possible; default to PNG
+            fmt = "PNG"
+            if im.format in {"PNG", "JPEG", "WEBP"}:
+                fmt = im.format
+            im.save(dst, format=fmt, optimize=True)
+    except Exception:
+        logger.exception(f"Thumbnail generation failed for {src}")
+
+def list_gallery_folder(folder: Path, status: str) -> List[Dict[str, Any]]:
+    items = []
+    for p in sorted(folder.glob("*")):
+        if p.is_file() and is_image_file(p):
+            stem = p.stem
+            thumb = THUMBS_DIR / f"{stem}.png"
+            if not thumb.exists():
+                make_thumb(p, thumb, int(CONFIG.get("thumbnail_max", 512)))
+            meta = {
+                "id": stem,
+                "filename": p.name,
+                "status": status,
+                "path": str(p),
+                "thumb": str(thumb) if thumb.exists() else None,
+                "mtime": os.path.getmtime(p),
+            }
+            # attach sidecar metadata json if present
+            meta_json = p.with_suffix(".json")
+            if meta_json.exists():
+                try:
+                    meta["metadata"] = json.loads(meta_json.read_text(encoding="utf-8"))
+                except Exception:
+                    meta["metadata_error"] = True
+            items.append(meta)
+    return items
+
+def ensure_renpy_project():
+    """
+    Make sure minimal Ren'Py project exists with a safe script.rpy and gui files.
+    """
+    RENPI_PROJECT.mkdir(parents=True, exist_ok=True)
+    RENPI_GAME.mkdir(parents=True, exist_ok=True)
+    RENPI_IMAGES.mkdir(parents=True, exist_ok=True)
+
+    script_file = RENPI_GAME / "script.rpy"
+    if not script_file.exists():
+        script_file.write_text(
+            "# Auto-generated by ComfyVN Toolchain\n"
+            "label start:\n"
+            "    scene black\n"
+            "    \"Project initialized. Use the exporter to add scenes.\"\n"
+            "    return\n",
+            encoding="utf-8"
         )
-        """)
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS notes (
-            id TEXT PRIMARY KEY,
-            asset_id TEXT NOT NULL,
-            body TEXT,
-            created_at REAL NOT NULL
-        )
-        """)
-        conn.commit()
 
-def _now() -> float:
-    return time.time()
+def build_renpy_script_from_approved(approved_images: List[Path]) -> None:
+    """
+    Create a simple linear VN that shows each approved image in order,
+    with a click-to-continue flow. Ensures `label start` exists.
+    """
+    ensure_renpy_project()
 
-init_db()
+    # Copy images
+    copied = []
+    for img in approved_images:
+        dst = RENPI_IMAGES / img.name
+        try:
+            shutil.copy2(img, dst)
+            copied.append(dst)
+        except Exception:
+            logger.exception(f"Failed to copy {img} to Ren'Py images.")
 
-# ── app init ──────────────────────────────────────────────────────────────────
-app = Flask(__name__, static_folder="static", template_folder="templates")
-app.secret_key = base64.urlsafe_b64encode(os.urandom(32))
+    # Build script
+    lines = [
+        "# Auto-generated by ComfyVN Toolchain",
+        "define config.developer = True",
+        "",
+        "label start:",
+    ]
+    if not copied:
+        lines += [
+            "    scene black",
+            "    \"No approved images yet. Please approve items in the gallery and export again.\"",
+            "    return",
+        ]
+    else:
+        lines += ["    scene black"]
+        for i, img in enumerate(copied, start=1):
+            # simple scene for each image
+            lines += [
+                f"    # Scene {i}",
+                f"    scene expression \"images/{img.name}\"",
+                "    with fade",
+                "    \"(Click to continue)\"",
+                "",
+            ]
+        lines += ["    return"]
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-def require_auth():
-    if not AUTH_ENABLED:
-        return None
-    if session.get("authed"):
-        return None
-    return redirect(url_for("login"))
+    script_file = RENPI_GAME / "script.rpy"
+    script_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    logger.info(f"Ren'Py script generated with {len(copied)} scenes at {script_file}")
 
-def safe_write_json(path: str, data: dict):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, path)
-
-# ── auth routes ───────────────────────────────────────────────────────────────
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if not AUTH_ENABLED:
-        return redirect(url_for("index"))
-    if request.method == "POST":
-        pwd = request.form.get("password", "")
-        if pwd == ADMIN_PASSWORD:
-            session["authed"] = True
-            return redirect(url_for("index"))
-        return render_template("login.html", error="Invalid password")
-    return render_template("login.html", error=None)
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("index"))
-
-# ── core ui ───────────────────────────────────────────────────────────────────
-@app.route("/")
-def index():
-    auth = require_auth()
-    if auth:
-        return auth
-    return render_template("index.html")
-
+# -------------------------------
+# API: Health & Config
+# -------------------------------
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "comfy_host": COMFY_HOST})
-
-# ── static passthrough (if needed) ────────────────────────────────────────────
-@app.get("/static/<path:path>")
-def static_proxy(path):
-    return send_from_directory(app.static_folder, path)
-
-# ── comfy queue & ingestion (DB-backed assets) ────────────────────────────────
-@app.post("/queue")
-def queue():
-    auth = require_auth()
-    if auth:
-        return auth
-    payload = request.get_json(force=True)
-    title = payload.get("title") or "untitled"
-    workflow = payload.get("workflow")
-    meta = payload.get("meta", {})
-    tags_val = meta.get("tags")
-    tags = ",".join(tags_val) if isinstance(tags_val, list) else (tags_val or "")
-
-    if not isinstance(workflow, dict):
-        return jsonify({"error": "workflow must be an object"}), 400
-
-    asset_id = str(uuid.uuid4())
-    sidecar_path = os.path.join(ASSET_DIR, f"{asset_id}.json")
-    with open(sidecar_path, "w", encoding="utf-8") as f:
-        json.dump({"workflow": workflow, "meta": meta, "title": title}, f, ensure_ascii=False, indent=2)
-
-    with db() as conn:
-        conn.execute(
-            """INSERT INTO assets (id, status, title, created_at, updated_at,
-                                   png_path, json_sidecar_path, meta_json, tags)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (asset_id, "queued", title, _now(), _now(), None, sidecar_path, json.dumps(meta, ensure_ascii=False), tags)
-        )
-        conn.commit()
-
+    comfy_url = CONFIG.get("comfyui_url")
+    ok = True
     comfy_ok = False
-    comfy_resp = None
     try:
-        r = requests.post(f"{COMFY_HOST}/prompt", json=workflow, timeout=5)
-        comfy_ok = r.status_code in (200, 201, 202)
-        if r.headers.get("content-type", "").startswith("application/json"):
-            comfy_resp = r.json()
-        else:
-            comfy_resp = {"text": r.text}
-    except Exception as e:
-        comfy_resp = {"error": str(e)}
-
+        # light-weight check
+        r = requests.get(comfy_url, timeout=2)
+        comfy_ok = r.status_code < 500
+    except Exception:
+        comfy_ok = False
+        ok = False
     return jsonify({
-        "id": asset_id,
-        "queued": True,
-        "forwarded_to_comfy": comfy_ok,
-        "comfy_response": comfy_resp
+        "ok": ok,
+        "service": "ComfyVN",
+        "time": ts(),
+        "comfyui_url": comfy_url,
+        "comfyui_ok": comfy_ok
     })
 
-@app.get("/gallery")
-def gallery_db():
-    """DB-backed gallery listing (assets table)."""
-    auth = require_auth()
-    if auth:
-        return auth
+@app.get("/api/config")
+def get_config():
+    return jsonify(load_config())
 
-    status = request.args.get("status")
-    tag = request.args.get("tag")
-    q = "SELECT * FROM assets WHERE 1=1"
-    args = []
-    if status:
-        q += " AND status=?"; args.append(status)
-    if tag:
-        q += " AND (tags LIKE ? OR meta_json LIKE ?)"; args += [f"%{tag}%", f"%{tag}%"]
-    q += " ORDER BY created_at DESC"
-
-    with db() as conn:
-        rows = conn.execute(q, args).fetchall()
-    return jsonify([dict(r) for r in rows])
-
-@app.post("/approve/<asset_id>")
-def approve(asset_id: str):
-    auth = require_auth()
-    if auth:
-        return auth
-    with db() as conn:
-        conn.execute("UPDATE assets SET status=?, updated_at=? WHERE id=?", ("approved", _now(), asset_id))
-        conn.commit()
-    return jsonify({"id": asset_id, "status": "approved"})
-
-@app.post("/reject/<asset_id>")
-def reject(asset_id: str):
-    auth = require_auth()
-    if auth:
-        return auth
-    with db() as conn:
-        conn.execute("UPDATE assets SET status=?, updated_at=? WHERE id=?", ("rejected", _now(), asset_id))
-        conn.commit()
-    return jsonify({"id": asset_id, "status": "rejected"})
-
-@app.post("/ingest/<asset_id>")
-def ingest(asset_id: str):
-    """Attach a PNG (and optional sidecar) to an existing DB asset."""
-    auth = require_auth()
-    if auth:
-        return auth
-    if "image" not in request.files:
-        return jsonify({"error": "multipart file field 'image' required"}), 400
-
-    img = request.files["image"]
-    if not img.filename.lower().endswith(".png"):
-        return jsonify({"error": "only .png accepted"}), 400
-
-    png_dir_rel = os.path.join("static", "assets")
-    os.makedirs(os.path.join(BASE_DIR, png_dir_rel), exist_ok=True)
-    png_path_rel = os.path.join(png_dir_rel, f"{asset_id}.png")
-    img.save(os.path.join(BASE_DIR, png_path_rel))
-
-    if "sidecar" in request.files:
-        side = request.files["sidecar"]
-        side_dir_rel = os.path.join("static", "assets")
-        os.makedirs(os.path.join(BASE_DIR, side_dir_rel), exist_ok=True)
-        side.save(os.path.join(BASE_DIR, side_dir_rel, f"{asset_id}.json"))
-
-    with db() as conn:
-        conn.execute("UPDATE assets SET png_path=?, updated_at=? WHERE id=?", (png_path_rel, _now(), asset_id))
-        conn.commit()
-    return jsonify({"ok": True, "png_path": png_path_rel})
-
-# ── ren'py export (direct scene beats) ────────────────────────────────────────
-@app.post("/export/renpy")
-def export_renpy():
-    """Build one script from raw beats payload."""
-    auth = require_auth()
-    if auth:
-        return auth
-
-    data = request.get_json(force=True)
-    scene_title = data.get("scene_title", "Untitled")
-    beats = data.get("beats", [])
-    out_dir = os.path.join(DATA_DIR, "renpy_export")
-    os.makedirs(out_dir, exist_ok=True)
-    script_path = os.path.join(out_dir, "script.rpy")
-
-    def safe(s: str) -> str:
-        return str(s).replace('"', '\\"')
-
-    lines = [
-        'label start:\n',
-        '    scene black\n',
-        f'    $ title = "{safe(scene_title)}"\n',
-        f'    "Title: {safe(scene_title)}"\n'
-    ]
-
-    for b in beats:
-        chars = ", ".join([c.get("name", "??") for c in b.get("characters", [])])
-        lines.append(f'    # Beat {safe(b.get("id", ""))} ({safe(b.get("timecode", ""))})\n')
-        if chars:
-            lines.append(f'    "Characters: {safe(chars)}"\n')
-        if b.get("shot"):
-            lines.append(f'    "Shot: {safe(b["shot"])}"\n')
-        if b.get("line"):
-            lines.append(f'    "{safe(b["line"])}"\n')
-        lines.append('    nvl clear\n')
-
-    with open(script_path, "w", encoding="utf-8") as f:
-        f.write("".join(lines))
-
-    return jsonify({"ok": True, "script_path": script_path})
-
-# ── config api ────────────────────────────────────────────────────────────────
-@app.route("/api/config", methods=["GET", "POST"])
-def config_api():
-    if request.method == "GET":
-        if not os.path.exists(CONFIG_PATH):
-            return jsonify({
-                "polling_interval": 5,
-                "live_progress": True,
-                "auto_approve": False,
-                "default_vn_tier": "Simple",
-                "theme_mode": "Dark"
-            })
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
-    else:
-        data = request.get_json(force=True)
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        return jsonify({"success": True})
-
-@app.route("/api/status")
-def status_api():
-    # Placeholder ComfyUI check
-    return jsonify({"status": "idle"})
-
-# ── filesystem gallery (separate namespace) ───────────────────────────────────
-@app.route("/api/gallery_fs")
-def list_gallery_fs():
-    images = []
-    for path in glob.glob(os.path.join(GALLERY_DIR, "*.png")):
-        name = os.path.basename(path)
-        meta_path = os.path.splitext(path)[0] + ".json"
-        meta = {}
-        if os.path.exists(meta_path):
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-        images.append({"name": name, "meta": meta})
-    return jsonify(images)
-
-@app.route("/api/gallery_fs/<filename>")
-def get_gallery_image_fs(filename):
-    return send_from_directory(GALLERY_DIR, filename)
-
-@app.route("/api/gallery_fs/decision", methods=["POST"])
-def gallery_decision_fs():
-    data = request.get_json(force=True)
-    fname = data.get("filename")
-    decision = data.get("decision")
-    if decision not in {"approve", "reject"}:
-        return jsonify({"error": "decision must be 'approve' or 'reject'"}), 400
-
-    src = os.path.join(GALLERY_DIR, fname)
-    if not os.path.exists(src):
-        return jsonify({"error": "file not found"}), 404
-
-    dst_dir = APPROVED_DIR if decision == "approve" else REJECTED_DIR
-    os.makedirs(dst_dir, exist_ok=True)
-    dst = os.path.join(dst_dir, fname)
-    os.replace(src, dst)
-
-    meta_src = os.path.splitext(src)[0] + ".json"
-    if os.path.exists(meta_src):
-        os.replace(meta_src, os.path.splitext(dst)[0] + ".json")
-    return jsonify({"success": True, "decision": decision})
-
-# ── comfy sync & summarization & export queue ────────────────────────────────
-@app.route("/api/sync/comfyui")
-def sync_comfyui():
-    """
-    Pull new renders from ComfyUI output and link/copy them into data/gallery/.
-    """
-    comfy_dir = os.path.join(ROOT_DIR, "ComfyUI", "output")  # adjust if needed
-    synced = []
-    if not os.path.isdir(comfy_dir):
-        return jsonify({"synced": synced, "warning": f"ComfyUI output dir not found: {comfy_dir}"})
-
-    for png_path in glob.glob(os.path.join(comfy_dir, "*.png")):
-        name = os.path.basename(png_path)
-        target = os.path.join(GALLERY_DIR, name)
-        if not os.path.exists(target):
-            try:
-                os.link(png_path, target)
-            except Exception:
-                import shutil
-                shutil.copy(png_path, target)
-            meta = {
-                "id": str(uuid.uuid4()),
-                "timestamp": datetime.now().isoformat(),
-                "source": "ComfyUI",
-                "filename": name,
-                "tags": []
-            }
-            safe_write_json(os.path.splitext(target)[0] + ".json", meta)
-            synced.append(name)
-    return jsonify({"synced": synced})
-
-@app.route("/api/summary", methods=["POST"])
-def generate_summary():
-    """
-    Create a simple textual summary for a render using metadata/filename.
-    """
-    data = request.get_json(force=True)
-    filename = data.get("filename")
-    if not filename:
-        return jsonify({"error": "filename required"}), 400
-
-    meta_path = os.path.join(GALLERY_DIR, os.path.splitext(filename)[0] + ".json")
-    if not os.path.exists(meta_path):
-        return jsonify({"error": "metadata not found"}), 404
-
-    with open(meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-
-    # Simulated summary logic; replace with real LLM call if desired
-    summary = f"Scene {meta.get('id', '')[:6]}: Generated image '{filename}' from {meta.get('source', 'unknown')}."
-
-    summary_data = {
-        "filename": filename,
-        "summary": summary,
-        "timestamp": datetime.now().isoformat()
-    }
-    path = os.path.join(SUMMARIES_DIR, f"{os.path.splitext(filename)[0]}_summary.json")
-    safe_write_json(path, summary_data)
-    return jsonify(summary_data)
-
-@app.route("/api/export_queue", methods=["POST"])
-def export_to_queue():
-    """
-    Add a render to VN export queue for Ren'Py scene generation.
-    """
-    data = request.get_json(force=True)
-    filename = data.get("filename")
-    if not filename:
-        return jsonify({"error": "filename required"}), 400
-
-    scene_id = str(uuid.uuid4())[:8]
-    entry = {
-        "scene_id": scene_id,
-        "filename": filename,
-        "timestamp": datetime.now().isoformat()
-    }
-    queue_file = os.path.join(EXPORT_QUEUE_DIR, f"{scene_id}.json")
-    safe_write_json(queue_file, entry)
-    return jsonify({"queued": True, "scene_id": scene_id})
-
-# ── ren'py exporter (from queue/summaries) ────────────────────────────────────
-def build_rpy(scene_data: dict) -> str:
-    """Generate minimal Ren'Py script content for one scene."""
-    fn = scene_data["filename"]
-    sid = scene_data["scene_id"]
-    summary = scene_data.get("summary", "No summary provided.")
-    # Note: In a real project you'd map filenames to image declarations.
-    return f"""# Auto-generated by VN Tools
-label scene_{sid}:
-    scene {fn}
-    with fade
-    "{summary}"
-    return
-"""
-
-@app.route("/api/export_renpy", methods=["POST"])
-def export_to_renpy():
-    """Build .rpy scripts from queued exports and summaries."""
-    exported = []
-    for qpath in glob.glob(os.path.join(EXPORT_QUEUE_DIR, "*.json")):
-        with open(qpath, "r", encoding="utf-8") as f:
-            scene = json.load(f)
-        fn = scene["filename"]
-        sid = scene["scene_id"]
-        summary_path = os.path.join(SUMMARIES_DIR, f"{os.path.splitext(fn)[0]}_summary.json")
-        if os.path.exists(summary_path):
-            with open(summary_path, "r", encoding="utf-8") as f:
-                sdata = json.load(f)
-                scene["summary"] = sdata.get("summary")
-
-        out_path = os.path.join(SCRIPT_DIR, f"scene_{sid}.rpy")
-        if os.path.exists(out_path):
-            # skip duplicates
-            continue
-        rpy_text = build_rpy(scene)
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(rpy_text)
-        exported.append(out_path)
-
-    # Generate minimal Ren'Py project scaffold if missing
-    options_file = os.path.join(RENPY_PROJECT_DIR, "game", "options.rpy")
-    if not os.path.exists(options_file):
-        os.makedirs(os.path.dirname(options_file), exist_ok=True)
-        with open(options_file, "w", encoding="utf-8") as f:
-            f.write('define config.window_title = "VN Toolchain Export"\n')
-
-    return jsonify({"exported": exported})
-
-# ── launcher & preview ────────────────────────────────────────────────────────
-@app.route("/api/launch_renpy", methods=["POST"])
-def launch_renpy():
-    """Launch the Ren'Py project via batch (Windows) or shell (Unix)."""
-    script = "launch_renpy.bat" if platform.system() == "Windows" else "./launch_renpy.sh"
+@app.post("/api/config")
+def post_config():
     try:
-        subprocess.Popen([script], shell=True, cwd=ROOT_DIR)
-        return jsonify({"status": "launched"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        incoming = request.get_json(force=True, silent=False) or {}
+        cfg = load_config()
+        cfg.update(incoming)
+        save_config(cfg)
+        return jsonify({"ok": True, "config": cfg})
+    except Exception:
+        logger.exception("Failed to update config.")
+        return jsonify({"ok": False, "error": "config_write_failed"}), 400
 
-@app.route("/preview/<scene_id>")
-def preview_scene(scene_id):
-    """Lightweight HTML viewer for exported scene scripts."""
-    path = os.path.join(SCRIPT_DIR, f"scene_{scene_id}.rpy")
-    if not os.path.exists(path):
-        return "<h3>Scene not found</h3>", 404
-    with open(path, "r", encoding="utf-8") as f:
-        txt = f.read()
-    return f"""
-    <html>
-    <head><title>Preview {scene_id}</title>
-    <style>
-      body {{ background:#111; color:#eee; font-family:sans-serif; padding:20px; }}
-      pre {{ background:#222; padding:15px; border-radius:8px; white-space:pre-wrap; }}
-      a, a:visited {{ color:#9cf; }}
-    </style>
-    </head>
-    <body>
-    <h2>Preview Scene {scene_id}</h2>
-    <pre>{txt}</pre>
-    </body></html>
+# -------------------------------
+# API: ComfyUI Queue (simple)
+# -------------------------------
+@app.post("/queue")
+def queue_workflow():
     """
+    For now, forwards a JSON payload to ComfyUI /prompt endpoint (standard API).
+    Body should contain the workflow JSON expected by ComfyUI.
+    """
+    cfg = load_config()
+    comfy_url = cfg.get("comfyui_url", DEFAULT_CONFIG["comfyui_url"]).rstrip("/")
+    url = comfy_url + "/prompt"
+    try:
+        payload = request.get_json(force=True, silent=False)
+        r = requests.post(url, json=payload, timeout=10)
+        return jsonify({
+            "ok": r.status_code < 300,
+            "status_code": r.status_code,
+            "response": r.json() if "application/json" in r.headers.get("content-type","") else r.text
+        }), r.status_code
+    except Exception:
+        logger.exception("Queue to ComfyUI failed.")
+        return jsonify({"ok": False, "error": "queue_failed"}), 400
 
-# ── main ──────────────────────────────────────────────────────────────────────
+# -------------------------------
+# API: Gallery
+# -------------------------------
+@app.get("/api/gallery")
+def api_gallery():
+    """
+    Returns approved and rejected lists plus any loose items in /data/gallery
+    (You should mostly see items only in subfolders.)
+    """
+    items = []
+    items += list_gallery_folder(APPROVED_DIR, "approved")
+    items += list_gallery_folder(REJECTED_DIR, "rejected")
+    # Any loose images (treat as 'pending')
+    for p in sorted(GALLERY_DIR.glob("*")):
+        if p.is_file() and is_image_file(p):
+            stem = p.stem
+            thumb = THUMBS_DIR / f"{stem}.png"
+            if not thumb.exists():
+                make_thumb(p, thumb, int(CONFIG.get("thumbnail_max", 512)))
+            items.append({
+                "id": stem,
+                "filename": p.name,
+                "status": "pending",
+                "path": str(p),
+                "thumb": str(thumb) if thumb.exists() else None,
+                "mtime": os.path.getmtime(p),
+            })
+    return jsonify({"ok": True, "items": items})
+
+@app.post("/api/gallery/decision")
+def api_gallery_decision():
+    """
+    Body: { "id": "<stem>", "action": "approve" | "reject" }
+    Moves the image (and its .json sidecar if present) to the appropriate folder.
+    """
+    try:
+        data = request.get_json(force=True, silent=False)
+        img_id = data.get("id")
+        action = data.get("action")
+        if action not in {"approve", "reject"}:
+            return jsonify({"ok": False, "error": "invalid_action"}), 400
+
+        # find candidate by checking places
+        candidates = [
+            GALLERY_DIR / f"{img_id}.png",
+            GALLERY_DIR / f"{img_id}.jpg",
+            GALLERY_DIR / f"{img_id}.jpeg",
+            APPROVED_DIR / f"{img_id}.png",
+            APPROVED_DIR / f"{img_id}.jpg",
+            REJECTED_DIR / f"{img_id}.png",
+            REJECTED_DIR / f"{img_id}.jpg",
+        ]
+        src = None
+        for c in candidates:
+            if c.exists():
+                src = c
+                break
+        if not src:
+            return jsonify({"ok": False, "error": "not_found"}), 404
+
+        if action == "approve":
+            dst_dir = APPROVED_DIR
+        else:
+            dst_dir = REJECTED_DIR
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = dst_dir / src.name
+        shutil.move(str(src), str(dst))
+
+        # move sidecar json and thumb if present
+        for side_ext in (".json",):
+            sc = src.with_suffix(side_ext)
+            if sc.exists():
+                shutil.move(str(sc), str(dst.with_suffix(side_ext)))
+        # thumbs: just recreate to be safe
+        thumb = THUMBS_DIR / f"{dst.stem}.png"
+        if thumb.exists():
+            try:
+                thumb.unlink()
+            except Exception:
+                pass
+        make_thumb(dst, thumb, int(CONFIG.get("thumbnail_max", 512)))
+
+        return jsonify({"ok": True, "moved_to": str(dst)})
+    except Exception:
+        logger.exception("Gallery decision failed.")
+        return jsonify({"ok": False, "error": "decision_failed"}), 400
+
+# -------------------------------
+# API: Sync from ComfyUI outputs
+# -------------------------------
+@app.post("/api/sync/comfyui")
+def api_sync_comfyui():
+    """
+    Scan the ComfyUI output folder for new images and import them into /data/gallery
+    with an ID and sidecar metadata (basic).
+    Body (optional): { "output_dir": "..." }
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        cfg = load_config()
+        out_dir = Path(body.get("output_dir") or cfg.get("comfyui_output_dir") or DEFAULT_COMFY_OUTPUT)
+        if not out_dir.exists():
+            return jsonify({"ok": False, "error": f"output_dir_not_found: {out_dir}"}), 400
+
+        imported = []
+        for p in sorted(out_dir.glob("*")):
+            if p.is_file() and is_image_file(p):
+                # Avoid re-importing if already present (by content name match)
+                target = GALLERY_DIR / p.name
+                if target.exists() or (APPROVED_DIR / p.name).exists() or (REJECTED_DIR / p.name).exists():
+                    continue
+                new_name = p.name  # keep original name for traceability
+                dst = GALLERY_DIR / new_name
+                shutil.copy2(p, dst)
+
+                # Attempt to capture a basic sidecar metadata
+                sidecar = dst.with_suffix(".json")
+                if not sidecar.exists():
+                    meta = {
+                        "id": dst.stem,
+                        "source": "comfyui",
+                        "origin_path": str(p),
+                        "imported_at": ts()
+                    }
+                    sidecar.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+                # Make thumb
+                thumb = THUMBS_DIR / f"{dst.stem}.png"
+                make_thumb(dst, thumb, int(cfg.get("thumbnail_max", 512)))
+                imported.append(dst.name)
+
+        return jsonify({"ok": True, "imported": imported})
+    except Exception:
+        logger.exception("Sync from ComfyUI failed.")
+        return jsonify({"ok": False, "error": "sync_failed"}), 400
+
+@app.route("/")
+def ui_index():
+    return send_file("templates/index.html")
+
+@app.get("/api/status")
+def ui_status():
+    """Live status poller for UI."""
+    return jsonify({
+        "time": ts(),
+        "comfyui_ok": requests.get(CONFIG["comfyui_url"]).ok if CONFIG["comfyui_url"] else False,
+        "approved": len(list(APPROVED_DIR.glob("*.png"))),
+        "pending": len(list(GALLERY_DIR.glob("*.png"))),
+    })
+
+
+# -------------------------------
+# API: Export to Ren'Py
+# -------------------------------
+@app.post("/api/export_renpy")
+def api_export_renpy():
+    """
+    Build a minimal Ren'Py project from APPROVED images and ensure label start exists.
+    """
+    try:
+        # Collect approved images
+        approved_imgs = [p for p in sorted(APPROVED_DIR.glob("*")) if p.is_file() and is_image_file(p)]
+        build_renpy_script_from_approved(approved_imgs)
+        return jsonify({"ok": True, "project_dir": str(RENPI_PROJECT), "scenes": [p.name for p in approved_imgs]})
+    except Exception:
+        logger.exception("Export to Ren'Py failed.")
+        return jsonify({"ok": False, "error": "export_failed"}), 400
+
+# -------------------------------
+# API: Launch Ren'Py
+# -------------------------------
+@app.post("/api/launch_renpy")
+def api_launch_renpy():
+    """
+    Launch the Ren'Py project using renpy.exe (Windows).
+    """
+    try:
+        cfg = load_config()
+        renpy_exe = Path(cfg.get("renpy_exe") or RENPI_EXE)
+        project_dir = Path(cfg.get("renpy_project_dir") or RENPI_PROJECT)
+        if not renpy_exe.exists():
+            return jsonify({"ok": False, "error": f"renpy_exe_not_found: {renpy_exe}"}), 400
+        if not project_dir.exists():
+            ensure_renpy_project()
+
+        # Prefer to (re)export before launch so 'start' exists:
+        approved_imgs = [p for p in sorted(APPROVED_DIR.glob("*")) if p.is_file() and is_image_file(p)]
+        build_renpy_script_from_approved(approved_imgs)
+
+        # Launch Ren’Py
+        # If you want the launcher UI: pass only the Ren'Py dir.
+        # To run the project directly, pass the project directory.
+        try:
+            subprocess.Popen([str(renpy_exe), str(project_dir)], cwd=str(RENPI_BIN_DIR))
+        except Exception:
+            # Fallback: try running EXE without forcing cwd
+            subprocess.Popen([str(renpy_exe), str(project_dir)])
+        return jsonify({"ok": True, "launched": True})
+    except Exception:
+        logger.exception("Launch Ren'Py failed.")
+        return jsonify({"ok": False, "error": "launch_failed"}), 400
+
+# -------------------------------
+# Static helpers for thumbs / files
+# -------------------------------
+@app.get("/api/thumb/<stem>")
+def get_thumb(stem: str):
+    for ext in (".png", ".jpg", ".jpeg"):
+        img = GALLERY_DIR / f"{stem}{ext}"
+        if img.exists():
+            thumb = THUMBS_DIR / f"{stem}.png"
+            if not thumb.exists():
+                make_thumb(img, thumb, int(CONFIG.get("thumbnail_max", 512)))
+            if thumb.exists():
+                return send_file(str(thumb))
+    return jsonify({"ok": False, "error": "not_found"}), 404
+
+# -------------------------------
+# Main
+# -------------------------------
 if __name__ == "__main__":
-    # Note: place your templates/ and static/ next to this file (server/).
-    # Run with:  python server/app.py
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=False)
+    # Make sure config and project skeleton exist
+    ensure_renpy_project()
+
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("FLASK_PORT", "5000"))
+    debug = bool(int(os.environ.get("FLASK_DEBUG", "0")))
+    logger.info(f"Starting ComfyVN server on http://{host}:{port}")
+    app.run(host=host, port=port, debug=debug)
+
