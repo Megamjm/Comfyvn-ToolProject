@@ -1,95 +1,111 @@
-async function fetchText(url){ const r = await fetch(url); return await r.text(); }
-async function fetchJSON(url){ const r = await fetch(url); return await r.json(); }
-function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; }
+// VN Tools Drawer - updated for new Flask API
+console.log("VN Tools initialized.");
 
-const presetSel = document.getElementById('preset');
-const wfArea = document.getElementById('wf');
-const metaArea = document.getElementById('meta');
-const titleInp = document.getElementById('title');
-const galleryDiv = document.getElementById('gallery');
-const tagFilter = document.getElementById('tagFilter');
-
-async function loadPreset(){
-  const url = presetSel.value;
-  try{
-    const txt = await fetchText(url);
-    wfArea.value = txt;
-  }catch(e){
-    wfArea.value = `/* Failed to load preset: ${e} */`;
-  }
-}
-presetSel.addEventListener('change', loadPreset);
-loadPreset();
-
-document.getElementById('queueBtn').onclick = async () => {
-  let wf;
-  try{ wf = JSON.parse(wfArea.value); } catch(e){ alert("Workflow JSON invalid: "+e); return; }
-  let meta = {}; 
-  if(metaArea.value.trim()){
-    try{ meta = JSON.parse(metaArea.value); } catch(e){ alert("Meta JSON invalid: "+e); return; }
-  }
-  const res = await fetch('/queue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title: titleInp.value||'untitled', workflow: wf, meta})});
-  const j = await res.json();
-  if(!res.ok){ alert("Queue failed: "+JSON.stringify(j)); return; }
-  alert("Queued: "+j.id);
-  refresh();
+// Utility
+const api = async (path, method="GET", body=null) => {
+  const opts = { method, headers:{ "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  try { return await r.json(); } catch { return {}; }
 };
 
-async function refresh(filter){
-  const params = new URLSearchParams();
-  if(filter && filter!=="all") params.set("status", filter);
-  if(tagFilter.value) params.set("tag", tagFilter.value);
-  const j = await fetchJSON('/gallery?'+params.toString());
-  galleryDiv.innerHTML = "";
-  for(const a of j){
-    const thumb = a.png_path ? `<img class="thumb" src="/static/${a.png_path.split('static/').pop()}" onerror="this.style.display='none'"/>` : `<div class="thumb"></div>`;
-    const card = el(`<div class="card">
-      ${thumb}
-      <div class="info">
-        <div><b>${a.title||'untitled'}</b></div>
-        <div>Status: ${a.status}</div>
-        <div><small>${a.id}</small></div>
-        <div class="row">
-          <button data-a="approve" data-id="${a.id}">Approve</button>
-          <button data-a="reject" data-id="${a.id}">Reject</button>
-        </div>
+async function refreshGallery(filter="all") {
+  const gal = document.getElementById("gallery");
+  gal.innerHTML = "<p>Loading gallery...</p>";
+  const data = await api("/api/gallery");
+  gal.innerHTML = "";
+  if (!data.ok) {
+    gal.innerHTML = `<p class='error'>Failed to load gallery.</p>`;
+    return;
+  }
+  let items = data.items;
+  if (filter !== "all") items = items.filter(x => x.status === filter);
+
+  items.forEach(it => {
+    const div = document.createElement("div");
+    div.className = "tile";
+    const thumb = it.thumb ? `/api/thumb/${it.id}` : "";
+    div.innerHTML = `
+      <img src="${thumb}" alt="${it.filename}" />
+      <div class="meta">
+        <b>${it.filename}</b><br/>
+        Status: ${it.status}
       </div>
-    </div>`);
-    card.querySelectorAll('button').forEach(btn=>{
-      btn.onclick = async () => {
-        const action = btn.dataset.a;
-        const res = await fetch(`/${action}/${btn.dataset.id}`, {method:'POST'});
-        if(res.ok) refresh(filter);
-      };
-    });
-    galleryDiv.appendChild(card);
-  }
+      <div class="actions">
+        <button onclick="decision('${it.id}','approve')">✅ Approve</button>
+        <button onclick="decision('${it.id}','reject')">❌ Reject</button>
+      </div>
+    `;
+    gal.appendChild(div);
+  });
 }
-document.getElementById('refresh').onclick = ()=> refresh(document.querySelector('.filters .active')?.dataset.f);
-document.querySelectorAll('.filters button').forEach(b=>{
-  b.onclick = ()=>{
-    document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active'); refresh(b.dataset.f);
-  };
-});
-refresh("all");
 
-document.getElementById('ingestBtn').onclick = async () => {
-  const id = document.getElementById('ingestId').value.trim();
-  const file = document.getElementById('ingestPng').files[0];
-  if(!id || !file) { alert("Provide asset id and PNG file"); return; }
+async function decision(id, action) {
+  const res = await api("/api/gallery/decision", "POST", { id, action });
+  if (!res.ok) alert("Failed to move image: " + (res.error || ""));
+  refreshGallery();
+}
+
+// Queue render to ComfyUI
+document.getElementById("queueBtn").onclick = async () => {
+  const preset = document.getElementById("preset").value;
+  const metaText = document.getElementById("meta").value;
+  const title = document.getElementById("title").value || "Untitled";
+  let meta = {};
+  try { meta = JSON.parse(metaText || "{}"); } catch(e){ alert("Invalid meta JSON."); return; }
+  const wfText = document.getElementById("wf").value;
+  let workflow = {};
+  try { workflow = JSON.parse(wfText || "{}"); } catch(e){ alert("Invalid workflow JSON."); return; }
+
+  const payload = { title, workflow, meta };
+  const res = await api("/queue", "POST", payload);
+  alert(res.ok ? "Queued successfully!" : "Queue failed.");
+};
+
+// Ingest PNG manually
+document.getElementById("ingestBtn").onclick = async () => {
+  const id = document.getElementById("ingestId").value.trim();
+  const file = document.getElementById("ingestPng").files[0];
+  if (!id || !file) { alert("Missing ID or file"); return; }
+
   const fd = new FormData();
-  fd.append('image', file);
-  const res = await fetch(`/ingest/${id}`, {method:'POST', body:fd});
-  const j = await res.json();
-  if(!res.ok){ alert("Ingest failed: "+JSON.stringify(j)); return; }
-  alert("Ingested.");
-  refresh();
+  fd.append("image", file);
+  const r = await fetch(`/ingest/${id}`, { method:"POST", body:fd });
+  const j = await r.json();
+  alert(j.ok ? "Ingested successfully." : "Failed: " + j.error);
 };
 
-document.getElementById('themeBtn').onclick = ()=>{
-  const b = document.body;
-  if(b.classList.contains('theme-default')) b.classList.replace('theme-default','theme-sakura');
-  else if(b.classList.contains('theme-sakura')) b.classList.replace('theme-sakura','theme-neon');
-  else b.classList.replace('theme-neon','theme-default');
+// Export approved renders to Ren'Py
+async function exportRenpy() {
+  const r = await api("/api/export_renpy", "POST");
+  alert(r.ok ? "Export complete. Scenes: " + r.scenes.length : "Export failed.");
+}
+async function launchRenpy() {
+  const r = await api("/api/launch_renpy", "POST");
+  alert(r.ok ? "Ren'Py launched." : "Launch failed.");
+}
+
+// Toolbar preview button
+const previewBtn = document.createElement("button");
+previewBtn.textContent = "🎮 Launch VN";
+previewBtn.onclick = launchRenpy;
+document.querySelector("nav").appendChild(previewBtn);
+
+// Filters
+document.querySelectorAll(".filters button").forEach(b => {
+  b.onclick = () => refreshGallery(b.dataset.f);
+});
+
+// Refresh
+document.getElementById("refresh").onclick = () => refreshGallery();
+
+// Theme toggle
+document.getElementById("themeBtn").onclick = () => {
+  document.body.classList.toggle("theme-light");
 };
+
+// Auto-refresh gallery every 15s
+setInterval(refreshGallery, 15000);
+
+// Initial load
+refreshGallery();
