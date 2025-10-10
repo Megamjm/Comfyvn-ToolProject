@@ -1,22 +1,50 @@
-# VN Suite (Windows) — Filled Scaffold
+# 🎮 VN Toolchain — ComfyUI + Ren'Py Visual Novel Automation
 
-A Windows-first bundle to orchestrate **SillyTavern → LLM (LM Studio) → ComfyUI → Gallery → Ren’Py**.
+**VN Toolchain** is a modular open-source suite that bridges  
+**ComfyUI**, **SillyTavern**, **LM Studio**, and **Ren'Py**  
+to generate visual-novel-style experiences directly from AI chat and renders.
 
-## Quick Start (Windows)
-1. Double-click **`launch.bat`**.
-2. Open **http://127.0.0.1:5000**.
-3. Pick a preset, edit workflow JSON, and **Queue Render**.
-4. Approve/Reject in **Gallery**, or **Ingest PNG** to pair an existing render.
+It provides:
+- 🧠 LLM → Scene/Dialogue → Render → Ren'Py pipeline
+- 🧩 Flask-based web dashboard with configurable options
+- 🖼️ Gallery for approving/rejecting ComfyUI renders
+- 🎬 Automatic Ren'Py `.rpy` scene exporter
+- ▶️ Launcher buttons for previewing and playing your VN
+- 🔧 Full JSON/metadata sidecar tracking for re-renders
 
-### Env
-- `COMFY_HOST` (default `http://127.0.0.1:8188`)
-- `VN_DATA_DIR` (default `./data`)
-- `VN_AUTH=1` + `VN_PASSWORD` to enable login
-- `LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL` for LM Studio/OpenAI-compatible endpoints
+---
 
-## Folders
-server/  | Flask app
-workflows/ | JSON presets (placeholders; paste full ComfyUI workflows)
-adapters/ | SillyTavern reader, Comfy client, LLM router
-exporters/ | Ren'Py export landing
-data/assets/ | Sidecars + PNGs (runtime)
+## 🧭 Project Structure
+VNToolchain/
+├─ server/ # Flask backend + templates
+│ ├─ app.py # Main application file
+│ ├─ templates/
+│ │ └─ index.html # Web UI
+│ └─ static/
+│ └─ js/app.js # Client-side logic
+│
+├─ data/ # Runtime data (auto-generated)
+│ ├─ assets/
+│ ├─ gallery/
+│ ├─ summaries/
+│ ├─ export_queue/
+│ └─ renpy_project/ # Output Ren'Py game project
+│
+├─ launch.bat # Start Flask server
+├─ launch_renpy.bat # Launch or open Ren'Py project
+├─ requirements.txt # Python dependencies
+└─ .gitignore # Keeps local data & SDKs out of Git
+
+
+## ⚙️ Setup
+
+### 1. Install dependencies
+Install Python 3.10+ and Git.  
+Then in PowerShell (Windows):
+
+```bash
+git clone https://github.com/<YOUR_USERNAME>/VN-Toolchain.git
+cd VN-Toolchain
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
