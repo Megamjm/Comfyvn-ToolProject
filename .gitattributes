@@ -1,0 +1,57 @@
+# ────────────────
+# Core text normalization
+# ────────────────
+# Normalize all text files to LF in repo, auto-convert to CRLF on Windows
+* text=auto eol=lf
+
+# ────────────────
+# Code and scripts
+# ────────────────
+*.py     text eol=lf
+*.rpy    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.html   text eol=lf
+*.js     text eol=lf
+*.css    text eol=lf
+*.yml    text eol=lf
+*.sh     text eol=lf
+*.bat    text eol=crlf
+*.txt    text eol=lf
+
+# ────────────────
+# Image / binary files (no diffing)
+# ────────────────
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.mp4    binary
+*.avi    binary
+*.mov    binary
+*.safetensors binary
+*.zip    binary
+*.rpa    binary
+*.rpyc   binary
+*.exe    binary
+*.dll    binary
+*.so     binary
+
+# ────────────────
+# Data consistency
+# ────────────────
+# Prevent accidental re-normalization of Ren'Py scripts or workflows
+data/**/*.json text eol=lf
+data/**/*.rpy text eol=lf
+server/**/*.py text eol=lf
+
+# ────────────────
+# Git LFS hooks (optional)
+# ────────────────
+# Uncomment below if you use Git LFS for large ComfyUI or model files
+# *.safetensors filter=lfs diff=lfs merge=lfs -text
+# *.ckpt        filter=lfs diff=lfs merge=lfs -text
+# *.pt          filter=lfs diff=lfs merge=lfs -text
+# *.bin         filter=lfs diff=lfs merge=lfs -text
