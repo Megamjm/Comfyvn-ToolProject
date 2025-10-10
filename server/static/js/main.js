@@ -1,6 +1,14 @@
 // VN Tools Drawer - updated for new Flask API
 console.log("VN Tools initialized.");
 
+// Show logout link if session exists
+fetch("/api/config").then(r=>r.json()).then(cfg=>{
+  if(cfg.VN_AUTH===true || cfg.VN_AUTH==="1"){
+    document.getElementById("logoutLink").style.display="inline-block";
+  }
+});
+
+
 // Utility
 const api = async (path, method="GET", body=null) => {
   const opts = { method, headers:{ "Content-Type": "application/json" } };
@@ -248,7 +256,7 @@ async function pollRenderStatus(){
 setInterval(pollRenderStatus,4000);
 
 @app.get("/api/render_state")
-def api_render_state():
+def api_render_state();
     """Placeholder ComfyUI render monitor."""
     try:
         outputs = list(Path(CONFIG.get("comfyui_output_dir")).glob("*.png"))
