@@ -1,0 +1,18 @@
+{
+  // [🎨 GUI Code Production Chat] ComfyVN GUI Dev Container
+  "name": "ComfyVN GUI Dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+  "postCreateCommand": "pip install PySide6 requests",
+  "remoteUser": "vscode"
+}
