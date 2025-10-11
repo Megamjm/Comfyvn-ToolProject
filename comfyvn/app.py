@@ -1,39 +1,39 @@
 # comfyvn/app.py
 # ⚙️ ComfyVN Server Core
-# Version: 1.1.2 (GUI Integration)
+# Version: 1.1.4 (Stable GUI Integration)
 # Date: 2025-10-10
-# [Code Updates Chat + GUI Integration Sync]
+# [Code Updates Chat]
 
 from __future__ import annotations
 import os, json, asyncio, subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
+
 import httpx, uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 
 # -----------------------------------------------------
 # Settings
 # -----------------------------------------------------
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env", case_sensitive=True)
+
     APP_NAME: str = "ComfyVN Server Core"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     COMFYUI_BASE: str = "http://127.0.0.1:8188"
     LMSTUDIO_BASE: str = "http://127.0.0.1:1234/v1"
+
     PROJECT_ROOT: Path = Path(__file__).parent.resolve()
     DATA_DIR: Path = Field(default_factory=lambda: Path("./data").resolve())
     WORKFLOWS_DIR: Path = Field(default_factory=lambda: Path("./workflows").resolve())
     EXPORTS_DIR: Path = Field(default_factory=lambda: Path("./exports").resolve())
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
-    @validator("DATA_DIR", "WORKFLOWS_DIR", "EXPORTS_DIR", pre=True)
-    def _ensure_path(cls, v):  # type: ignore
+    @field_validator("DATA_DIR", "WORKFLOWS_DIR", "EXPORTS_DIR", mode="before")
+    def _ensure_path(cls, v):
         return Path(v).resolve()
 
 settings = Settings()
@@ -44,7 +44,7 @@ settings.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 # -----------------------------------------------------
 # FastAPI App
 # -----------------------------------------------------
-app = FastAPI(title=settings.APP_NAME, version="1.1.2")
+app = FastAPI(title=settings.APP_NAME, version="1.1.4")
 
 app.add_middleware(
     CORSMiddleware,
@@ -98,11 +98,15 @@ async def comfyui_queue_prompt(payload: Dict[str, Any]) -> Dict[str, Any]:
     return r.json()
 
 # -----------------------------------------------------
-# Bridge + Managers
+# Bridge + Managers (moved above GUI endpoint)
 # -----------------------------------------------------
 class ComfyUIBridge:
     async def queue_render(self, payload: dict):
-        return await comfyui_queue_prompt(payload)
+        try:
+            return await comfyui_queue_prompt(payload)
+        except Exception as e:
+            # fallback if ComfyUI unavailable
+            return {"ok": False, "error": str(e), "hint": "ComfyUI not reachable or invalid payload"}
 
 mode_manager = ModeManager()
 comfy_bridge = ComfyUIBridge()
@@ -142,18 +146,21 @@ async def scene_pipeline(scene_data: dict):
     """
     mode = mode_manager.get_mode()
     plan = preprocess_scene(scene_data, mode)
-    comfy_result = await comfy_bridge.queue_render(plan["render_ready_prompt"])
+
+    # ensure a dict payload for ComfyUI
+    payload = plan.get("render_ready_prompt", {})
+    if isinstance(payload, str):
+        payload = {"prompt": payload, "client_id": "comfyvn-test"}
+
+    comfy_result = await comfy_bridge.queue_render(payload)
     plan["comfy_response"] = comfy_result
     return plan
 
 # -----------------------------------------------------
-# GUI Support Endpoint
+# GUI Support Endpoint (now safe with defined mode_manager)
 # -----------------------------------------------------
 @app.get("/gui/state")
 async def gui_state():
-    """
-    Simple endpoint for GUI to poll status + current mode.
-    """
     try:
         comfy = await comfyui_health()
         return {
@@ -180,4 +187,4 @@ if __name__ == "__main__":
         reload=os.environ.get("UVICORN_RELOAD", "0") == "1",
         log_level="info",
     )
-# [ComfyVN: Code Updates Chat + GUI Integration Sync]
+# [ComfyVN: Code Updates Chat v1.1.4]
