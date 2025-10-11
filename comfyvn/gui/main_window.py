@@ -1,6 +1,6 @@
 # comfyvn/gui/main_window.py
-# 🎨 GUI Main Window (v1.1.2)
-# Updated to integrate with ComfyVN Server Core 1.1.2
+# 🎨 GUI Main Window (v1.1.3)
+# Fixed: Async initialization (no running event loop)
 # [Code Updates Chat]
 
 import sys, asyncio, json
@@ -8,14 +8,15 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QLabel, QTextEdit, QComboBox, QMessageBox
 )
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer
 import httpx
 
 API_BASE = "http://127.0.0.1:8000"
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, loop: asyncio.AbstractEventLoop):
         super().__init__()
+        self.loop = loop
         self.setWindowTitle("ComfyVN Control Panel")
         self.resize(640, 400)
 
@@ -39,18 +40,22 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        # Connect buttons
-        self.refresh_button.clicked.connect(lambda: asyncio.create_task(self.update_status()))
-        self.pipeline_button.clicked.connect(lambda: asyncio.create_task(self.send_test_scene()))
+        # Button bindings
+        self.refresh_button.clicked.connect(lambda: self.run_async(self.update_status()))
+        self.pipeline_button.clicked.connect(lambda: self.run_async(self.send_test_scene()))
 
-        # Initial data
-        asyncio.create_task(self.load_modes())
-        asyncio.create_task(self.update_status())
+        # Initialize GUI data
+        self.run_async(self.load_modes())
+        self.run_async(self.update_status())
 
-        # Auto refresh
+        # Auto-refresh status every 10s
         self.timer = QTimer()
-        self.timer.timeout.connect(lambda: asyncio.create_task(self.update_status()))
+        self.timer.timeout.connect(lambda: self.run_async(self.update_status()))
         self.timer.start(10000)
+
+    def run_async(self, coro):
+        """Safely schedule coroutine inside Qt via running loop."""
+        asyncio.ensure_future(coro, loop=self.loop)
 
     async def update_status(self):
         try:
@@ -91,12 +96,29 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    loop = asyncio.get_event_loop()
-    window = MainWindow()
+
+    # Create dedicated asyncio loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    window = MainWindow(loop)
     window.show()
-    loop.run_until_complete(asyncio.sleep(0))  # warm event loop
-    sys.exit(app.exec())
+
+    # Integrate asyncio with Qt using QTimer
+    def process_asyncio_events():
+        loop.stop()
+        loop.run_forever()
+
+    timer = QTimer()
+    timer.timeout.connect(process_asyncio_events)
+    timer.start(10)
+
+    # Run Qt event loop
+    app.exec()
+
+    # Cleanup asyncio loop
+    loop.close()
 
 if __name__ == "__main__":
     main()
-# [ComfyVN: Code Updates Chat]
+# [Code Updates Chat]
