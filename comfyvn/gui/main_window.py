@@ -12,6 +12,10 @@ from PySide6.QtCore import QTimer, Qt
 import httpx
 
 from comfyvn.gui.asset_browser import AssetBrowser   # 👈 ensure exists
+from gui.world_ui import WorldUI
+# Inside MainWindow __init__ or menu setup
+world_action = self.menuBar().addMenu("Settings").addAction("World Manager")
+world_action.triggered.connect(lambda: WorldUI().show())
 
 API_BASE = os.getenv("COMFYVN_API", "http://127.0.0.1:8000")
 self.assets_tab = AssetBrowser(loop, API_BASE)

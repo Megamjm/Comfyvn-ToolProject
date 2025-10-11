@@ -19,6 +19,18 @@ from .modules.npc_manager import NPCManager
 from .modules.export_manager import ExportManager
 from .modules.cache_manager import CacheManager
 
+from modules.world_loader import WorldLoader
+world_loader = WorldLoader()
+
+@app.get("/worlds/list")
+async def list_worlds():
+    return {"worlds": world_loader.list_available_worlds()}
+
+@app.post("/worlds/load")
+async def load_world(data: dict):
+    world_file = data.get("file")
+    return world_loader.load_world(world_file)
+
 npc_manager = NPCManager()
 export_manager = ExportManager()
 cache_manager = CacheManager()
