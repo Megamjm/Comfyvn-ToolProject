@@ -1,6 +1,6 @@
 # comfyvn/gui/main_window.py
-# 🎨 ComfyVN Control Panel – v0.4-dev (Phase 3.3-G)
-# Integrates Dynamic TopBarMenu + Server Core 1.1.4
+# 🎨 ComfyVN Control Panel – v0.4-dev (Phase 3.3-H)
+# Dynamic TopBarMenu + Status Framework + Server Core 1.1.4
 # [🎨 GUI Code Production Chat]
 
 import os, sys, asyncio, json, httpx
@@ -19,6 +19,8 @@ from comfyvn.gui.components.dialog_helpers import info, error
 from comfyvn.gui.server_bridge import ServerBridge
 from comfyvn.gui.components.task_manager_dock import TaskManagerDock
 from comfyvn.gui.components.topbar_menu import TopBarMenu
+from comfyvn.gui.components.status_widget import StatusWidget
+from comfyvn.modules.system_monitor import SystemMonitor
 
 try:
     from comfyvn.gui.world_ui import WorldUI
@@ -86,10 +88,30 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
         # ----------------------------------------------------------
-        # Status-bar labels
+        # Status bar (version + connection + indicators)
         # ----------------------------------------------------------
         self.version_label = QLabel("v0.4-dev")
         self.connection_label = QLabel("Server: Unknown")
+
+        # New: compact multi-source indicator row
+        self.status_widget = StatusWidget(self)
+        # Pre-register common indicators (colors set on first update)
+        for name, tip in [
+            ("server", "Server Core"),
+            ("lmstudio", "LM Studio"),
+            ("sillytavern", "SillyTavern"),
+            ("world", "World Service"),
+        ]:
+            self.status_widget.add_indicator(name, tip)
+        # Resource indicators (CPU/GPU/RAM) appear as text in tooltips; LEDs reflect general load state.
+        for name, tip in [
+            ("cpu", "CPU Usage"),
+            ("gpu", "GPU Usage"),
+            ("ram", "RAM Usage"),
+        ]:
+            self.status_widget.add_indicator(name, tip)
+
+        self.statusBar().addPermanentWidget(self.status_widget)
         self.statusBar().addPermanentWidget(self.version_label)
         self.statusBar().addPermanentWidget(self.connection_label)
 
@@ -115,6 +137,13 @@ class MainWindow(QMainWindow):
         # Server bridge + polling
         self.server_bridge = ServerBridge(API_BASE)
         self._init_status_polling()
+
+        # ----------------------------------------------------------
+        # System Monitor (Status Framework)
+        # ----------------------------------------------------------
+        self.monitor = SystemMonitor(API_BASE)
+        self.monitor.on_update(self._on_monitor_update)
+        self.monitor.start(interval=5)
 
     # --------------------------------------------------------------
     # Menu reloader (used by menu_system)
@@ -142,7 +171,7 @@ class MainWindow(QMainWindow):
         self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
 
     # --------------------------------------------------------------
-    # Polling setup + handlers
+    # Polling setup + handlers (ServerBridge)
     # --------------------------------------------------------------
     def _init_status_polling(self):
         """Start periodic server status polling via ServerBridge."""
@@ -169,7 +198,41 @@ class MainWindow(QMainWindow):
         self.server_bridge.get_status(_cb)
 
     # --------------------------------------------------------------
-    # Async REST operations
+    # System Monitor callback → update indicators
+    # --------------------------------------------------------------
+    def _on_monitor_update(self, data: dict):
+        # Connection sources
+        srv = (data.get("server") or {}).get("state", "offline")
+        lm = (data.get("lmstudio") or {}).get("state", "offline")
+        st = (data.get("sillytavern") or {}).get("state", "offline")
+        wd = (data.get("world") or {}).get("state", "offline")
+
+        lm_model = (data.get("lmstudio") or {}).get("model", "unknown")
+        self.status_widget.update_indicator("server", srv, f"Server Core: {srv}")
+        self.status_widget.update_indicator("lmstudio", lm, f"LM Studio: {lm} (model: {lm_model})")
+        self.status_widget.update_indicator("sillytavern", st, f"SillyTavern: {st}")
+        self.status_widget.update_indicator("world", wd, f"World Service: {wd}")
+
+        # Resources
+        cpu = data.get("cpu_percent", 0)
+        gpu = data.get("gpu_percent", 0)
+        ram = data.get("ram_percent", 0)
+
+        def load_to_state(v):
+            if v >= 90:
+                return "error"
+            if v >= 70:
+                return "busy"
+            if v <= 5:
+                return "idle"
+            return "online"
+
+        self.status_widget.update_indicator("cpu", load_to_state(cpu), f"CPU: {cpu:.0f}%")
+        self.status_widget.update_indicator("gpu", load_to_state(gpu), f"GPU: {gpu:.0f}%")
+        self.status_widget.update_indicator("ram", load_to_state(ram), f"RAM: {ram:.0f}%")
+
+    # --------------------------------------------------------------
+    # Async REST operations (demo trigger)
     # --------------------------------------------------------------
     async def send_test_scene(self):
         """Send a sample scene payload to /scene/render for testing."""
