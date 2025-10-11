@@ -1,23 +1,29 @@
 # comfyvn/gui/playground_ui.py
-# Playground: scene preview, layer list, prompt-driven edits, send to LM Studio, optional SillyTavern
-# Provides a QGraphicsView for compositing previews (placeholder), and hooks to call LLM to mutate scene JSON.
-# [🎨 GUI Code Production Chat]
+# 🎨 Playground – Scene Composer / LLM Bridge / Server Planner
+# [🎨 GUI Code Production Chat | Phase 3.2 Sync]
 
 import json
 import threading
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal, Slot, QRectF
+from PySide6.QtCore import Qt, Signal, Slot, QRectF, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-    QListWidget, QListWidgetItem, QPushButton, QTextEdit, QSplitter, QLabel, QFileDialog, QMessageBox
+    QListWidget, QListWidgetItem, QPushButton, QTextEdit, QSplitter, QLabel,
+    QFileDialog, QMessageBox
 )
 import requests
 
+from comfyvn.gui.components.dialog_helpers import info, error
+from comfyvn.gui.components.progress_overlay import ProgressOverlay
+from comfyvn.gui.server_bridge import ServerBridge
+
 
 class PlaygroundUI(QWidget):
+    """Interactive scene playground and LM Studio / Server Core bridge."""
+
     request_log = Signal(str)
     request_settings = Signal(object)
     request_settings_changed = Signal(dict)
@@ -28,19 +34,27 @@ class PlaygroundUI(QWidget):
         self.view = QGraphicsView(self.scene)
         self.layers_list = QListWidget()
         self.prompt_box = QTextEdit()
-        self.btn_apply = QPushButton("Apply Prompt to Scene")
+
+        # --- Buttons ---
+        self.btn_plan = QPushButton("Plan Scene (Server)")
+        self.btn_apply = QPushButton("Apply Prompt to Scene (LM Studio)")
         self.btn_add_layer = QPushButton("Add Layer (Image)")
         self.btn_export = QPushButton("Export Composite")
         self.btn_send_silly = QPushButton("Send to SillyTavern (JSON)")
-        self.current_layers = []  # [{path, pixmapItem}]
+
+        self.overlay = ProgressOverlay(self, "Working …")
+        self.overlay.hide()
+        self.bridge = ServerBridge()
+
+        self.current_layers = []
         self._build_ui()
         self._wire_events()
 
-    # -------------------- UI --------------------
-
+    # ------------------------------------------------------------
+    # UI Layout
+    # ------------------------------------------------------------
     def _build_ui(self):
         layout = QHBoxLayout(self)
-
         left = QVBoxLayout()
         left.addWidget(QLabel("Scene Preview"))
         left.addWidget(self.view)
@@ -52,40 +66,48 @@ class PlaygroundUI(QWidget):
         right.addWidget(self.prompt_box)
 
         row = QHBoxLayout()
+        row.addWidget(self.btn_plan)
         row.addWidget(self.btn_apply)
-        row.addWidget(self.btn_add_layer)
-        row.addWidget(self.btn_export)
         right.addLayout(row)
+
+        row2 = QHBoxLayout()
+        row2.addWidget(self.btn_add_layer)
+        row2.addWidget(self.btn_export)
+        right.addLayout(row2)
 
         right.addWidget(self.btn_send_silly)
 
         splitter = QSplitter(Qt.Horizontal)
-        w_left = QWidget(); w_left.setLayout(left)
-        w_right = QWidget(); w_right.setLayout(right)
-        splitter.addWidget(w_left)
-        splitter.addWidget(w_right)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-
+        wl, wr = QWidget(), QWidget()
+        wl.setLayout(left); wr.setLayout(right)
+        splitter.addWidget(wl); splitter.addWidget(wr)
+        splitter.setStretchFactor(0, 3); splitter.setStretchFactor(1, 2)
         layout.addWidget(splitter)
 
+    # ------------------------------------------------------------
+    # Events
+    # ------------------------------------------------------------
     def _wire_events(self):
         self.btn_add_layer.clicked.connect(self._add_layer)
         self.btn_export.clicked.connect(self._export_composite)
         self.btn_apply.clicked.connect(self._apply_prompt)
+        self.btn_plan.clicked.connect(self._plan_scene)
         self.btn_send_silly.clicked.connect(self._send_to_sillytavern)
 
-    # -------------------- Settings --------------------
-
+    # ------------------------------------------------------------
+    # Settings
+    # ------------------------------------------------------------
     def on_settings_changed(self, cfg: dict):
-        # No-op for now, but retained for future width/height/quality coupling
-        pass
+        pass  # reserved for width/height bindings
 
-    # -------------------- Layers --------------------
-
+    # ------------------------------------------------------------
+    # Layers
+    # ------------------------------------------------------------
     @Slot()
     def _add_layer(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Add Image Layer", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Add Image Layer", "", "Images (*.png *.jpg *.jpeg *.webp)"
+        )
         if not path:
             return
         pix = QPixmap(path)
@@ -106,7 +128,6 @@ class PlaygroundUI(QWidget):
         out, _ = QFileDialog.getSaveFileName(self, "Export Composite", "composite.png", "PNG (*.png)")
         if not out:
             return
-        # Render scene to image
         img = self._grab_scene()
         if img:
             img.save(out, "PNG")
@@ -124,34 +145,48 @@ class PlaygroundUI(QWidget):
             return img
         return None
 
-    # -------------------- Prompt Application --------------------
+    # ------------------------------------------------------------
+    # Server Core Integration
+    # ------------------------------------------------------------
+    @Slot()
+    def _plan_scene(self):
+        """Send current scene JSON to /scene/plan on Server Core."""
+        scene_data = self._current_scene_json()
+        self.overlay.set_text("Planning scene on server …")
+        self.overlay.start()
 
+        def _done(resp):
+            self.overlay.stop()
+            if "error" in resp:
+                error(self, "Scene Plan Failed", resp["error"])
+            else:
+                info(self, "Scene Plan Complete", json.dumps(resp, indent=2))
+                self.request_log.emit(f"Scene planned: {json.dumps(resp, indent=2)}")
+
+        self.bridge.send_scene_plan(scene_data, _done)
+
+    # ------------------------------------------------------------
+    # LM Studio Integration
+    # ------------------------------------------------------------
     @Slot()
     def _apply_prompt(self):
-        """Use LM Studio to apply prompt-based edits to a scene JSON description.
-        Strategy:
-          1) Build a compact 'scene JSON' with layers and attributes.
-          2) Send to LM Studio /chat/completions with instructions to update positions/visibility/effects.
-          3) Apply diff to local scene (placeholder: just logs the returned JSON).
-        """
+        """Apply prompt-based edits using LM Studio local LLM."""
         cfg = self._read_settings()
         if not cfg:
             QMessageBox.warning(self, "No Settings", "Settings not available.")
             return
-
         base = cfg["integrations"]["lmstudio_base_url"].rstrip("/")
         url = base + "/chat/completions"
-
         scene_desc = self._current_scene_json()
-        user_prompt = self.prompt_box.toPlainText().strip() or "Center the main character, add slight vignette."
+        user_prompt = self.prompt_box.toPlainText().strip() or "Center the main character."
         sys_prompt = (
             "You are a scene layout assistant for a visual novel engine. "
-            "Given scene JSON (layers=ordered top-down), return an updated JSON with numeric positions, scale, opacity, and simple fx tags. "
+            "Given scene JSON (layers=ordered top-down), return an updated JSON "
+            "with numeric positions, scale, opacity, and simple fx tags. "
             "Only output valid JSON."
         )
-
         body = {
-            "model": "gpt-4o-mini-uncensored-or-any-local",  # replace with your LM Studio model name
+            "model": "gpt-4o-mini-uncensored-or-any-local",
             "messages": [
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": json.dumps({"scene": scene_desc, "instruction": user_prompt})}
@@ -166,23 +201,49 @@ class PlaygroundUI(QWidget):
                     self.request_log.emit(f"LM Studio error: {r.status_code} - {r.text}")
                     return
                 data = r.json()
-                # robust extraction of JSON from response
                 out = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-                # Attempt to parse
                 try:
                     updated = json.loads(out)
                 except Exception:
-                    # try to extract JSON block
                     import re
                     m = re.search(r"\{.*\}", out, re.DOTALL)
                     updated = json.loads(m.group(0)) if m else {}
-                self.request_log.emit("Scene updated by LLM. (Apply-to-view pending mapping)")
-                # TODO: map updated positions/effects back to QGraphics items.
+                self.request_log.emit(f"Scene updated by LLM: {json.dumps(updated, indent=2)}")
             except Exception as e:
                 self.request_log.emit(f"LM Studio request failed: {e}")
 
         threading.Thread(target=_work, daemon=True).start()
 
+    # ------------------------------------------------------------
+    # SillyTavern Bridge
+    # ------------------------------------------------------------
+    @Slot()
+    def _send_to_sillytavern(self):
+        """Send current scene JSON to SillyTavern via local extension."""
+        cfg = self._read_settings()
+        if not cfg:
+            QMessageBox.warning(self, "No Settings", "Settings not available.")
+            return
+        host = cfg["integrations"]["sillytavern_host"].rstrip("/")
+        url = host + "/comfyvn/scene"
+        payload = {
+            "scene": self._current_scene_json(),
+            "audio": cfg.get("audio", {}),
+            "render": cfg.get("render", {}),
+        }
+
+        def _work():
+            try:
+                r = requests.post(url, json=payload, timeout=30)
+                self.request_log.emit(f"SillyTavern reply: {r.status_code} - {r.text[:200]}...")
+            except Exception as e:
+                self.request_log.emit(f"SillyTavern bridge failed: {e}")
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    # ------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------
     def _current_scene_json(self) -> dict:
         layers = []
         for entry in self.current_layers:
@@ -199,44 +260,11 @@ class PlaygroundUI(QWidget):
             })
         return {"layers": layers, "canvas": {"w": self.view.width(), "h": self.view.height()}}
 
-    # -------------------- SillyTavern Bridge --------------------
-
-    @Slot()
-    def _send_to_sillytavern(self):
-        """Send current scene JSON to SillyTavern via local extension.
-        Requires your custom endpoint in `sillytavern_extensions.js`.
-        """
-        cfg = self._read_settings()
-        if not cfg:
-            QMessageBox.warning(self, "No Settings", "Settings not available.")
-            return
-        host = cfg["integrations"]["sillytavern_host"].rstrip("/")
-        ext = cfg["integrations"]["sillytavern_extension"]  # reference only; ensure extension provides an HTTP API
-        # Assuming your extension exposes POST /comfyvn/scene
-        url = host + "/comfyvn/scene"
-
-        payload = {
-            "scene": self._current_scene_json(),
-            "audio": cfg.get("audio", {}),
-            "render": cfg.get("render", {}),
-        }
-
-        def _work():
-            try:
-                r = requests.post(url, json=payload, timeout=30)
-                self.request_log.emit(f"SillyTavern reply: {r.status_code} - {r.text[:200]}...")
-            except Exception as e:
-                self.request_log.emit(f"SillyTavern bridge failed: {e}")
-
-        threading.Thread(target=_work, daemon=True).start()
-
-    # -------------------- Helpers --------------------
-
     def _read_settings(self) -> Optional[dict]:
-        # find MainWindow to grab live settings
         parent = self.parent()
         while parent and not hasattr(parent, "collect_settings"):
             parent = parent.parent()
         if parent and hasattr(parent, "collect_settings"):
             return parent.collect_settings()
         return None
+                

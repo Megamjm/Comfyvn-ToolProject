@@ -1,6 +1,6 @@
 # comfyvn/gui/main_window.py
-# 🎨 ComfyVN Control Panel – v1.1.5-dev
-# Integrates Server Core 1.1.4 and GUI v0.3 Components
+# 🎨 ComfyVN Control Panel – v0.4-dev (Phase 3.3-G)
+# Integrates Dynamic TopBarMenu + Server Core 1.1.4
 # [🎨 GUI Code Production Chat]
 
 import os, sys, asyncio, json, httpx
@@ -18,15 +18,15 @@ from comfyvn.gui.components.progress_overlay import ProgressOverlay
 from comfyvn.gui.components.dialog_helpers import info, error
 from comfyvn.gui.server_bridge import ServerBridge
 from comfyvn.gui.components.task_manager_dock import TaskManagerDock
+from comfyvn.gui.components.topbar_menu import TopBarMenu
 
-# Optional world-UI support
 try:
     from comfyvn.gui.world_ui import WorldUI
     HAS_WORLD_UI = True
 except ImportError:
     HAS_WORLD_UI = False
 
-API_BASE = os.getenv("COMFYVN_API", "http://127.0.0.1:8000")
+API_BASE = os.getenv("COMFYVN_API", "http://127.0.0.1:8001")
 
 
 class MainWindow(QMainWindow):
@@ -60,7 +60,6 @@ class MainWindow(QMainWindow):
         # ----------------------------------------------------------
         self.main_tabs = QTabWidget()
 
-        # Control tab
         self.control_tab = QWidget()
         vbox = QVBoxLayout(self.control_tab)
         vbox.addWidget(self.status_label)
@@ -72,7 +71,6 @@ class MainWindow(QMainWindow):
         vbox.addWidget(self.log_view)
         vbox.addStretch()
 
-        # Other tabs
         self.settings_tab = SettingsUI()
         self.assets_tab = AssetBrowser()
         self.playground_tab = PlaygroundUI()
@@ -90,16 +88,19 @@ class MainWindow(QMainWindow):
         # ----------------------------------------------------------
         # Status-bar labels
         # ----------------------------------------------------------
-        self.version_label = QLabel("v1.1.5-dev")
+        self.version_label = QLabel("v0.4-dev")
         self.connection_label = QLabel("Server: Unknown")
         self.statusBar().addPermanentWidget(self.version_label)
         self.statusBar().addPermanentWidget(self.connection_label)
 
         # ----------------------------------------------------------
-        # Menu bar
+        # Dynamic Top Bar Menu
         # ----------------------------------------------------------
-        self._build_menu()
-        view_menu = self.menuBar().addMenu("&View")
+        self.menu_bar = TopBarMenu(self)
+        self.setMenuBar(self.menu_bar)
+
+        # Add default “View” submenu manually
+        view_menu = self.menu_bar.addMenu("&View")
         act_toggle_tasks = view_menu.addAction("Toggle Task Manager")
         act_toggle_tasks.triggered.connect(
             lambda: self.task_dock.setVisible(not self.task_dock.isVisible())
@@ -108,39 +109,27 @@ class MainWindow(QMainWindow):
         # ----------------------------------------------------------
         # Event wiring
         # ----------------------------------------------------------
-        self.refresh_button.clicked.connect(lambda: self.run_async(self.update_status()))
+        self.refresh_button.clicked.connect(self._poll_server_status)
         self.pipeline_button.clicked.connect(lambda: self.run_async(self.send_test_scene()))
 
-        # Server bridge
+        # Server bridge + polling
         self.server_bridge = ServerBridge(API_BASE)
-        self.run_async(self.load_modes())
-        self.run_async(self.update_status())
-
-        # Auto-refresh every 10 s
-        self.timer = QTimer()
-        self.timer.timeout.connect(lambda: self.run_async(self.update_status()))
-        self.timer.start(10000)
+        self._init_status_polling()
 
     # --------------------------------------------------------------
-    # Menu creation
+    # Menu reloader (used by menu_system)
     # --------------------------------------------------------------
-    def _build_menu(self):
-        menubar = self.menuBar()
+    def _reload_menus(self):
+        """Reloads all menus dynamically."""
+        self.menu_bar.clear()
+        self.menu_bar.load_menus()
 
-        file_menu = menubar.addMenu("&File")
-        act_quit = file_menu.addAction("Quit")
-        act_quit.triggered.connect(self.close)
-
-        tools_menu = menubar.addMenu("&Tools")
-        act_test_server = tools_menu.addAction("Test Server")
-        act_test_server.triggered.connect(lambda: self.server_bridge.test_connection(self._log))
-        act_refresh = tools_menu.addAction("Refresh Now")
-        act_refresh.triggered.connect(lambda: self.run_async(self.update_status()))
-
-        if HAS_WORLD_UI:
-            settings_menu = menubar.addMenu("&Settings")
-            world_action = settings_menu.addAction("World Manager")
-            world_action.triggered.connect(lambda: WorldUI().show())
+        # restore View submenu and custom toggles
+        view_menu = self.menu_bar.addMenu("&View")
+        act_toggle_tasks = view_menu.addAction("Toggle Task Manager")
+        act_toggle_tasks.triggered.connect(
+            lambda: self.task_dock.setVisible(not self.task_dock.isVisible())
+        )
 
     # --------------------------------------------------------------
     # Utility helpers
@@ -153,46 +142,39 @@ class MainWindow(QMainWindow):
         self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
 
     # --------------------------------------------------------------
+    # Polling setup + handlers
+    # --------------------------------------------------------------
+    def _init_status_polling(self):
+        """Start periodic server status polling via ServerBridge."""
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self._poll_server_status)
+        self.status_timer.start(5000)
+        self._poll_server_status()  # initial check
+
+    def _poll_server_status(self):
+        """Fetch /status from Server Core."""
+        def _cb(resp):
+            if "mode" in resp:
+                mode = resp.get("mode", "unknown")
+                self.status_label.setText(f"Server: 🟢 Online | Mode: {mode}")
+                self.connection_label.setText(f"Server: {mode} mode")
+                self.connection_label.setStyleSheet("color: lime;")
+                if self.mode_box.findText(mode) < 0:
+                    self.mode_box.addItem(mode)
+                    self.mode_box.setCurrentText(mode)
+            else:
+                self.status_label.setText("Server: 🔴 Offline")
+                self.connection_label.setText("Server: Offline")
+                self.connection_label.setStyleSheet("color: red;")
+        self.server_bridge.get_status(_cb)
+
+    # --------------------------------------------------------------
     # Async REST operations
     # --------------------------------------------------------------
-    async def update_status(self):
-        """Poll Server Core state."""
-        self.overlay.set_text("Updating status …")
-        self.overlay.start()
-        try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(f"{API_BASE}/gui/state")
-                data = r.json()
-                online = data.get("status") == "online"
-                mode = data.get("mode", "Unknown")
-                self.status_label.setText(
-                    f"Server status: {'🟢 Online' if online else '🔴 Offline'} | Mode: {mode}"
-                )
-                self.connection_label.setText("Server: Connected" if online else "Server: Offline")
-                self._log(f"Server response: {data}")
-        except Exception as e:
-            self.status_label.setText(f"Error contacting server: {e}")
-            self.connection_label.setText("Server: Error")
-            self._log(f"[Error] update_status: {e}")
-        finally:
-            self.overlay.stop()
-
-    async def load_modes(self):
-        """Fetch available modes from Server Core."""
-        try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(f"{API_BASE}/mode/list")
-                modes = r.json().get("available_modes", [])
-                self.mode_box.clear()
-                self.mode_box.addItems(modes)
-                self._log(f"Loaded modes: {modes}")
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load modes: {e}")
-            self._log(f"[Error] load_modes: {e}")
-
     async def send_test_scene(self):
-        """Send sample scene payload to Server Core pipeline."""
+        """Send a sample scene payload to /scene/render for testing."""
         scene = {
+            "scene_id": "test_scene",
             "text": "[happy] The sun sets over the lake.",
             "characters": [{"name": "Caelum"}, {"name": "Luna"}],
             "background": "lake_evening"
@@ -201,10 +183,10 @@ class MainWindow(QMainWindow):
         self.overlay.start()
         try:
             async with httpx.AsyncClient() as client:
-                r = await client.post(f"{API_BASE}/scene/pipeline", json=scene)
+                r = await client.post(f"{API_BASE}/scene/render", json=scene)
                 res = r.json()
-                self._log(f"Pipeline Response:\n{json.dumps(res, indent=2)}")
-                info(self, "Pipeline Complete", "Test scene successfully sent to Server Core.")
+                self._log(f"Render Response:\n{json.dumps(res, indent=2)}")
+                info(self, "Render Complete", "Test scene successfully sent to Server Core.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to send scene: {e}")
             self._log(f"[Error] send_test_scene: {e}")
@@ -226,7 +208,6 @@ def main():
     window = MainWindow(loop)
     window.show()
 
-    # integrate asyncio loop with Qt
     def pump_loop():
         loop.stop()
         loop.run_forever()
