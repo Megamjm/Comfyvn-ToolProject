@@ -1,147 +1,81 @@
-# 🎮 VN Toolchain — ComfyUI + Ren'Py Visual Novel Automation
+ComfyVN — Visual Novel Toolchain
+Version: 0.2 Development Branch
+License: GPL-3.0
 
-**VN Toolchain** is a modular open-source suite that bridges  
-**ComfyUI**, **SillyTavern**, **LM Studio**, and **Ren'Py**  
-to generate visual-novel-style experiences directly from AI chat and renders.
+Description:
+ComfyVN is a modular, AI-assisted Visual Novel production system designed to bridge ComfyUI, SillyTavern, and Ren’Py into a unified creative pipeline. It converts AI-driven dialogues or existing chat logs into structured, playable visual novels with dynamic rendering, layered sprites, and scalable interaction depth.
 
-It provides:
-- 🧠 LLM → Scene/Dialogue → Render → Ren'Py pipeline
-- 🧩 Flask-based web dashboard with configurable options
-- 🖼️ Gallery for approving/rejecting ComfyUI renders
-- 🎬 Automatic Ren'Py `.rpy` scene exporter
-- ▶️ Launcher buttons for previewing and playing your VN
-- 🔧 Full JSON/metadata sidecar tracking for re-renders
+Project Objective:
+To create a flexible multi-mode Visual Novel engine that can:
+• Reuse and render text-based chat sessions as VN storylines.
+• Integrate ComfyUI for generative art and scene rendering.
+• Support Ren’Py for classic VN presentation and export.
+• Leverage SillyTavern for adaptive dialogue logic and memory systems.
+• Allow interactive live generation modes for dynamic storytelling.
 
----
+Core Systems Overview:
 
-## 🧭 Project Structure
-VNToolchain/
-├─ server/ # Flask backend + templates
-│ ├─ app.py # Main application file
-│ ├─ templates/
-│ │ └─ index.html # Web UI
-│ └─ static/
-│ └─ js/app.js # Client-side logic
-│
-├─ data/ # Runtime data (auto-generated)
-│ ├─ assets/
-│ ├─ gallery/
-│ ├─ summaries/
-│ ├─ export_queue/
-│ └─ renpy_project/ # Output Ren'Py game project
-│
-├─ launch.bat # Start Flask server
-├─ launch_renpy.bat # Launch or open Ren'Py project
-├─ requirements.txt # Python dependencies
-└─ .gitignore # Keeps local data & SDKs out of Git
+Logic Layer (SillyTavern Integration)
+Handles dialogue, emotion inference, memory, and branching logic.
 
-yaml
-Copy code
+Render Layer (ComfyUI + Server Core)
+Generates sprites, environments, and effects dynamically based on structured scene data.
 
----
+Presentation Layer (Ren’Py)
+Displays the story as a fully navigable visual novel.
 
-## ⚙️ Setup
+Render Stages:
+0 — Classic VN (static)
+1 — Reactive VN (expressions auto-sync per line)
+2 — Active VN (animated entries, persona sprite support)
+3 — Semi-Live VN (basic 2D world movement)
+4 — Cinematic VN (AI-generated video or advanced FX)
 
-### 1. Install dependencies
-Install Python 3.10+ and Git.  
-Then in PowerShell (Windows):
+World Lore Integration:
+The system reads world-lore JSON files to automatically set environmental themes, props, colors, and ambience for each scene. The World_Loader module maintains cached world profiles and dynamically merges location and faction data into rendering tasks.
 
-bash
-git clone https://github.com/<YOUR_USERNAME>/VN-Toolchain.git
-cd VN-Toolchain
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-2. (Optional) Link to ComfyUI
-Ensure your ComfyUI instance runs at:
+Persona and Group Logic:
+User avatars can appear as characters, mirror expressions, or share frame space with dialogue participants. Multi-character scenes are arranged automatically using Persona_Manager for spatial layout and group focus.
 
-cpp
-Copy code
-http://127.0.0.1:8188
-or change the endpoint using an environment variable:
+Audio and Effects:
+Audio_Manager manages toggles for sound, music, ambience, voice, and FX. Each media type can be globally or per-scene controlled. Fallback detection automatically disables features unsupported by the host hardware.
 
-bash
-Copy code
-set COMFY_HOST=http://127.0.0.1:8188
-3. Launch VN Toolchain
-bash
-Copy code
-launch.bat
-Then open the dashboard:
-👉 http://127.0.0.1:5000
+Asset and Sprite System:
+Handles sprite composition, background NPC generation, and asset caching. Export_Manager provides batch character dumps for all expressions, poses, and outfits. NPC_Manager populates background crowds as faceless silhouettes for immersion.
 
-🖥️ Dashboard Overview
-Section	Description
-⚙️ Options	Configure polling, themes, and automation behavior.
-🖼️ Gallery	Displays generated renders for approval/rejection.
-🧠 Summary	Creates LLM scene summaries for dialogue export.
-📦 Queue	Adds approved renders to the Ren'Py export queue.
-🎮 Export / Play	Builds .rpy scene files and launches the VN.
-🌐 Preview	Opens a web-based view of exported scripts.
+Scene Preprocessing:
+Scene_Preprocessor merges world, character, emotion, and environment data into a unified Scene JSON format. This serves as the primary contract between all subsystems.
 
-🧩 Environment Variables
-Variable	Default	Description
-COMFY_HOST	http://127.0.0.1:8188	ComfyUI REST endpoint
-VN_AUTH	0	Enable admin login (1 to require password)
-VN_PASSWORD	admin	Default admin password
-VN_DATA_DIR	data	Custom path for data directory
+Playground System:
+A live editing environment that allows scene modification through natural-language prompts. Users can change lighting, emotions, or setting details and commit changes as new narrative branches.
 
-🎬 Using Ren'Py
-Local SDK
-Place your Ren'Py SDK folder next to this project:
+LoRA Management:
+LoRA_Manager searches, registers, and caches character or object LoRAs for consistent visual reproduction. Optional lightweight training may be enabled for recurring characters or assets.
 
-Copy code
-VNToolchain/
-├─ renpy/
-│   └─ renpy.exe
-└─ launch_renpy.bat
-Launch
-Click ▶️ Play VN in the web dashboard
-or run:
+Server Core:
+The FastAPI server routes all subsystem operations. Endpoints cover chat ingestion, scene preprocessing, rendering, LoRA search, asset export, safety profiles, and playground operations.
 
-bash
-Copy code
-launch_renpy.bat
-If no SDK is found, the launcher will prompt you to install it.
+Packaging and Export:
+Ren’Py export scripts convert processed scene graphs into .rpy files for final VN assembly. Asset bundles and metadata are packaged for deployment or distribution.
 
-📦 Export Workflow
-Generate or sync renders from ComfyUI (🔄 Sync ComfyUI)
+Performance Profiles:
+ComfyVN dynamically scales based on detected hardware capabilities, disabling or reducing high-cost rendering and media when necessary.
 
-Approve images (✅)
+Safety and Content Controls:
+Three safety tiers (Safe, Neutral, Mature) govern rendering limits and filtering behavior. Each prompt or generation task is validated through the safety manager before execution.
 
-Generate summaries (🧠)
+Development Phase Summary (as of version 0.2):
+• All subsystem scaffolds established.
+• Core server endpoints defined.
+• World_Loader integrated and verified.
+• Audio toggles and environment injection in active development.
+• Playground mutation API under construction.
+• GUI integration ongoing.
+• LoRA caching functional; training disabled by default.
 
-Add to export queue (📦)
-
-Export to Ren'Py (🎮)
-
-Play or preview scenes (▶️ / 🌐)
-
-🔒 Security Notes
-Authentication can be toggled via VN_AUTH=1 and VN_PASSWORD.
-
-The web server runs locally by default (127.0.0.1).
-
-🧰 Roadmap
-Milestone	Description
-✅ Core VN Flow	Queue → Gallery → Summary → Export → Launch
-🚧 Scene Graph	Branching VN routes and dialogue linking
-🚧 LLM Integration	Automatic script generation from chats
-🚧 Theme Engine	Change visual themes (Sakura, Neon, etc.)
-🚧 Sprite Generator	Multi-ControlNet consistent character sprites
-
-🧾 License
-MIT License © 2025
-Contributors welcome — please open an issue or pull request!
-
-🤝 Acknowledgements
-ComfyUI
-
-Ren'Py
-
-SillyTavern
-
-LM Studio
-
-yaml
-Copy code
+Next Objectives:
+• Complete full render mode switching via Mode_Manager.
+• Implement world-aware ambience defaults.
+• Expand GUI for scene editing and system configuration.
+• Begin cinematic renderer integration (Stage 4).
+• Complete Playground mutation and export testing.
