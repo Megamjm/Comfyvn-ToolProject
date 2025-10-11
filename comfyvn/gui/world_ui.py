@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton,
     QFileDialog, QLineEdit, QMessageBox
 )
-from modules.world_loader import WorldLoader
+from comfyvn.modules.sync.world_loader import WorldLoader
 from gui.components.status_bar import StatusBar
 
 
