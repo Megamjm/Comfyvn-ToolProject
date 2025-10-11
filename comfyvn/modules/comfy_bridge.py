@@ -1,12 +1,10 @@
 # comfyvn/modules/comfy_bridge.py
-# ⚙️ 3. Server Core Production Chat — ComfyUI Bridge
+# ⚙️ 3. Server Core Production Chat — Async Job Polling Integrated [ComfyVN Architect]
 
-import json
-import requests
-import time
+import json, requests, time, threading
 
 class ComfyUIBridge:
-    """Handles all communications with ComfyUI REST API."""
+    """Handles all communications with ComfyUI REST API, now async-capable."""
 
     def __init__(self, base_url: str = "http://127.0.0.1:8188"):
         self.base_url = base_url.rstrip("/")
@@ -24,15 +22,11 @@ class ComfyUIBridge:
         except Exception as e:
             return {"error": str(e), "mock": True}
 
-    def get_workflows(self):
-        """List available ComfyUI workflows."""
-        return self._safe_request("workflows", method="GET")
-
+    # -------------------------------
+    # Core Job Queue
+    # -------------------------------
     def queue_render(self, prompt_text: str, output_path: str = "./outputs/latest.png"):
-        """
-        Sends a render request to ComfyUI based on a text prompt.
-        You can later expand this to use predefined workflow templates.
-        """
+        """Submit render job to ComfyUI queue."""
         payload = {
             "prompt": {
                 "1": {
@@ -45,15 +39,35 @@ class ComfyUIBridge:
             },
             "output": output_path
         }
-
         return self._safe_request("prompt", payload)
 
-    def poll_result(self, job_id: str, interval: float = 1.0, timeout: float = 15.0):
-        """Polls ComfyUI for job completion."""
-        start = time.time()
-        while time.time() - start < timeout:
+    # -------------------------------
+    # Polling System
+    # -------------------------------
+    def poll_job(self, job_id: str, timeout: int = 30, interval: int = 2):
+        """Poll ComfyUI history for job completion."""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
             res = self._safe_request(f"history/{job_id}", method="GET")
             if "error" not in res and res.get("status") == "complete":
-                return res
+                return {"status": "complete", "result": res}
             time.sleep(interval)
         return {"status": "timeout", "job_id": job_id}
+
+    def queue_and_wait(self, prompt_text: str, output_path: str = "./outputs/latest.png", wait: bool = True):
+        """Combined: Queue + optional wait for result."""
+        queue_res = self.queue_render(prompt_text, output_path)
+        job_id = queue_res.get("job_id") or queue_res.get("id") or "mock_job"
+
+        if not wait:
+            return {"status": "queued", "job_id": job_id}
+
+        # Polling in background thread for non-blocking operation
+        result_container = {"status": "polling", "job_id": job_id}
+
+        def _poll():
+            result_container.update(self.poll_job(job_id))
+
+        t = threading.Thread(target=_poll, daemon=True)
+        t.start()
+        return result_container
