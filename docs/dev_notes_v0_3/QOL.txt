@@ -1,0 +1,9 @@
+Hot Reload System: Reload scenes without restarting the server.
+
+Version Snapshot System: Save project state before each major render or edit.
+
+Render Time Analytics: Show per-frame or per-scene rendering duration.
+
+Error Heatmap: Display where failed renders occur most frequently.
+
+Collaborative Notes: In-GUI comments system for team-based projects.

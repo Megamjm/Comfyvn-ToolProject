@@ -1,0 +1,13 @@
+Goal: Expand immersion and cross-world reusability.
+
+Ideas
+
+Lore-based Lighting Profiles: Day/night cycles automatically apply via world metadata.
+
+Dynamic Weather States: Rain, fog, snow, or wind triggered by story cues or emotion intensity.
+
+Culture Rulesets: Worlds define clothing codes, architecture, and music styles to maintain consistency.
+
+Parallel Worlds: Allow simultaneous “world layers” (e.g., dream vs real) for dual-scene transitions.
+
+GeoNodes: Map-based lore system—characters and scenes tagged by coordinates in world data.

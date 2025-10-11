@@ -1,0 +1,13 @@
+Goal: Maximize asset reusability and render consistency.
+
+Ideas
+
+Pose Library System: Store reusable poses that can be applied across characters.
+
+Sprite Layer Debugger: Visual preview showing how each render layer stacks (BG, props, character, FX).
+
+Texture Compression Profiles: Optimize different asset types automatically for performance tiers.
+
+Crowd Generator: Randomize faceless NPCs by scene type (school, street, office).
+
+Camera Focus Simulation: Add depth blur on background characters during dialogue focus.

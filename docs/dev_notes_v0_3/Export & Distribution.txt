@@ -1,0 +1,13 @@
+Goal: Make delivery seamless for creators.
+
+Ideas
+
+Smart Asset Bundling: Only package assets used in selected scenes.
+
+Dynamic Translation Support: Auto-export dialogue files ready for localization.
+
+Export Quality Profiles: “Low-Res Preview,” “HD Render,” “Cinematic Export.”
+
+VN-to-Video Compilation: Automatically render a full route as an MP4 using ComfyUI cinematic workflow.
+
+Publishing API: One-click publish to Itch.io or local HTML5 VN viewer.

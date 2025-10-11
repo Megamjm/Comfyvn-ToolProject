@@ -1,0 +1,13 @@
+Goal: Increase automation and user control over rendering and data flow.
+
+Ideas
+
+Batch Chat Importer: Import entire conversation folders from SillyTavern automatically and tag them by arc or character.
+
+Smart Scene Builder: Uses emotion + world context to suggest camera angles and sprite framing.
+
+Auto Scene Diffing: Compare two scene JSONs and highlight differences in characters, emotions, or backgrounds.
+
+Render Queue Prioritization: Let users set job priority (story scenes vs previews vs dumps).
+
+API Bridge for Extensions: Open endpoint hooks so modders can inject their own pre/post-processing steps.
