@@ -1,124 +1,175 @@
-# comfyvn/modules/pose_manager.py
-# 🧍 PoseManager – Fetches, imports, and manages pose libraries (ComfyVN_Architect)
+# comfyvn/gui/pose_browser.py
+# 🎨 Pose Browser + Preview Panel for Asset & Sprite System (ComfyVN_Architect)
 
 import os
 import json
-import requests
-from datetime import datetime
-from typing import List, Dict, Optional
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QHBoxLayout, QMessageBox, QTextEdit, QSplitter, QFrame
+)
+from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QSize
 
-class PoseManager:
-    """
-    Handles automatic fetching, parsing, and indexing of pose packs
-    from open repositories (e.g. Pose Depot, OpenPoses.com).
-    """
+from modules.pose_manager import PoseManager
 
-    def __init__(self, base_dir: str = "./assets/poses"):
-        self.base_dir = base_dir
-        self.registry_path = os.path.join(self.base_dir, "pose_index.json")
-        os.makedirs(self.base_dir, exist_ok=True)
-        self.registry: Dict[str, dict] = {}
 
-        if os.path.exists(self.registry_path):
-            with open(self.registry_path, "r", encoding="utf-8") as f:
-                self.registry = json.load(f)
+class PoseBrowser(QWidget):
+    """GUI interface for browsing, previewing, and selecting character poses."""
 
-    # -----------------------------------------------------------
-    # 📦 Pose Fetching
-    # -----------------------------------------------------------
-    def fetch_pose_pack(self, url: str, pack_name: str):
-        """
-        Download a remote JSON pose pack (if available) and register poses.
-        Supports public JSON URLs (e.g. from Pose Depot / HuggingFace repos).
-        """
-        try:
-            response = requests.get(url, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            print(f"[ERROR] Failed to fetch pose pack '{pack_name}': {e}")
-            return None
+    def __init__(self, on_pose_selected=None):
+        super().__init__()
+        self.pose_manager = PoseManager()
+        self.on_pose_selected = on_pose_selected
+        self.selected_pose_id = None
 
-        if not isinstance(data, dict) or "poses" not in data:
-            print(f"[WARN] Pose pack format invalid at {url}")
-            return None
+        self.setWindowTitle("🧍 Pose Browser + Preview")
+        self.resize(900, 500)
 
-        poses = data["poses"]
-        for pose_id, pose_info in poses.items():
-            entry = {
-                "pose_id": pose_id,
-                "metadata": {
-                    "source": pack_name,
-                    "imported_at": datetime.now().isoformat()
-                },
-                "skeleton": pose_info.get("skeleton", {}),
-                "preview_image": pose_info.get("preview", "")
-            }
-            self.registry[pose_id] = entry
+        # Root layout with splitter (list + preview)
+        main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
 
-        self._save_registry()
-        print(f"[OK] Imported {len(poses)} poses from {pack_name}")
-        return poses
+        title = QLabel("🧍 Pose Browser & Inspector")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-weight: bold; font-size: 18px;")
+        main_layout.addWidget(title)
 
-    # -----------------------------------------------------------
-    # 📂 Local Import
-    # -----------------------------------------------------------
-    def import_local_pose_folder(self, folder_path: str, pack_name: str):
-        """
-        Import all JSON skeleton files from a local folder.
-        """
-        count = 0
-        for fname in os.listdir(folder_path):
-            if not fname.endswith(".json"):
-                continue
-            path = os.path.join(folder_path, fname)
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    skeleton = json.load(f)
-                pose_id = os.path.splitext(fname)[0]
-                entry = {
-                    "pose_id": pose_id,
-                    "metadata": {"source": pack_name},
-                    "skeleton": skeleton,
-                    "preview_image": ""
-                }
-                self.registry[pose_id] = entry
-                count += 1
-            except Exception as e:
-                print(f"[WARN] Skipped {fname}: {e}")
+        splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(splitter)
 
-        self._save_registry()
-        print(f"[OK] Imported {count} local poses from {pack_name}")
-        return count
+        # ---------------------------------------------------
+        # Pose List
+        # ---------------------------------------------------
+        self.pose_list = QListWidget()
+        self.pose_list.setViewMode(QListWidget.IconMode)
+        self.pose_list.setIconSize(QSize(96, 96))
+        self.pose_list.setSpacing(10)
+        self.pose_list.itemClicked.connect(self.preview_pose)
+        splitter.addWidget(self.pose_list)
 
-    # -----------------------------------------------------------
-    # 🔎 Accessors
-    # -----------------------------------------------------------
-    def list_poses(self) -> List[str]:
-        return list(self.registry.keys())
+        # ---------------------------------------------------
+        # Preview Panel
+        # ---------------------------------------------------
+        preview_panel = QWidget()
+        preview_layout = QVBoxLayout()
+        preview_panel.setLayout(preview_layout)
+        splitter.addWidget(preview_panel)
 
-    def get_pose(self, pose_id: str) -> Optional[dict]:
-        return self.registry.get(pose_id)
+        self.preview_image = QLabel("No Pose Selected")
+        self.preview_image.setAlignment(Qt.AlignCenter)
+        self.preview_image.setFixedHeight(250)
+        self.preview_image.setStyleSheet(
+            "border: 1px solid #888; background-color: #222; color: #fff;"
+        )
+        preview_layout.addWidget(self.preview_image)
 
-    def _save_registry(self):
-        os.makedirs(self.base_dir, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.registry, f, indent=2)
+        self.pose_metadata_label = QLabel("Metadata:")
+        self.pose_metadata_label.setAlignment(Qt.AlignLeft)
+        self.pose_metadata_label.setStyleSheet("font-weight: bold;")
+        preview_layout.addWidget(self.pose_metadata_label)
 
-    # -----------------------------------------------------------
-    # 🔁 Auto Fetch Utility
-    # -----------------------------------------------------------
-    def auto_fetch_all(self):
-        """
-        Automatically fetch open pose sources and register them.
-        These sources are known to contain JSON-based or convertible pose data.
-        """
-        sources = {
-            "PoseDepot": "https://raw.githubusercontent.com/a-lgil/pose-depot/main/poses.json",
-            "DynamicPosePackage": "https://raw.githubusercontent.com/NextDiffusionAI/dynamic-pose-package/main/poses.json",
-            "OpenPoses": "https://raw.githubusercontent.com/openposes/openposes/main/data/poses.json"
+        self.metadata_view = QTextEdit()
+        self.metadata_view.setReadOnly(True)
+        self.metadata_view.setFrameShape(QFrame.StyledPanel)
+        preview_layout.addWidget(self.metadata_view)
+
+        # ---------------------------------------------------
+        # Buttons
+        # ---------------------------------------------------
+        btn_layout = QHBoxLayout()
+        main_layout.addLayout(btn_layout)
+
+        self.btn_refresh = QPushButton("🔄 Refresh Poses")
+        self.btn_fetch = QPushButton("🌐 Auto-Fetch Poses")
+        self.btn_select = QPushButton("✅ Assign Pose")
+
+        btn_layout.addWidget(self.btn_refresh)
+        btn_layout.addWidget(self.btn_fetch)
+        btn_layout.addWidget(self.btn_select)
+
+        self.btn_refresh.clicked.connect(self.refresh_pose_list)
+        self.btn_fetch.clicked.connect(self.auto_fetch)
+        self.btn_select.clicked.connect(self.confirm_selection)
+
+        # Initial load
+        self.refresh_pose_list()
+
+    # ---------------------------------------------------
+    # Pose Management
+    # ---------------------------------------------------
+    def refresh_pose_list(self):
+        """Reload the available poses from the registry."""
+        self.pose_list.clear()
+        poses = self.pose_manager.registry
+        if not poses:
+            self.pose_list.addItem("No poses available. Try auto-fetching.")
+            return
+
+        for pose_id, pose in poses.items():
+            item = QListWidgetItem(pose_id)
+            preview = pose.get("preview_image", "")
+            if preview and os.path.exists(preview):
+                pixmap = QPixmap(preview)
+                if not pixmap.isNull():
+                    icon = QIcon(pixmap.scaled(96, 96, Qt.KeepAspectRatio))
+                    item.setIcon(icon)
+            else:
+                item.setIcon(QIcon())  # fallback
+            item.setToolTip(f"{pose_id} — {pose.get('metadata', {}).get('source', 'Unknown')}")
+            self.pose_list.addItem(item)
+
+    def auto_fetch(self):
+        """Fetch from known public pose sources."""
+        QMessageBox.information(self, "Fetching", "Fetching open pose packs (this may take a moment)...")
+        self.pose_manager.auto_fetch_all()
+        self.refresh_pose_list()
+        QMessageBox.information(self, "Complete", "Pose packs fetched and loaded.")
+
+    def preview_pose(self, item):
+        """Display preview + metadata for selected pose."""
+        pose_id = item.text()
+        self.selected_pose_id = pose_id
+        pose_data = self.pose_manager.get_pose(pose_id)
+        if not pose_data:
+            return
+
+        preview_path = pose_data.get("preview_image", "")
+        if preview_path and os.path.exists(preview_path):
+            pixmap = QPixmap(preview_path)
+            self.preview_image.setPixmap(
+                pixmap.scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        else:
+            self.preview_image.setText("🧍 No preview available")
+
+        # Display metadata and skeleton JSON (trimmed for readability)
+        meta = pose_data.get("metadata", {})
+        skeleton = pose_data.get("skeleton", {})
+        info = {
+            "pose_id": pose_id,
+            "source": meta.get("source", "Unknown"),
+            "imported_at": meta.get("imported_at", "Unknown"),
+            "keypoints": len(skeleton) if isinstance(skeleton, dict) else "N/A",
         }
 
-        for name, url in sources.items():
-            print(f"Fetching {name}...")
-            self.fetch_pose_pack(url, name)
+        meta_text = json.dumps(info, indent=2)
+        if skeleton:
+            meta_text += "\n\nSkeleton (truncated):\n" + json.dumps(
+                {k: skeleton[k] for k in list(skeleton)[:5]}, indent=2
+            )
+
+        self.metadata_view.setText(meta_text)
+
+    def confirm_selection(self):
+        """Send selected pose back to Asset Manager or Exporter."""
+        if not self.selected_pose_id:
+            QMessageBox.warning(self, "No Pose", "Please select a pose before confirming.")
+            return
+
+        pose_data = self.pose_manager.get_pose(self.selected_pose_id)
+        if self.on_pose_selected:
+            self.on_pose_selected(self.selected_pose_id, pose_data)
+        QMessageBox.information(
+            self, "Pose Selected", f"Pose '{self.selected_pose_id}' assigned successfully."
+        )
+        self.close()

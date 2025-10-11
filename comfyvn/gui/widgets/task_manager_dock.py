@@ -1,6 +1,6 @@
 # comfyvn/gui/components/task_manager_dock.py
-# 🎨 ComfyVN GUI | Phase 3.2 Sync
-# Live Job Stream + ServerBridge integration
+# 🎨 ComfyVN Task Manager Dock – v1.2 (Phase 3.4-F)
+# Integrated with TaskManagerControls + JobFilterModel + ServerBridge
 # [🎨 GUI Code Production Chat]
 
 import os, json, threading, asyncio, websockets
@@ -8,17 +8,20 @@ from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QPushButton, QMenu, QHeaderView, QMessageBox
+    QLineEdit, QHBoxLayout, QPushButton, QMenu, QHeaderView, QMessageBox, QSplitter
 )
 from PySide6.QtCore import Qt, QTimer, QPoint, QUrl, QThread, Signal
-from PySide6.QtGui import QDesktopServices, QIcon, QCursor, QSystemTrayIcon
+from PySide6.QtGui import QDesktopServices, QIcon, QSystemTrayIcon, QCursor
 
 from comfyvn.gui.components.task_console_window import TaskConsoleWindow
 from comfyvn.gui.server_bridge import ServerBridge
+from comfyvn.gui.components.task_manager_controls import TaskManagerControls
+from comfyvn.gui.components.job_filter_model import JobFilterModel
+from comfyvn.gui.components.charts.resource_chart_widget import ResourceChartWidget
 
 
 # ---------------------------------------------------------------------------
-# Background WebSocket Thread
+# Background WebSocket Worker
 # ---------------------------------------------------------------------------
 class _WebSocketWorker(QThread):
     message_received = Signal(str)
@@ -52,7 +55,7 @@ class _WebSocketWorker(QThread):
 # Task Manager Dock
 # ---------------------------------------------------------------------------
 class TaskManagerDock(QDockWidget):
-    """ComfyVN Task Manager – WebSocket + Polling Fallback via ServerBridge."""
+    """ComfyVN Task Manager – Live Job Stream, Filters, and Optimization Controls."""
 
     def __init__(self, server_url="http://127.0.0.1:8001", parent=None):
         super().__init__("Pending Tasks", parent)
@@ -61,24 +64,33 @@ class TaskManagerDock(QDockWidget):
         self.ws_url = self.server_url.replace("http", "ws") + "/ws/jobs"
 
         self.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-        self.setMinimumWidth(450)
+        self.setMinimumWidth(520)
 
-        # -------------------- UI Setup --------------------
+        # -------------------- Core UI --------------------
         container = QWidget()
         vlayout = QVBoxLayout(container)
         vlayout.setContentsMargins(5, 5, 5, 5)
+        vlayout.setSpacing(6)
         self.setWidget(container)
 
+        # Controls bar
+        self.controls = TaskManagerControls(self.server_url, self)
+        self.controls.message.connect(self._notify)
+        self.controls.refresh_jobs.connect(self._poll_fallback)
+        vlayout.addWidget(self.controls)
+
+        # Filter and export bar
         filter_bar = QHBoxLayout()
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("Filter jobs (type/status)…")
         self.filter_edit.textChanged.connect(self._apply_filter)
-        self.btn_export_logs = QPushButton("Export All Logs")
+        self.btn_export_logs = QPushButton("💾 Export All Logs")
         self.btn_export_logs.clicked.connect(self._export_all_logs)
         filter_bar.addWidget(self.filter_edit)
         filter_bar.addWidget(self.btn_export_logs)
         vlayout.addLayout(filter_bar)
 
+        # Job table
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["ID", "Type", "Status", "Progress"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -88,9 +100,15 @@ class TaskManagerDock(QDockWidget):
         self.table.cellDoubleClicked.connect(self._open_console)
         vlayout.addWidget(self.table)
 
+        # Resource chart
+        self.chart = ResourceChartWidget(self)
+        vlayout.addWidget(self.chart)
+
+        # System tray notifications
         self.tray = QSystemTrayIcon(QIcon.fromTheme("dialog-information"), parent)
         self.tray.setVisible(True)
 
+        # Internal state
         self._latest_jobs = []
         self.log_dir = Path("./logs/jobs")
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -100,11 +118,18 @@ class TaskManagerDock(QDockWidget):
         # -------------------- Networking --------------------
         self.timer = QTimer()
         self.timer.timeout.connect(self._poll_fallback)
-        self.timer.start(10000)  # every 10 s
+        self.timer.start(10000)  # every 10 seconds
 
         self.ws_thread = _WebSocketWorker(self.ws_url)
         self.ws_thread.message_received.connect(self._handle_ws_message)
         self.ws_thread.start()
+
+        # Job filter model
+        self.filter_model = JobFilterModel(self)
+        self.controls.chk_cpu.stateChanged.connect(self._update_filters)
+        self.controls.chk_gpu.stateChanged.connect(self._update_filters)
+        self.controls.chk_active.stateChanged.connect(self._update_filters)
+        self.controls.chk_failed.stateChanged.connect(self._update_filters)
 
     # ===============================================================
     # WebSocket Handling
@@ -136,7 +161,7 @@ class TaskManagerDock(QDockWidget):
         self._check_notifications(jobs)
 
     # ===============================================================
-    # Polling Fallback via ServerBridge
+    # Polling Fallback
     # ===============================================================
     def _poll_fallback(self):
         """Fallback job polling using ServerBridge."""
@@ -145,11 +170,10 @@ class TaskManagerDock(QDockWidget):
             self._latest_jobs = jobs
             self._update_table(jobs)
             self._save_log(jobs)
-
         self.bridge.poll_jobs(_cb)
 
     # ===============================================================
-    # Table + Filtering
+    # Table + Filters
     # ===============================================================
     def _update_table(self, jobs):
         self.table.setRowCount(len(jobs))
@@ -181,17 +205,36 @@ class TaskManagerDock(QDockWidget):
             self.table.setItem(row, 2, status_item)
             self.table.setItem(row, 3, prog_item)
 
+    def _update_filters(self):
+        self.filter_model.set_filters(self.controls.collect_filters())
+        self._apply_filter()
+
     def _apply_filter(self):
         text = self.filter_edit.text().lower().strip()
         for i in range(self.table.rowCount()):
-            match = any(
+            row_match = any(
                 text in (self.table.item(i, c).text().lower() if self.table.item(i, c) else "")
                 for c in range(self.table.columnCount())
             )
-            self.table.setRowHidden(i, not match if text else False)
+            if text:
+                self.table.setRowHidden(i, not row_match)
+            else:
+                filters = self.controls.collect_filters()
+                job_type = self.table.item(i, 1).text().lower() if self.table.item(i, 1) else ""
+                job_status = self.table.item(i, 2).text().lower() if self.table.item(i, 2) else ""
+                hide = False
+                if filters["cpu_only"] and "cpu" not in job_type:
+                    hide = True
+                if filters["gpu_only"] and "gpu" not in job_type:
+                    hide = True
+                if filters["active"] and job_status not in ("running", "active", "processing"):
+                    hide = True
+                if filters["failed"] and job_status not in ("failed", "error"):
+                    hide = True
+                self.table.setRowHidden(i, hide)
 
     # ===============================================================
-    # Context Menu & Job Actions
+    # Context Menu & Actions
     # ===============================================================
     def _show_menu(self, pos: QPoint):
         menu = QMenu(self)
@@ -207,7 +250,6 @@ class TaskManagerDock(QDockWidget):
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _cancel_jobs(self, job_ids):
-        """Cancel jobs using ServerBridge cancel_job()"""
         for jid in job_ids:
             self.bridge.cancel_job(jid, lambda r: None)
 
