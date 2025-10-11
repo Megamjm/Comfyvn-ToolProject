@@ -1,0 +1,9 @@
+Procedural Soundscapes: Generate ambient sounds dynamically (e.g., cafeteria chatter volume changes).
+
+AI-TTS Voice Pack Manager: Integrate open TTS models so users can assign voices to characters.
+
+Environmental Audio Zones: Volume/filters change when scene camera moves (e.g., echo in gym).
+
+Adaptive Music: Background tracks shift with emotion tone or dialogue sentiment.
+
+SFX Chaining: Combine multiple sound layers (e.g., footsteps + echo + prop movement) for realism.

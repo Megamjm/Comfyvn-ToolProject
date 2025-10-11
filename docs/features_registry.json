@@ -1,0 +1,438 @@
+{
+  "version": "0.3",
+  "phase": "Feature Expansion and Creative Systems",
+  "features": [
+    {
+      "id": "gui_graph_editor",
+      "name": "Scene Flow Graph Editor",
+      "subsystem": "GUI",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Node-based editor for visual story flow and branching route creation."
+    },
+    {
+      "id": "gui_live_preview",
+      "name": "Live Render Preview",
+      "subsystem": "GUI",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Embedded window displaying current scene composition and updates in real time."
+    },
+    {
+      "id": "gui_asset_dragdrop",
+      "name": "Asset Drag-and-Drop Registration",
+      "subsystem": "GUI",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Allow users to import image or LoRA files directly into GUI for auto registration."
+    },
+    {
+      "id": "gui_performance_overlay",
+      "name": "Performance Overlay",
+      "subsystem": "GUI",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Display live resource usage and automatically adjust rendering mode."
+    },
+    {
+      "id": "gui_timeline",
+      "name": "Narrative Timeline",
+      "subsystem": "GUI",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Graphical timeline of plot progressions and branching points."
+    },
+    {
+      "id": "server_batch_import",
+      "name": "Batch Chat Importer",
+      "subsystem": "Server Core",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Convert SillyTavern chat logs into structured scene JSON files."
+    },
+    {
+      "id": "server_scene_builder",
+      "name": "Smart Scene Builder",
+      "subsystem": "Server Core",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Automatically infer emotions and world context for scene composition."
+    },
+    {
+      "id": "server_scene_diff",
+      "name": "Auto Scene Diff Tool",
+      "subsystem": "Server Core",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Highlight changes between scene JSON revisions."
+    },
+    {
+      "id": "server_render_queue",
+      "name": "Render Queue Prioritization",
+      "subsystem": "Server Core",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Prioritize rendering tasks for previews, exports, and background processing."
+    },
+    {
+      "id": "server_extension_hooks",
+      "name": "Extension Hooks",
+      "subsystem": "Server Core",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Provide API endpoints for external scripts and plugins."
+    },
+    {
+      "id": "lore_lighting_profiles",
+      "name": "Lore-based Lighting Profiles",
+      "subsystem": "World Lore",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Use world data to adjust lighting and color tone automatically."
+    },
+    {
+      "id": "lore_dynamic_weather",
+      "name": "Dynamic Weather States",
+      "subsystem": "World Lore",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Generate environmental weather effects based on lore or emotion cues."
+    },
+    {
+      "id": "lore_culture_rulesets",
+      "name": "Culture Rulesets",
+      "subsystem": "World Lore",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Define clothing, architecture, and atmosphere by world culture."
+    },
+    {
+      "id": "lore_parallel_worlds",
+      "name": "Parallel World Layers",
+      "subsystem": "World Lore",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Support simultaneous dual-scene rendering for alternate realities or dreams."
+    },
+    {
+      "id": "lore_geonodes",
+      "name": "GeoNodes System",
+      "subsystem": "World Lore",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Tag scenes with map coordinates for geographical navigation."
+    },
+    {
+      "id": "persona_emotion_blend",
+      "name": "Emotion Blend System",
+      "subsystem": "Persona & Character",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Smooth interpolation between facial expressions."
+    },
+    {
+      "id": "persona_outfit_system",
+      "name": "Dynamic Outfit System",
+      "subsystem": "Persona & Character",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Automatically change clothing based on time, world, or story state."
+    },
+    {
+      "id": "persona_heatmaps",
+      "name": "Relationship Heatmaps",
+      "subsystem": "Persona & Character",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Display dynamic relationship tension or affinity between characters."
+    },
+    {
+      "id": "persona_stats_overlay",
+      "name": "Persona Stats Overlay",
+      "subsystem": "Persona & Character",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Visual overlay showing trust, stress, or emotion metrics."
+    },
+    {
+      "id": "persona_voice_sync",
+      "name": "Voice Emotion Sync",
+      "subsystem": "Persona & Character",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Link emotion strength to voice pitch and modulation."
+    },
+    {
+      "id": "audio_soundscapes",
+      "name": "Procedural Soundscapes",
+      "subsystem": "Audio & Effects",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Generate ambient audio dynamically per scene."
+    },
+    {
+      "id": "audio_tts_manager",
+      "name": "AI-TTS Voice Pack Manager",
+      "subsystem": "Audio & Effects",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Manage custom or generated voices for characters."
+    },
+    {
+      "id": "audio_env_zones",
+      "name": "Environmental Audio Zones",
+      "subsystem": "Audio & Effects",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Apply spatial audio and filtering effects by location type."
+    },
+    {
+      "id": "audio_adaptive_music",
+      "name": "Adaptive Music System",
+      "subsystem": "Audio & Effects",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Change or blend music layers based on mood or scene emotion."
+    },
+    {
+      "id": "audio_sfx_chaining",
+      "name": "SFX Chaining",
+      "subsystem": "Audio & Effects",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Combine multiple SFX layers for realism (e.g., footsteps plus environment)."
+    },
+    {
+      "id": "sprite_pose_library",
+      "name": "Pose Library System",
+      "subsystem": "Asset & Sprite",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Save and reuse multi-character pose data across scenes."
+    },
+    {
+      "id": "sprite_layer_debugger",
+      "name": "Sprite Layer Debugger",
+      "subsystem": "Asset & Sprite",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Visualize how render layers stack to compose the final image."
+    },
+    {
+      "id": "sprite_texture_profiles",
+      "name": "Texture Compression Profiles",
+      "subsystem": "Asset & Sprite",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Optimize asset compression based on device performance tiers."
+    },
+    {
+      "id": "sprite_crowd_generator",
+      "name": "Crowd Generator",
+      "subsystem": "Asset & Sprite",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Procedurally generate faceless NPC background crowds."
+    },
+    {
+      "id": "sprite_focus_blur",
+      "name": "Depth Focus Simulation",
+      "subsystem": "Asset & Sprite",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Apply blur to unfocused characters or background elements."
+    },
+    {
+      "id": "playground_director_mode",
+      "name": "Director Mode",
+      "subsystem": "Playground",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Provide cinematic timeline control for scene direction."
+    },
+    {
+      "id": "playground_emotion_rewrite",
+      "name": "Emotion Rewrite Prompts",
+      "subsystem": "Playground",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Modify scene tone by natural-language emotion input."
+    },
+    {
+      "id": "playground_prop_injection",
+      "name": "Prop Injection Prompts",
+      "subsystem": "Playground",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Add or remove objects dynamically through prompt commands."
+    },
+    {
+      "id": "playground_replay_mode",
+      "name": "Scene Replay Mode",
+      "subsystem": "Playground",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Replay and test different dialogue routes interactively."
+    },
+    {
+      "id": "playground_undo_stack",
+      "name": "Prompt Undo Stack",
+      "subsystem": "Playground",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Undo or revert previous natural-language edits to scenes."
+    },
+    {
+      "id": "lora_versioning",
+      "name": "LoRA Versioning",
+      "subsystem": "LoRA System",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Track and snapshot LoRA versions per project state."
+    },
+    {
+      "id": "lora_strength_blending",
+      "name": "LoRA Strength Blending",
+      "subsystem": "LoRA System",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Blend multiple LoRAs for hybrid character expressions or outfits."
+    },
+    {
+      "id": "lora_visual_qa",
+      "name": "Visual QA Comparison",
+      "subsystem": "LoRA System",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Compare generated sprites with reference samples to ensure consistency."
+    },
+    {
+      "id": "lora_character_dna",
+      "name": "Character DNA Profiles",
+      "subsystem": "LoRA System",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Generate and store micro-LoRAs for recurring characters."
+    },
+    {
+      "id": "lora_prompt_normalization",
+      "name": "Prompt Normalization Engine",
+      "subsystem": "LoRA System",
+      "priority": "immediate",
+      "status": "planned",
+      "description": "Standardize text prompts for consistent rendering across sessions."
+    },
+    {
+      "id": "export_smart_bundle",
+      "name": "Smart Asset Bundling",
+      "subsystem": "Export & Distribution",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Include only assets used in exported builds."
+    },
+    {
+      "id": "export_translation_support",
+      "name": "Dynamic Translation Export",
+      "subsystem": "Export & Distribution",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Auto-generate dialogue files ready for localization."
+    },
+    {
+      "id": "export_quality_profiles",
+      "name": "Quality Profiles",
+      "subsystem": "Export & Distribution",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Preset export modes: Preview, HD, or Cinematic."
+    },
+    {
+      "id": "export_vn_to_video",
+      "name": "VN-to-Video Compilation",
+      "subsystem": "Export & Distribution",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Compile full VN routes into rendered video output."
+    },
+    {
+      "id": "export_publishing_api",
+      "name": "Publishing API",
+      "subsystem": "Export & Distribution",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Automate uploading or publishing builds to web platforms."
+    },
+    {
+      "id": "ai_emotion_predict",
+      "name": "Emotion Prediction Model",
+      "subsystem": "AI Enhancements",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Infer missing emotion tags in dialogue automatically."
+    },
+    {
+      "id": "ai_lighting_adjust",
+      "name": "Adaptive Lighting AI",
+      "subsystem": "AI Enhancements",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Adjust hue, tone, and brightness based on scene sentiment."
+    },
+    {
+      "id": "ai_coherence_check",
+      "name": "Character Coherence Checker",
+      "subsystem": "AI Enhancements",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Detect and flag inconsistent behavior in character dialogue."
+    },
+    {
+      "id": "ai_story_autotag",
+      "name": "Story Auto-Tagging",
+      "subsystem": "AI Enhancements",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Generate searchable metadata for story routes automatically."
+    },
+    {
+      "id": "dev_hot_reload",
+      "name": "Hot Reload System",
+      "subsystem": "Developer Tools",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Reload modules and scenes without restarting the server."
+    },
+    {
+      "id": "dev_snapshot_manager",
+      "name": "Version Snapshot Manager",
+      "subsystem": "Developer Tools",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Save and restore project states before major changes."
+    },
+    {
+      "id": "dev_render_analytics",
+      "name": "Render Time Analytics",
+      "subsystem": "Developer Tools",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Display per-scene render time and GPU usage statistics."
+    },
+    {
+      "id": "dev_error_heatmap",
+      "name": "Error Heatmap",
+      "subsystem": "Developer Tools",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "Visualize where failed renders occur most frequently."
+    },
+    {
+      "id": "dev_collab_notes",
+      "name": "Collaborative Notes",
+      "subsystem": "Developer Tools",
+      "priority": "deferred",
+      "status": "planned",
+      "description": "In-GUI commenting and note sharing system for teams."
+    }
+  ]
+}

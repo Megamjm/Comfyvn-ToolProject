@@ -1,0 +1,13 @@
+Goal: Make creative iteration frictionless.
+
+Ideas
+
+“Director Mode”: Control scenes frame-by-frame like a movie timeline.
+
+Emotion Rewrite Prompts: “Make this scene sadder” automatically adjusts lighting, music, dialogue tone.
+
+Prop Injection Prompting: “Add a coffee cup on the table” adds object layer automatically.
+
+Scene Replay Mode: Quickly play through multiple dialogue branches to test flow.
+
+Undo Stack for Prompts: Revert Playground edits with natural-language “Undo last change.”

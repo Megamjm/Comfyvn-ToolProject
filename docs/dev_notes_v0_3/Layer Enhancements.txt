@@ -1,0 +1,13 @@
+Goal: Make the interface feel like an integrated VN studio rather than just a launcher.
+
+Ideas
+
+Scene Flow Graph View: Node-based editor (like ComfyUI) for visualizing and rearranging story routes.
+
+Live Render Preview: Small viewport that shows each scene’s composite (sprites, props, BG).
+
+Asset Drag-and-Drop: Drop an image or LoRA directly into the GUI to auto-register it.
+
+Performance Overlay: Realtime resource usage meter (CPU/GPU/RAM) so users can adjust render modes easily.
+
+Narrative Timeline: A horizontal bar that displays key plot points and scene jumps.

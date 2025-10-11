@@ -1,0 +1,13 @@
+Goal: Ensure every visual stays true to character and world.
+
+Ideas
+
+Auto-LoRA Versioning: Track LoRA updates with project snapshots to prevent mismatches.
+
+LoRA Strength Blending: Blend between two LoRAs for hybrid character styles (e.g., serious → playful).
+
+Visual QA System: Compare generated sprites against reference LoRA samples to ensure consistency.
+
+Character DNA Profiles: Auto-train micro-LoRAs for high-frequency characters.
+
+Prompt Normalization Engine: Clean and rewrite prompts to ensure reproducibility across sessions.

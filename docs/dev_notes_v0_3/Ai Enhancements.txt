@@ -1,0 +1,13 @@
+Goal: Make the system adaptive and generative beyond static scripting.
+
+Ideas
+
+Emotion Prediction Model: Predict emotion per line automatically if not defined.
+
+Prompt Simplifier: Rewrite overly detailed user prompts to fit visual balance constraints.
+
+Adaptive Lighting AI: Automatically adjust brightness, hue, and tone based on dialogue mood.
+
+Character Coherence Checker: Detect if a character is behaving inconsistently with prior scenes.
+
+Story Auto-Tagging: Generate keywords and metadata for quick search and branch visualization.
