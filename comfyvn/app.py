@@ -9,11 +9,21 @@ import os, json, asyncio, subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+
 import httpx, uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
+from .modules.npc_manager import NPCManager
+from .modules.export_manager import ExportManager
+from .modules.cache_manager import CacheManager
+
+npc_manager = NPCManager()
+export_manager = ExportManager()
+cache_manager = CacheManager()
+
+
 
 # -----------------------------------------------------
 # Settings

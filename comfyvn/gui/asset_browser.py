@@ -1,240 +1,188 @@
 # comfyvn/gui/asset_browser.py
-# Asset browser with project root, directory tree, preview list, metadata panel,
-# and hooks to trigger ComfyUI renders (sprites, NPC background mode, dumps).
-# [🎨 GUI Code Production Chat]
+# 🎨 GUI Integration for 🧍 Asset & Sprite System — with Previews and Open Functionality
+# (ComfyVN_Architect)
 
-import json
-from pathlib import Path
-from typing import Optional
-
-from PySide6.QtCore import Qt, Signal, Slot, QDir, QSize
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QPixmap, QIcon
+import json, os, requests, subprocess, platform
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QTreeView, QFileSystemModel,
-    QListWidget, QListWidgetItem, QLabel, QPushButton, QFormLayout, QLineEdit,
-    QComboBox, QCheckBox, QSpinBox, QMessageBox
+    QWidget, QVBoxLayout, QLabel, QPushButton,
+    QListWidget, QListWidgetItem, QHBoxLayout,
+    QMessageBox, QFileDialog, QListView, QAbstractItemView
 )
-import requests
+from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, QSize, QTimer
 
 
 class AssetBrowser(QWidget):
-    request_log = Signal(str)
-    request_settings = Signal(object)  # function returning dict
-    request_settings_changed = Signal(dict)
+    """GUI interface for NPCs, exports, and cache management — with visual previews."""
 
-    def __init__(self):
+    def __init__(self, server_url="http://127.0.0.1:8000", export_dir="./exports/assets"):
         super().__init__()
-        self._project_root = Path(".").resolve()
-        self._assets_dir = None
-        self._model = None
-        self._build_ui()
+        self.server_url = server_url
+        self.export_dir = export_dir
+        self.setWindowTitle("🧍 Asset & Sprite Manager")
+        self.resize(800, 500)
 
-    # -------------------- UI --------------------
+        # Layout setup
+        layout = QVBoxLayout()
+        self.setLayout(layout)
 
-    def _build_ui(self):
-        root = QHBoxLayout(self)
+        # Title
+        title = QLabel("🧍 ComfyVN Asset Manager")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-weight: bold; font-size: 18px;")
+        layout.addWidget(title)
 
-        # Left: directory tree
-        left = QVBoxLayout()
-        box_tree = QGroupBox("Project Tree")
-        v = QVBoxLayout()
-        self.fs_model = QFileSystemModel()
-        self.fs_model.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Files)
-        self.fs_view = QTreeView()
-        self.fs_view.setModel(self.fs_model)
-        self.fs_view.setColumnWidth(0, 260)
-        self.fs_view.clicked.connect(self._on_tree_clicked)
-        v.addWidget(self.fs_view)
-        box_tree.setLayout(v)
-        left.addWidget(box_tree)
+        # Buttons
+        btn_layout = QHBoxLayout()
+        layout.addLayout(btn_layout)
 
-        # Right: assets + metadata + actions
-        right = QVBoxLayout()
+        self.btn_generate_npc = QPushButton("Generate NPCs")
+        self.btn_export_character = QPushButton("Export Character")
+        self.btn_export_scene = QPushButton("Export Scene")
+        self.btn_refresh = QPushButton("🔄 Refresh Assets")
+        self.btn_clear_cache = QPushButton("🧹 Clear Cache")
 
-        self.assets_list = QListWidget()
-        self.assets_list.setIconSize(QSize(96, 96))
-        self.assets_list.itemSelectionChanged.connect(self._asset_selected)
+        for btn in [
+            self.btn_generate_npc, self.btn_export_character,
+            self.btn_export_scene, self.btn_refresh, self.btn_clear_cache
+        ]:
+            btn_layout.addWidget(btn)
 
-        meta_box = QGroupBox("Metadata")
-        form = QFormLayout()
-        self.meta_name = QLineEdit()
-        self.meta_char = QLineEdit()
-        self.meta_expr = QComboBox()
-        self.meta_expr.addItems(["neutral", "happy", "sad", "angry", "surprised", "tired"])
-        self.meta_tag_npc = QCheckBox("Background NPC (no face)")
-        form.addRow("Asset Name", self.meta_name)
-        form.addRow("Character", self.meta_char)
-        form.addRow("Expression", self.meta_expr)
-        form.addRow(self.meta_tag_npc)
-        meta_box.setLayout(form)
+        # Asset list
+        self.asset_list = QListWidget()
+        self.asset_list.setViewMode(QListView.IconMode)
+        self.asset_list.setIconSize(QSize(96, 96))
+        self.asset_list.setResizeMode(QListWidget.Adjust)
+        self.asset_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.asset_list.itemDoubleClicked.connect(self.open_asset)
+        layout.addWidget(self.asset_list)
 
-        actions = QHBoxLayout()
-        self.btn_gen_sprite = QPushButton("Generate Sprite (ComfyUI)")
-        self.btn_gen_dump = QPushButton("Render Full Character Dump")
-        self.btn_refresh = QPushButton("Refresh")
+        # Job status
+        self.job_status = QLabel("Job Status: Idle")
+        layout.addWidget(self.job_status)
 
-        self.btn_gen_sprite.clicked.connect(self._generate_sprite)
-        self.btn_gen_dump.clicked.connect(self._render_full_dump)
-        self.btn_refresh.clicked.connect(self.refresh)
+        # Bind buttons
+        self.btn_generate_npc.clicked.connect(self.generate_npc)
+        self.btn_export_character.clicked.connect(self.export_character)
+        self.btn_export_scene.clicked.connect(self.export_scene)
+        self.btn_refresh.clicked.connect(self.refresh_assets)
+        self.btn_clear_cache.clicked.connect(self.clear_cache)
 
-        actions.addWidget(self.btn_gen_sprite)
-        actions.addWidget(self.btn_gen_dump)
-        actions.addWidget(self.btn_refresh)
+        # Auto job polling every 4s
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.poll_jobs)
+        self.timer.start(4000)
 
-        right.addWidget(self.assets_list)
-        right.addWidget(meta_box)
-        right.addLayout(actions)
+        # Initial asset load
+        self.refresh_assets()
 
-        root.addLayout(left, 3)
-        root.addLayout(right, 5)
+    # -----------------------------------------------------------
+    # 🧍 Core Server Calls
+    # -----------------------------------------------------------
 
-    # -------------------- Public API --------------------
-
-    def set_project_root(self, directory: str):
-        self._project_root = Path(directory).resolve()
-        self.fs_model.setRootPath(str(self._project_root))
-        self.fs_view.setRootIndex(self.fs_model.index(str(self._project_root)))
-        self.refresh()
-        self.request_log.emit(f"Asset Browser root set to: {self._project_root}")
-
-    def on_settings_changed(self, cfg: dict):
-        # update assets dir and refresh if necessary
-        assets_dir = cfg.get("paths", {}).get("assets_dir")
-        if assets_dir:
-            self._assets_dir = Path(assets_dir).resolve()
-            self.request_log.emit(f"Assets dir: {self._assets_dir}")
-        if self._project_root.exists():
-            self.refresh()
-
-    # -------------------- Internals --------------------
-
-    def refresh(self):
-        self.assets_list.clear()
-        base = self._assets_dir if self._assets_dir else self._project_root
-        if not base.exists():
-            self.request_log.emit(f"Assets path missing: {base}")
-            return
-
-        exts = {".png", ".jpg", ".jpeg", ".webp"}
-        for p in base.rglob("*"):
-            if p.suffix.lower() in exts:
-                item = QListWidgetItem(p.name)
-                pix = QPixmap(str(p))
-                if not pix.isNull():
-                    icon = QIcon(pix.scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    item.setIcon(icon)
-                item.setData(Qt.UserRole, str(p))
-                self.assets_list.addItem(item)
-
-    @Slot()
-    def _on_tree_clicked(self, idx):
-        path = self.fs_model.filePath(idx)
-        if Path(path).is_dir():
-            self._assets_dir = Path(path).resolve()
-            self.refresh()
-
-    def _asset_selected(self):
-        items = self.assets_list.selectedItems()
-        if not items:
-            return
-        p = Path(items[0].data(Qt.UserRole))
-        self.meta_name.setText(p.stem)
-        # Simple parse for character__expr.png
-        if "__" in p.stem:
-            char, expr = p.stem.split("__", 1)
-            self.meta_char.setText(char)
-            i = self.meta_expr.findText(expr)
-            if i >= 0:
-                self.meta_expr.setCurrentIndex(i)
-
-    # -------------------- Actions --------------------
-
-    def _read_settings(self) -> Optional[dict]:
-        if not self.request_settings:
-            return None
-        return self.request_settings.emit()  # note: connected in MainWindow; returns via slot fetch
-
-    @Slot()
-    def _generate_sprite(self):
-        # Collect current meta + call ComfyUI with a configured workflow
-        items = self.assets_list.selectedItems()
-        char = self.meta_char.text().strip() or "character"
-        expr = self.meta_expr.currentText()
-        npc = self.meta_tag_npc.isChecked()
-
-        cfg = None
-        # safer pull via MainWindow
-        parent = self.parent()
-        while parent and not hasattr(parent, "collect_settings"):
-            parent = parent.parent()
-        if parent and hasattr(parent, "collect_settings"):
-            cfg = parent.collect_settings()
-
-        if not cfg:
-            QMessageBox.warning(self, "No Settings", "Settings not available.")
-            return
-
-        comfy = cfg["integrations"]["comfyui_host"]
-        workflow_file = Path(cfg["integrations"]["comfyui_workflow"])
-        if not workflow_file.exists():
-            QMessageBox.warning(self, "Workflow Missing", f"Workflow not found: {workflow_file}")
-            return
-
+    def generate_npc(self):
+        """Generate faceless NPCs from server."""
+        payload = {"scene_id": "city_square", "location": "market"}
         try:
-            with open(workflow_file, "r", encoding="utf-8") as f:
-                workflow = json.load(f)
+            res = requests.post(f"{self.server_url}/npc/generate", json=payload)
+            data = res.json()
+            count = data.get("npc_count", 0)
+            QMessageBox.information(self, "NPC Generation", f"Generated {count} NPCs successfully.")
+            self.refresh_assets()
         except Exception as e:
-            QMessageBox.critical(self, "Workflow Error", str(e))
+            QMessageBox.critical(self, "Error", f"Failed to generate NPCs:\n{e}")
+
+    def export_character(self):
+        """Export a test character."""
+        character_data = {
+            "id": "hero_caelum",
+            "name": "Caelum",
+            "sprite": "hero_caelum.png",
+            "metadata": {"pose": "neutral", "expression": "focused"}
+        }
+        try:
+            res = requests.post(f"{self.server_url}/export/character", json=character_data)
+            data = res.json()
+            QMessageBox.information(self, "Export", f"Character exported to: {data.get('export_path')}")
+            self.refresh_assets()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Character export failed:\n{e}")
+
+    def export_scene(self):
+        """Export a mock scene layer."""
+        scene_data = {
+            "scene_id": "forest_path",
+            "assets": ["bg_forest.png", "hero_caelum.png", "npc_01.png"]
+        }
+        try:
+            res = requests.post(f"{self.server_url}/export/scene", json=scene_data)
+            data = res.json()
+            QMessageBox.information(self, "Scene Export", f"Scene bundle saved at: {data.get('export_path')}")
+            self.refresh_assets()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Scene export failed:\n{e}")
+
+    def clear_cache(self):
+        """Clear expired cache entries."""
+        try:
+            res = requests.post(f"{self.server_url}/cache/clear", json={"ttl": 0})
+            data = res.json()
+            QMessageBox.information(self, "Cache", data.get("message", "Cache cleared"))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Cache clear failed:\n{e}")
+
+    # -----------------------------------------------------------
+    # 🧩 Asset Browser Logic
+    # -----------------------------------------------------------
+
+    def refresh_assets(self):
+        """Scan export directory for available assets."""
+        self.asset_list.clear()
+        if not os.path.exists(self.export_dir):
+            os.makedirs(self.export_dir, exist_ok=True)
+
+        for root, dirs, files in os.walk(self.export_dir):
+            for file in files:
+                if file.endswith(".png"):
+                    item = QListWidgetItem(file)
+                    item.setToolTip(os.path.join(root, file))
+                    pixmap = QPixmap(os.path.join(root, file))
+                    if not pixmap.isNull():
+                        item.setIcon(QIcon(pixmap))
+                    else:
+                        item.setIcon(QIcon())  # fallback
+                    self.asset_list.addItem(item)
+
+    def open_asset(self, item):
+        """Double-click handler: open sprite image externally."""
+        path = item.toolTip()
+        if not os.path.exists(path):
+            QMessageBox.warning(self, "File Missing", "This asset no longer exists.")
             return
 
-        # Inject parameters (example placeholders for nodes with prompts)
-        # You should align node IDs/inputs with your actual ComfyUI graph
-        # e.g., workflow["nodes"]["CHARACTER_NAME"]["inputs"]["text"] = char
-        #       workflow["nodes"]["EXPRESSION"]["inputs"]["text"] = expr
-        # NPC/background flag might map to a negative prompt or a switch node.
-        workflow = self._inject_workflow_params(workflow, char, expr, npc)
-
         try:
-            url = comfy.rstrip("/") + "/prompt"
-            r = requests.post(url, json={"prompt": workflow})
-            if r.status_code == 200:
-                self.request_log.emit(f"ComfyUI job dispatched for {char} [{expr}] (NPC={npc})")
+            if platform.system() == "Windows":
+                os.startfile(path)
+            elif platform.system() == "Darwin":
+                subprocess.run(["open", path])
             else:
-                self.request_log.emit(f"ComfyUI job failed: {r.status_code} - {r.text}")
+                subprocess.run(["xdg-open", path])
         except Exception as e:
-            self.request_log.emit(f"ComfyUI connection error: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to open file:\n{e}")
 
-    @Slot()
-    def _render_full_dump(self):
-        # Iterate common expressions and dispatch a batch
-        char = self.meta_char.text().strip() or "character"
-        expressions = ["neutral", "happy", "sad", "angry", "surprised", "tired"]
-        for expr in expressions:
-            self.meta_expr.setCurrentText(expr)
-            self._generate_sprite()
-        QMessageBox.information(self, "Dump", f"Dispatched full dump for {char}")
+    # -----------------------------------------------------------
+    # 🔁 Job Polling
+    # -----------------------------------------------------------
 
-    # -------------------- Helpers --------------------
-
-    def _inject_workflow_params(self, workflow: dict, char: str, expr: str, npc: bool) -> dict:
-        # This is a central place to map UI metadata into workflow fields.
-        # Replace with your exact node IDs / names.
-        # Below are illustrative examples:
-        wf = dict(workflow)  # shallow copy
+    def poll_jobs(self):
+        """Poll FastAPI for job statuses."""
         try:
-            # Example pseudo-injection:
-            # Find nodes by a convention and inject text fields
-            for node in wf.get("nodes", []):
-                title = (node.get("title") or "").lower()
-                if "character" in title and "prompt" in node.get("type", "").lower():
-                    node["inputs"]["text"] = f"{char}, {expr}"
-                if "negative" in title and npc:
-                    node["inputs"]["text"] = (node["inputs"].get("text", "") + ", no face, low detail, background character").strip(", ")
-                # Resolution injection if present
-                if "image" in node.get("type","").lower():
-                    # leave as default; resolutions handled by Settings panel if you wire them
-                    pass
+            res = requests.get(f"{self.server_url}/jobs/poll")
+            data = res.json()
+            jobs = data.get("jobs", {})
+            self.job_status.setText(
+                f"Job Status — NPCs: {jobs.get('npc_generation')} | "
+                f"Exports: {jobs.get('exports')} | Cache: {jobs.get('cache_status')}"
+            )
         except Exception:
-            # Keep workflow as-is if mapping fails
-            pass
-        return wf
+            self.job_status.setText("⚠️ Server offline.")
