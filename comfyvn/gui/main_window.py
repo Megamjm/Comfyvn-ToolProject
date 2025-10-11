@@ -1,6 +1,6 @@
 # comfyvn/gui/main_window.py
-# 🎨 ComfyVN Control Panel – v0.4-dev (Phase 3.3-H)
-# Dynamic TopBarMenu + Status Framework + Server Core 1.1.4
+# 🎨 ComfyVN Control Panel – v0.4-dev (Phase 3.4-A)
+# Dynamic TopBarMenu + Status Framework + Advanced Task Manager + Server Core 1.1.4
 # [🎨 GUI Code Production Chat]
 
 import os, sys, asyncio, json, httpx
@@ -18,6 +18,7 @@ from comfyvn.gui.components.progress_overlay import ProgressOverlay
 from comfyvn.gui.components.dialog_helpers import info, error
 from comfyvn.gui.server_bridge import ServerBridge
 from comfyvn.gui.components.task_manager_dock import TaskManagerDock
+from comfyvn.gui.components.advanced_task_manager_dock import AdvancedTaskManagerDock  # [GUI Code Production Chat]
 from comfyvn.gui.components.topbar_menu import TopBarMenu
 from comfyvn.gui.components.status_widget import StatusWidget
 from comfyvn.modules.system_monitor import SystemMonitor
@@ -53,9 +54,13 @@ class MainWindow(QMainWindow):
         self.overlay = ProgressOverlay(self, "Connecting to Server …", cancellable=False)
         self.overlay.hide()
 
-        # Task-manager dock
+        # Task-manager docks (classic + advanced)
         self.task_dock = TaskManagerDock(API_BASE, self)
         self.addDockWidget(Qt.RightDockWidgetArea, self.task_dock)
+
+        self.adv_task_dock = AdvancedTaskManagerDock(API_BASE, self)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.adv_task_dock)
+        self.adv_task_dock.hide()  # hidden by default; toggle from View menu
 
         # ----------------------------------------------------------
         # Tab structure
@@ -93,18 +98,13 @@ class MainWindow(QMainWindow):
         self.version_label = QLabel("v0.4-dev")
         self.connection_label = QLabel("Server: Unknown")
 
-        # New: compact multi-source indicator row
+        # Compact multi-source indicator row
         self.status_widget = StatusWidget(self)
-        # Pre-register common indicators (colors set on first update)
         for name, tip in [
             ("server", "Server Core"),
             ("lmstudio", "LM Studio"),
             ("sillytavern", "SillyTavern"),
             ("world", "World Service"),
-        ]:
-            self.status_widget.add_indicator(name, tip)
-        # Resource indicators (CPU/GPU/RAM) appear as text in tooltips; LEDs reflect general load state.
-        for name, tip in [
             ("cpu", "CPU Usage"),
             ("gpu", "GPU Usage"),
             ("ram", "RAM Usage"),
@@ -121,11 +121,15 @@ class MainWindow(QMainWindow):
         self.menu_bar = TopBarMenu(self)
         self.setMenuBar(self.menu_bar)
 
-        # Add default “View” submenu manually
+        # Default “View” submenu
         view_menu = self.menu_bar.addMenu("&View")
         act_toggle_tasks = view_menu.addAction("Toggle Task Manager")
         act_toggle_tasks.triggered.connect(
             lambda: self.task_dock.setVisible(not self.task_dock.isVisible())
+        )
+        act_toggle_adv = view_menu.addAction("Toggle Advanced Task Manager")
+        act_toggle_adv.triggered.connect(
+            lambda: self.adv_task_dock.setVisible(not self.adv_task_dock.isVisible())
         )
 
         # ----------------------------------------------------------
@@ -158,6 +162,10 @@ class MainWindow(QMainWindow):
         act_toggle_tasks = view_menu.addAction("Toggle Task Manager")
         act_toggle_tasks.triggered.connect(
             lambda: self.task_dock.setVisible(not self.task_dock.isVisible())
+        )
+        act_toggle_adv = view_menu.addAction("Toggle Advanced Task Manager")
+        act_toggle_adv.triggered.connect(
+            lambda: self.adv_task_dock.setVisible(not self.adv_task_dock.isVisible())
         )
 
     # --------------------------------------------------------------

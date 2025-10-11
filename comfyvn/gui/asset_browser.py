@@ -320,3 +320,32 @@ class AssetBrowser(QWidget):
                 drag.setMimeData(mime)
                 drag.exec(Qt.CopyAction)
         return super().eventFilter(obj, event)
+
+
+# comfyvn/gui/asset_browser.py (excerpt additions)
+# 🎨 Integrated with Pose Browser for pose selection (ComfyVN_Architect)
+
+from gui.pose_browser import PoseBrowser   # 🧍 NEW IMPORT
+from modules.export_manager import ExportManager
+from modules.pose_manager import PoseManager
+
+# ... inside AssetBrowser.__init__ (after button setup) ...
+self.pose_manager = PoseManager()
+self.selected_pose_id = None
+
+# Add new button to main layout (after other buttons)
+self.btn_select_pose = QPushButton("🧍 Select Pose")
+btn_layout.addWidget(self.btn_select_pose)
+self.btn_select_pose.clicked.connect(self.open_pose_browser)
+
+# ... new methods added to AssetBrowser ...
+
+def open_pose_browser(self):
+    """Open Pose Browser window to select a pose."""
+    self.pose_browser = PoseBrowser(on_pose_selected=self.pose_selected)
+    self.pose_browser.show()
+
+def pose_selected(self, pose_id, pose_data):
+    """Callback when a pose is selected."""
+    self.selected_pose_id = pose_id
+    self.output_list.addItem(f"🧍 Pose Selected: {pose_id}")
