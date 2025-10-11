@@ -17,17 +17,17 @@ from pydantic_settings import BaseSettings
 # -----------------------------------------------------
 # MODULE IMPORTS
 # -----------------------------------------------------
-from modules.world_loader import list_worlds, pull_from_sillytavern, set_active, get_active
-from modules.audio_manager import AudioManager
+from comfyvn.modules.sync.world_loader import list_worlds, pull_from_sillytavern, set_active, get_active
+from comfyvn.modules.assets.audio_manager import AudioManager
 from modules.lora_manager import LoRAManager
-from modules.playground_manager import PlaygroundManager
+from comfyvn.modules.assets.playground_manager import PlaygroundManager
 from modules.persona_manager import PersonaManager
 from modules.npc_manager import NPCManager
 from modules.scene_preprocessor import preprocess_scene
 from modules.mode_manager import ModeManager
-from modules.event_bus import EventBus
-from modules.job_manager import JobManager
-from modules.st_sync_manager import STSyncManager
+from comfyvn.modules.core.event_bus import EventBus
+from comfyvn.modules.core.job_manager import JobManager
+from comfyvn.modules.sync.st_sync_manager import STSyncManager
 
 # 🧍 Asset & Sprite System Modules
 from modules.export_manager import ExportManager
