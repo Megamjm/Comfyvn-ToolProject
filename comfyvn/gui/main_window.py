@@ -14,14 +14,14 @@ from PySide6.QtCore import QTimer, Qt
 from comfyvn.gui.settings_ui import SettingsUI
 from comfyvn.gui.asset_browser import AssetBrowser
 from comfyvn.gui.playground_ui import PlaygroundUI
-from comfyvn.gui.components.progress_overlay import ProgressOverlay
-from comfyvn.gui.components.dialog_helpers import info, error
+from comfyvn.gui.widgets.progress_overlay import ProgressOverlay
+from comfyvn.gui.widgets.dialog_helpers import info, error
 from comfyvn.gui.server_bridge import ServerBridge
-from comfyvn.gui.components.task_manager_dock import TaskManagerDock
+from comfyvn.gui.widgets.task_manager_dock import TaskManagerDock
 from comfyvn.gui.components.advanced_task_manager_dock import AdvancedTaskManagerDock  # [GUI Code Production Chat]
-from comfyvn.gui.components.topbar_menu import TopBarMenu
-from comfyvn.gui.components.status_widget import StatusWidget
-from comfyvn.modules.system_monitor import SystemMonitor
+from comfyvn.gui.widgets.topbar_menu import TopBarMenu
+from comfyvn.gui.widgets.status_widget import StatusWidget
+from comfyvn.core.system_monitor import SystemMonitor
 
 try:
     from comfyvn.gui.world_ui import WorldUI

@@ -2,7 +2,7 @@
 # [🎨 GUI Code Production Chat]
 # Menu for Playground and LM Studio interactions
 
-from PySide6.QtWidgets import QAction
+from PySide6.QtGui import QAction
 
 def register_menu(parent):
     menu = parent.addMenu("&Playground")

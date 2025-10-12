@@ -17,29 +17,29 @@ from fastapi.responses import StreamingResponse
 # -----------------------------------------------------
 # CORE SETTINGS & MODULE IMPORTS (Aligned)
 # -----------------------------------------------------
-from comfyvn.modules.core.settings_manager import settings_manager, settings
-from comfyvn.modules.core.event_bus import EventBus
-from comfyvn.modules.core.job_manager import JobManager
-from comfyvn.modules.core.mode_manager import ModeManager
+from comfyvn.core.settings_manager import settings_manager, settings
+from comfyvn.core.event_bus import EventBus
+from comfyvn.core.job_manager import JobManager
+from comfyvn.core.mode_manager import ModeManager
 
-from comfyvn.modules.sync.world_loader import list_worlds, pull_from_sillytavern, set_active, get_active
-from comfyvn.modules.sync.st_sync_manager import STSyncManager
+from comfyvn.core.world_loader import list_worlds, pull_from_sillytavern, set_active, get_active
+from comfyvn.core.st_sync_manager import STSyncManager
 
-from comfyvn.modules.assets.audio_manager import AudioManager
-from comfyvn.modules.assets.lora_manager import LoRAManager
-from comfyvn.modules.assets.playground_manager import PlaygroundManager
-from comfyvn.modules.assets.persona_manager import PersonaManager
-from comfyvn.modules.assets.npc_manager import NPCManager
+from comfyvn.assets.audio_manager import AudioManager
+from comfyvn.assets.lora_manager import LoRAManager
+from comfyvn.assets.playground_manager import PlaygroundManager
+from comfyvn.assets.persona_manager import PersonaManager
+from comfyvn.assets.npc_manager import NPCManager
 
-from comfyvn.modules.scene.scene_preprocessor import preprocess_scene
-from comfyvn.modules.scene.scene_compositor import compose_scene_png
-from comfyvn.modules.scene.workflow_bridge import render_character
+from comfyvn.core.scene_preprocessor import preprocess_scene
+from comfyvn.core.scene_compositor import compose_scene_png
+from comfyvn.core.workflow_bridge import render_character
 
 # Asset/Sprite System (kept under assets namespace)
-from comfyvn.modules.assets.export_manager import ExportManager
-from comfyvn.modules.assets.cache_manager import CacheManager
-from comfyvn.modules.assets.asset_index import load_index, add_record, query_index
-from comfyvn.modules.assets.model_discovery import (
+from comfyvn.assets.export_manager import ExportManager
+from comfyvn.assets.cache_manager import CacheManager
+from comfyvn.assets.asset_index import load_index, add_record, query_index
+from comfyvn.assets.model_discovery import (
     list_models, verify_integrity, load_community_registry,
     filter_verified_assets, safe_mode_enabled
 )
@@ -607,7 +607,7 @@ async def ws_jobs(ws: WebSocket):
 # -----------------------------------------------------
 if __name__ == "__main__":
     uvicorn.run(
-        "comfyvn.app:app",
+        "comfyvn.app:comfyvn.app",
         host=settings.HOST,
         port=settings.PORT,
         reload=os.environ.get("UVICORN_RELOAD", "0") == "1",

@@ -7,7 +7,7 @@ import collections
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QPen, QColor, QPainter, QPainterPath
-from comfyvn.modules.system_monitor import SystemMonitor
+from comfyvn.core.system_monitor import SystemMonitor
 
 
 class ResourceChartWidget(QWidget):

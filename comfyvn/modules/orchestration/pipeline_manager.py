@@ -12,13 +12,13 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
 
 # ---- Internal dependencies (respecting refactored folder layout) ----
-from modules.core.mode_manager import ModeManager
-from modules.core.event_bus import EventBus
-from modules.core.job_manager import JobManager
-from modules.scene.scene_preprocessor import preprocess_scene
-from modules.scene.lm_bridge import LMBridge
-from modules.scene.comfy_bridge import ComfyUIBridge
-from modules.scene.renpy_bridge import RenPyBridge
+from comfyvn.core.mode_manager import ModeManager
+from comfyvn.core.event_bus import EventBus
+from comfyvn.core.job_manager import JobManager
+from comfyvn.core.scene_preprocessor import preprocess_scene
+from comfyvn.modules.orchestration.lmstudio_bridge import LMBridge
+from comfyvn.core.workflow_bridge import ComfyUIBridge
+from comfyvn.integrations.renpy_bridge import RenPyBridge
 
 
 # -----------------------------

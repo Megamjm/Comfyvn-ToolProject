@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
 import requests
 
 # Internal imports
-from comfyvn.gui.components.status_widget import StatusWidget
-from comfyvn.modules.system_monitor import SystemMonitor
+from comfyvn.gui.widgets.status_widget import StatusWidget
+from comfyvn.core.system_monitor import SystemMonitor
 
 
 class PlaygroundUI(QWidget):

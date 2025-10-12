@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel,
     QComboBox, QCheckBox, QMessageBox
 )
-from comfyvn.modules.system_monitor import SystemMonitor
+from comfyvn.core.system_monitor import SystemMonitor
 
 
 class TaskManagerControls(QWidget):

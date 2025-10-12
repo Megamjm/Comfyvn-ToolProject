@@ -5,7 +5,7 @@
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QProgressBar, QLabel
-from comfyvn.modules.system_monitor import SystemMonitor
+from comfyvn.core.system_monitor import SystemMonitor
 
 
 class TaskResourceBar(QWidget):
