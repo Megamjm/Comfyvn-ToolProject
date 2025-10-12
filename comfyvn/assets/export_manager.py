@@ -8,8 +8,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 # --- Linked Modules ---
-from comfyvn.modules.pose_manager import PoseManager
-from comfyvn.modules.asset_index import add_record  # global registry for all assets
+# Removed circular import (PoseManager self-reference)
+from comfyvn.assets.asset_index import add_record  # global registry for all assets
 
 # --- Community asset registry for license verification ---
 COMMUNITY_ASSET_PATH = "./comfyvn/data/community_assets_registry.json"

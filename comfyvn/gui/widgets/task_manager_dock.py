@@ -1,19 +1,19 @@
 # comfyvn/gui/components/task_manager_dock.py
-# 🎨 ComfyVN Task Manager Dock – v1.2 (Phase 3.4-F)
-# Integrated with TaskManagerControls + JobFilterModel + ServerBridge
-# [🎨 GUI Code Production Chat]
+# 🎨 ComfyVN Task Manager Dock – v1.2-F+ (Stable)
+# Live Job Stream + Polling Fallback + Log Export + Filters + Tray Notifications
 
 import os, json, threading, asyncio, websockets
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QPushButton, QMenu, QHeaderView, QMessageBox, QSplitter
+    QLineEdit, QHBoxLayout, QPushButton, QMenu, QHeaderView, QMessageBox,
+    QSplitter, QSystemTrayIcon
 )
 from PySide6.QtCore import Qt, QTimer, QPoint, QUrl, QThread, Signal
-from PySide6.QtGui import QDesktopServices, QIcon, QSystemTrayIcon, QCursor
+from PySide6.QtGui import QDesktopServices, QIcon, QCursor
 
-from comfyvn.gui.components.task_console_window import TaskConsoleWindow
+from comfyvn.gui.widgets.task_console_window import TaskConsoleWindow
 from comfyvn.gui.server_bridge import ServerBridge
 from comfyvn.gui.components.task_manager_controls import TaskManagerControls
 from comfyvn.gui.components.job_filter_model import JobFilterModel
@@ -35,17 +35,17 @@ class _WebSocketWorker(QThread):
         asyncio.run(self._loop())
 
     async def _loop(self):
-        try:
-            async for ws in websockets.connect(self.url, ping_interval=20):
-                try:
+        """Persistent WebSocket connection with auto-reconnect."""
+        while not self._stop:
+            try:
+                async with websockets.connect(self.url, ping_interval=20) as ws:
                     async for msg in ws:
                         if self._stop:
                             break
                         self.message_received.emit(msg)
-                except Exception:
-                    await asyncio.sleep(3)
-        except Exception:
-            pass
+            except Exception as e:
+                print(f"[TaskManagerDock] WebSocket error: {e}")
+                await asyncio.sleep(3)
 
     def stop(self):
         self._stop = True
@@ -79,7 +79,7 @@ class TaskManagerDock(QDockWidget):
         self.controls.refresh_jobs.connect(self._poll_fallback)
         vlayout.addWidget(self.controls)
 
-        # Filter and export bar
+        # Filter + export bar
         filter_bar = QHBoxLayout()
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("Filter jobs (type/status)…")
@@ -106,6 +106,10 @@ class TaskManagerDock(QDockWidget):
 
         # System tray notifications
         self.tray = QSystemTrayIcon(QIcon.fromTheme("dialog-information"), parent)
+        if not self.tray.icon().isNull():
+            self.tray.setToolTip("ComfyVN Task Manager")
+        else:
+            self.tray.setIcon(QIcon())  # fallback icon
         self.tray.setVisible(True)
 
         # Internal state
@@ -139,6 +143,7 @@ class TaskManagerDock(QDockWidget):
             data = json.loads(message)
         except Exception:
             return
+
         evt_type = data.get("type", "")
         if evt_type == "hello":
             jobs = data.get("jobs", [])
@@ -170,7 +175,10 @@ class TaskManagerDock(QDockWidget):
             self._latest_jobs = jobs
             self._update_table(jobs)
             self._save_log(jobs)
-        self.bridge.poll_jobs(_cb)
+        try:
+            self.bridge.get('/jobs/poll')
+        except Exception as e:
+            print(f"[TaskManagerDock] Poll error: {e}")
 
     # ===============================================================
     # Table + Filters
@@ -189,16 +197,21 @@ class TaskManagerDock(QDockWidget):
             prog_item = QTableWidgetItem(progress)
 
             s = job_status.lower()
-            if s in ("queued", "pending"):
-                status_item.setBackground(Qt.lightGray)
-            elif s in ("processing", "running", "active"):
-                status_item.setBackground(Qt.yellow)
-            elif s in ("complete", "done", "success"):
-                status_item.setBackground(Qt.green)
-            elif s in ("error", "failed"):
-                status_item.setBackground(Qt.red)
-            elif s in ("cancelled", "stopped"):
-                status_item.setBackground(Qt.gray)
+            color = {
+                "queued": Qt.lightGray,
+                "pending": Qt.lightGray,
+                "processing": Qt.yellow,
+                "running": Qt.yellow,
+                "active": Qt.yellow,
+                "complete": Qt.green,
+                "done": Qt.green,
+                "success": Qt.green,
+                "error": Qt.red,
+                "failed": Qt.red,
+                "cancelled": Qt.gray,
+                "stopped": Qt.gray
+            }.get(s, Qt.white)
+            status_item.setBackground(color)
 
             self.table.setItem(row, 0, id_item)
             self.table.setItem(row, 1, type_item)
@@ -210,28 +223,26 @@ class TaskManagerDock(QDockWidget):
         self._apply_filter()
 
     def _apply_filter(self):
+        """Apply text and checkbox filters simultaneously."""
         text = self.filter_edit.text().lower().strip()
+        filters = self.controls.collect_filters()
         for i in range(self.table.rowCount()):
-            row_match = any(
-                text in (self.table.item(i, c).text().lower() if self.table.item(i, c) else "")
-                for c in range(self.table.columnCount())
-            )
-            if text:
-                self.table.setRowHidden(i, not row_match)
-            else:
-                filters = self.controls.collect_filters()
-                job_type = self.table.item(i, 1).text().lower() if self.table.item(i, 1) else ""
-                job_status = self.table.item(i, 2).text().lower() if self.table.item(i, 2) else ""
-                hide = False
-                if filters["cpu_only"] and "cpu" not in job_type:
-                    hide = True
-                if filters["gpu_only"] and "gpu" not in job_type:
-                    hide = True
-                if filters["active"] and job_status not in ("running", "active", "processing"):
-                    hide = True
-                if filters["failed"] and job_status not in ("failed", "error"):
-                    hide = True
-                self.table.setRowHidden(i, hide)
+            job_type = self.table.item(i, 1).text().lower() if self.table.item(i, 1) else ""
+            job_status = self.table.item(i, 2).text().lower() if self.table.item(i, 2) else ""
+
+            visible = True
+            if text and text not in (job_type + job_status):
+                visible = False
+            if filters["cpu_only"] and "cpu" not in job_type:
+                visible = False
+            if filters["gpu_only"] and "gpu" not in job_type:
+                visible = False
+            if filters["active"] and job_status not in ("running", "active", "processing"):
+                visible = False
+            if filters["failed"] and job_status not in ("failed", "error"):
+                visible = False
+
+            self.table.setRowHidden(i, not visible)
 
     # ===============================================================
     # Context Menu & Actions
@@ -251,7 +262,10 @@ class TaskManagerDock(QDockWidget):
 
     def _cancel_jobs(self, job_ids):
         for jid in job_ids:
-            self.bridge.cancel_job(jid, lambda r: None)
+            try:
+                self.bridge.cancel_job(jid, lambda r: None)
+            except Exception as e:
+                print(f"[TaskManagerDock] Cancel job error: {e}")
 
     def _open_console(self, row):
         jid = self.table.item(row, 0).text()
@@ -278,7 +292,10 @@ class TaskManagerDock(QDockWidget):
                         self._notify(f"⚠️ Job Cancelled: {jid}")
 
     def _notify(self, msg):
-        self.tray.showMessage("ComfyVN Task Manager", msg, QSystemTrayIcon.Information, 4000)
+        try:
+            self.tray.showMessage("ComfyVN Task Manager", msg, QSystemTrayIcon.Information, 4000)
+        except Exception as e:
+            print(f"[TaskManagerDock] Tray notify error: {e}")
 
     # ===============================================================
     # Logging & Export
@@ -291,12 +308,13 @@ class TaskManagerDock(QDockWidget):
         try:
             with open(f, "w", encoding="utf-8") as fp:
                 json.dump(jobs, fp, indent=2, ensure_ascii=False)
-        except Exception:
+        except Exception as e:
+            print(f"[TaskManagerDock] Log write error: {e}")
             return
         self._rotate_logs()
 
     def _rotate_logs(self):
-        files = sorted(self.log_dir.glob("jobs_*.json"))
+        files = sorted(self.log_dir.glob("jobs_*.json"), key=os.path.getmtime)
         if len(files) > self.max_logs:
             for f in files[:-self.max_logs]:
                 try:
@@ -333,3 +351,14 @@ class TaskManagerDock(QDockWidget):
         with open(out, "w", encoding="utf-8") as fp:
             json.dump(sel, fp, indent=2, ensure_ascii=False)
         QMessageBox.information(self, "Export Complete", f"Selected logs → {out}")
+
+    # ===============================================================
+    # Cleanup
+    # ===============================================================
+    def closeEvent(self, event):
+        """Stop background threads when dock is closed."""
+        try:
+            self.ws_thread.stop()
+        except Exception:
+            pass
+        super().closeEvent(event)

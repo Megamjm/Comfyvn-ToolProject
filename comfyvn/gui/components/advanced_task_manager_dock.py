@@ -280,5 +280,5 @@ class AdvancedTaskManagerDock(QDockWidget):
 from comfyvn.gui.components.charts.resource_chart_widget import ResourceChartWidget
 
 # Inside your TaskManagerDock or control tab init:
-self.chart_widget = ResourceChartWidget(self)
-vlayout.addWidget(self.chart_widget)
+# self.chart_widget = ResourceChartWidget(self)
+# vlayout.addWidget(self.chart_widget)

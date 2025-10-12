@@ -2,7 +2,7 @@
 # [🎨 GUI Code Production Chat]
 # System-level tools and layout/profile menu
 
-from PySide6.QtWidgets import QAction, QMessageBox
+from PySide6.QtGui import QAction, QMessageBox
 
 def register_menu(parent):
     menu = parent.addMenu("&System")

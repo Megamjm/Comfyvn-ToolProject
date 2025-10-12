@@ -18,7 +18,7 @@ REWRITE_MAP = {
     r"from comfyvn\.modules\.export_manager":    "from comfyvn.assets.export_manager",
 
     # integrations
-    r"from comfyvn\.modules\.lmstudio_bridge":   "from comfyvn.integrations.lmstudio_bridge",
+    r"from comfyvn\.modules\.lmstudio_bridge":   "from comfyvn.modules.orchestration.lmstudio_bridge",
     r"from comfyvn\.modules\.renpy_bridge":      "from comfyvn.integrations.renpy_bridge",
     r"from comfyvn\.modules\.sillytavern_bridge": "from comfyvn.integrations.sillytavern_bridge",
 }

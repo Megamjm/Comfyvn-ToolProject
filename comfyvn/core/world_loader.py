@@ -4,7 +4,7 @@
 # [⚙️ 3. Server Core Production Chat]
 
 import os, json, hashlib
-from modules.sillytavern_bridge import SillyTavernBridge
+from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge
 
 class WorldLoader:
     """Handles loading, merging, caching, and syncing of world lore files."""

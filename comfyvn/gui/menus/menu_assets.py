@@ -2,7 +2,7 @@
 # [🎨 GUI Code Production Chat]
 # Menu for asset import/export and cache operations
 
-from PySide6.QtWidgets import QAction
+from PySide6.QtGui import QAction
 
 def register_menu(parent):
     menu = parent.addMenu("&Assets")
