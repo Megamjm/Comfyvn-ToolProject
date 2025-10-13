@@ -1,0 +1,40 @@
+2025-10-10 17:05:30,929 INFO: Starting ComfyVN server on http://127.0.0.1:5000
+2025-10-10 17:05:30,932 INFO: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-10-10 17:05:30,932 INFO: [33mPress CTRL+C to quit[0m
+2025-10-10 17:05:34,853 INFO: 127.0.0.1 - - [10/Oct/2025 17:05:34] "[33mGET / HTTP/1.1[0m" 404 -
+2025-10-10 17:05:35,046 INFO: 127.0.0.1 - - [10/Oct/2025 17:05:35] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-10-10 17:05:36,997 INFO: 127.0.0.1 - - [10/Oct/2025 17:05:36] "[33mGET / HTTP/1.1[0m" 404 -
+2025-10-10 17:11:12,347 INFO: Starting ComfyVN server on http://127.0.0.1:5000
+2025-10-10 17:11:12,350 INFO: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-10-10 17:11:12,350 INFO: [33mPress CTRL+C to quit[0m
+2025-10-10 17:12:24,369 INFO: Starting ComfyVN server on http://127.0.0.1:5000
+2025-10-10 17:12:24,373 INFO: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-10-10 17:12:24,373 INFO: [33mPress CTRL+C to quit[0m
+2025-10-10 17:12:31,883 ERROR: Exception on / [GET]
+Traceback (most recent call last):
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/Comfyvn-ToolProject/app.py", line 426, in ui_index
+    return send_file("templates/index.html")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/flask/helpers.py", line 518, in send_file
+    return werkzeug.utils.send_file(  # type: ignore[return-value]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/werkzeug/utils.py", line 428, in send_file
+    stat = os.stat(path)
+           ^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspaces/Comfyvn-ToolProject/templates/index.html'
+2025-10-10 17:12:31,885 INFO: 127.0.0.1 - - [10/Oct/2025 17:12:31] "[35m[1mGET / HTTP/1.1[0m" 500 -
