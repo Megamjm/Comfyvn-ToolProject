@@ -1,0 +1,62 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+*.dist-info/
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.coverage*
+*.log
+*.tmp
+*.bak
+*.old
+*.orig
+*.lock
+
+# --- Virtual envs ---
+venv/
+.venv/
+env/
+
+# --- Editors/OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Node/npm (if any UI extras appear) ---
+node_modules/
+
+# --- Project outputs ---
+releases/
+export/
+exports/
+dist/
+build/
+*.zip
+*.7z
+*.rar
+
+# --- ComfyUI scratch (if present) ---
+ComfyUI/output/
+ComfyUI/temp/
+ComfyUI/cache/
+
+# --- ComfyVN runtime data (LOCAL ONLY) ---
+comfyvn/data/
+logs/
+cache/
+assets/sprites/
+
+# --- Secrets & env ---
+.env
+*.env
+.env.*
+
+# --- Local configs that shouldn’t ship ---
+comfyvn/*.local.json
+comfyvn/**/ui_state.json
+data/*
+renpy_project/
