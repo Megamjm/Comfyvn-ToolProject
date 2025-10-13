@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "presets": [
+    {
+      "id": "default",
+      "name": "Default Visual Novel Style",
+      "desc": "Standard base rendering setup for ComfyVN scenes."
+    },
+    {
+      "id": "realistic",
+      "name": "Realistic Render Style",
+      "desc": "Uses real-world lighting, shading, and physical textures."
+    },
+    {
+      "id": "anime",
+      "name": "Anime VN Style",
+      "desc": "High-contrast character-focused rendering, inspired by visual novels."
+    }
+  ]
+}

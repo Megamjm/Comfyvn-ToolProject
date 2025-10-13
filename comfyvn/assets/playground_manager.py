@@ -1,29 +1,37 @@
 # comfyvn/modules/playground_manager.py
-# 🧪 Playground Manager – Scene Mutation Sandbox (Patch E)
-# ComfyVN Architect | Server Core Integration Sync
-# [⚙️ 3. Server Core Production Chat]
+# 🧪 Playground Manager – Unified Scene & Pose Sandbox (v0.4.3)
+# [ComfyVN Architect | Server Core + GUI Integration Sync]
 
-from typing import Dict, List
+import os, json
+from typing import Dict, List, Any, Optional
+from comfyvn.assets.pose_manager import PoseManager
+from comfyvn.assets.pose_utils import apply_delta
+
 
 class PlaygroundManager:
     """
-    Provides a lightweight, in-memory scene mutation system.
-    Used for quick edits or prompt-driven experimentation
-    before committing changes to disk.
+    Central manager for both prompt-driven scene mutations (NLP layer)
+    and pose interpolation workflows (GUI + ComfyUI bridge).
     """
 
-    def __init__(self) -> None:
-        # { scene_id: [prompts, …] }
+    def __init__(
+        self, pose_dir: str = "./data/poses", delta_dir: str = "./data/pose_deltas"
+    ):
+        # Prompt mutation memory
         self.history: Dict[str, List[str]] = {}
 
+        # Pose management paths
+        self.pose_dir = pose_dir
+        self.delta_dir = delta_dir
+        os.makedirs(self.pose_dir, exist_ok=True)
+        os.makedirs(self.delta_dir, exist_ok=True)
+        self.pose_manager = PoseManager(self.pose_dir)
+
     # -------------------------------------------------
-    # Prompt Application
+    # 🔤 Prompt Sandbox (from Patch E)
     # -------------------------------------------------
-    def apply_prompt(self, scene_id: str, prompt: str) -> Dict[str, str]:
-        """
-        Record a mutation prompt for the given scene.
-        (Later this can feed into an NLP pipeline or model chain.)
-        """
+    def apply_prompt(self, scene_id: str, prompt: str) -> Dict[str, Any]:
+        """Record a text mutation for a scene."""
         if not scene_id or not prompt:
             return {"status": "error", "message": "scene_id and prompt required"}
         self.history.setdefault(scene_id, []).append(prompt)
@@ -35,9 +43,35 @@ class PlaygroundManager:
             "history_len": len(self.history[scene_id]),
         }
 
-    # -------------------------------------------------
-    # History Retrieval
-    # -------------------------------------------------
     def get_history(self, scene_id: str) -> List[str]:
         """Return the stored mutation history for a scene."""
         return self.history.get(scene_id, [])
+
+    # -------------------------------------------------
+    # 🧍 Pose Interpolation System
+    # -------------------------------------------------
+    def list_poses(self) -> List[str]:
+        return self.pose_manager.list_poses()
+
+    def get_pose(self, pose_id: str) -> Optional[Dict[str, Any]]:
+        return self.pose_manager.get_pose(pose_id)
+
+    def list_deltas(self) -> List[str]:
+        if not os.path.isdir(self.delta_dir):
+            return []
+        return [f for f in os.listdir(self.delta_dir) if f.endswith(".json")]
+
+    def load_delta(self, name: str) -> Dict[str, Any]:
+        path = os.path.join(self.delta_dir, name)
+        return json.load(open(path, "r", encoding="utf-8"))
+
+    def interpolate(self, pose_a_id: str, delta_name: str, t: float) -> Dict[str, Any]:
+        pose_a = self.get_pose(pose_a_id)
+        delta = self.load_delta(delta_name)
+        return apply_delta(pose_a, delta, t)
+
+    def save_interpolated(self, pose_out: Dict[str, Any]) -> str:
+        pid = pose_out.get("pose_id", "interpolated")
+        self.pose_manager.add_pose(pid, pose_out)
+        print(f"[Playground] 💾 Saved interpolated pose: {pid}")
+        return pid

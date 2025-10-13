@@ -6,6 +6,7 @@
 import os, json, asyncio, httpx
 from typing import Any, Dict, List, Optional
 
+
 class LMBridge:
     """
     Provides async access to local or remote LLM endpoints.
@@ -18,7 +19,7 @@ class LMBridge:
     def __init__(
         self,
         lmstudio_base: str = "http://127.0.0.1:1234/v1",
-        sillytavern_base: Optional[str] = None
+        sillytavern_base: Optional[str] = None,
     ) -> None:
         self.lmstudio_base = lmstudio_base
         self.sillytavern_base = sillytavern_base
@@ -47,7 +48,7 @@ class LMBridge:
         temperature: float = 0.7,
         max_tokens: int = 200,
         system_prompt: Optional[str] = None,
-        use_sillytavern: bool = False
+        use_sillytavern: bool = False,
     ) -> Dict[str, Any]:
         """
         Send a text generation request to the selected backend.
@@ -56,8 +57,13 @@ class LMBridge:
         client = await self._get_client()
         payload = {
             "model": model,
-            "messages": [{"role": "system", "content": system_prompt or "You are ComfyVN Assistant."},
-                         {"role": "user", "content": prompt}],
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt or "You are ComfyVN Assistant.",
+                },
+                {"role": "user", "content": prompt},
+            ],
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -65,7 +71,9 @@ class LMBridge:
         # --- Try SillyTavern first if available ---
         if use_sillytavern and self.sillytavern_base:
             try:
-                r = await client.post(f"{self.sillytavern_base}/v1/chat/completions", json=payload)
+                r = await client.post(
+                    f"{self.sillytavern_base}/v1/chat/completions", json=payload
+                )
                 r.raise_for_status()
                 return r.json()
             except Exception as e:
@@ -73,7 +81,9 @@ class LMBridge:
 
         # --- Fallback → LM Studio ---
         try:
-            r = await client.post(f"{self.lmstudio_base}/chat/completions", json=payload)
+            r = await client.post(
+                f"{self.lmstudio_base}/chat/completions", json=payload
+            )
             r.raise_for_status()
             return r.json()
         except Exception as e:
@@ -82,11 +92,15 @@ class LMBridge:
     # -------------------------------------------------
     # Embeddings / Vector API (optional)
     # -------------------------------------------------
-    async def embed(self, text: str, model: str = "text-embedding-ada-002") -> Dict[str, Any]:
+    async def embed(
+        self, text: str, model: str = "text-embedding-ada-002"
+    ) -> Dict[str, Any]:
         """Return embedding vector from LM Studio or fallback."""
         client = await self._get_client()
         try:
-            r = await client.post(f"{self.lmstudio_base}/embeddings", json={"model": model, "input": text})
+            r = await client.post(
+                f"{self.lmstudio_base}/embeddings", json={"model": model, "input": text}
+            )
             r.raise_for_status()
             return r.json()
         except Exception as e:
@@ -95,13 +109,19 @@ class LMBridge:
     # -------------------------------------------------
     # Stream Responses (Generator)
     # -------------------------------------------------
-    async def stream_complete(self, prompt: str, model: str = "gpt-3.5-turbo", temperature: float = 0.7):
+    async def stream_complete(
+        self, prompt: str, model: str = "gpt-3.5-turbo", temperature: float = 0.7
+    ):
         """
         Yield incremental tokens from LM Studio stream API if supported.
         """
         client = await self._get_client()
         url = f"{self.lmstudio_base}/chat/completions"
-        payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": True}
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+        }
         try:
             async with client.stream("POST", url, json=payload) as resp:
                 async for line in resp.aiter_lines():

@@ -6,6 +6,7 @@
 import os, json, hashlib
 from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge
 
+
 class WorldLoader:
     """Handles loading, merging, caching, and syncing of world lore files."""
 
@@ -80,7 +81,11 @@ class WorldLoader:
         try:
             remote_worlds = self.bridge.fetch_worlds()
             if not remote_worlds:
-                return {"status": "fail", "updated": [], "message": "No data from SillyTavern."}
+                return {
+                    "status": "fail",
+                    "updated": [],
+                    "message": "No data from SillyTavern.",
+                }
 
             updated = []
             for world in remote_worlds:
@@ -101,8 +106,16 @@ class WorldLoader:
                     updated.append(wid)
 
             if updated:
-                return {"status": "success", "updated": updated, "message": "Worlds updated."}
-            return {"status": "no_change", "updated": [], "message": "No changes detected."}
+                return {
+                    "status": "success",
+                    "updated": updated,
+                    "message": "Worlds updated.",
+                }
+            return {
+                "status": "no_change",
+                "updated": [],
+                "message": "No changes detected.",
+            }
 
         except Exception as e:
             print(f"[WorldLoader] Sync Error: {e}")
@@ -117,3 +130,15 @@ class WorldLoader:
             return local.get("updated_at") != remote.get("updated_at")
         except Exception:
             return True
+
+
+def save_world(self, name: str, data: dict):
+    """Save a world JSON file into data/worlds."""
+    import json, os
+
+    os.makedirs(self.data_path, exist_ok=True)
+    file_path = os.path.join(self.data_path, f"{name}.json")
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    self.cache[name] = data
+    print(f"[WorldLoader] Saved world: {name}")

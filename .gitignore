@@ -1,94 +1,60 @@
-old.project/
- ──────────────
-# Python / Flask
-# ──────────────
+# --- Python ---
 __pycache__/
 *.py[cod]
+*.so
+*.dist-info/
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.coverage*
 *.log
-*.sqlite3
-*.db
-*.db-journal
-
-# Virtual Environments
-venv/
-env/
-.venv/
-
-# IDE / Editor files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# ──────────────
-# Data handling
-# ──────────────
-# Exclude volatile data folders, but allow small assets & json metadata
-data/
-!data/.gitkeep
-!data/gallery/
-!data/gallery/**/*.png
-!data/gallery/**/*.json
-!data/summaries/
-!data/summaries/**/*.json
-!data/export_queue/
-!data/export_queue/**/*.json
-!data/renpy_project/
-!data/renpy_project/**/*.rpy
-!data/renpy_project/.gitkeep
-
-# ──────────────
-# Ren'Py generated files
-# ──────────────
-*.rpyc
-*.rpa
-*.bak
-*.autosave
-saves/
-tmp/
-cache/
-log.txt
-
-# ──────────────
-# Local SDK / binaries
-# ──────────────
-RenPySDK*/
-renpy/
-RenPy-*/
-
-# ──────────────
-# Node / Web bundlers (future use)
-# ──────────────
-node_modules/
-dist/
-build/
-*.map
-
-# ──────────────
-# ComfyUI / AI outputs
-# ──────────────
-ComfyUI/output/
-ComfyUI/temp/
-ComfyUI/cache/
-ComfyUI/models/
-LMStudio/logs/
-LMStudio/output/
-
-# ──────────────
-# OS / Temp files
-# ──────────────
-*.swp
 *.tmp
 *.bak
 *.old
 *.orig
 *.lock
 
-# ──────────────
-# Releases / exports
-# ──────────────
+# --- Virtual envs ---
+venv/
+.venv/
+env/
+
+# --- Editors/OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Node/npm (if any UI extras appear) ---
+node_modules/
+
+# --- Project outputs ---
+releases/
+export/
+exports/
+dist/
+build/
 *.zip
 *.7z
 *.rar
-releases/
-export/
+
+# --- ComfyUI scratch (if present) ---
+ComfyUI/output/
+ComfyUI/temp/
+ComfyUI/cache/
+
+# --- ComfyVN runtime data (LOCAL ONLY) ---
+comfyvn/data/
+logs/
+cache/
+assets/sprites/
+
+# --- Secrets & env ---
+.env
+*.env
+.env.*
+
+# --- Local configs that shouldn’t ship ---
+comfyvn/*.local.json
+comfyvn/**/ui_state.json

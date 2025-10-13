@@ -1,4 +1,5 @@
 """Auto-generated module exports."""
+
 __all__ = [
     "asset_browser",
     "community_assets_browser",

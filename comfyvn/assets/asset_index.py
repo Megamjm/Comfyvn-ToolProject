@@ -7,13 +7,16 @@ from typing import Dict, Any, List, Optional
 
 INDEX_PATH = "./comfyvn/data/assets_index.json"
 
+
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
 
 def _ensure_dir():
     d = os.path.dirname(INDEX_PATH)
     if d and not os.path.exists(d):
         os.makedirs(d, exist_ok=True)
+
 
 def load_index() -> Dict[str, Any]:
     _ensure_dir()
@@ -22,10 +25,12 @@ def load_index() -> Dict[str, Any]:
     with open(INDEX_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def save_index(idx: Dict[str, Any]) -> None:
     _ensure_dir()
     with open(INDEX_PATH, "w", encoding="utf-8") as f:
         json.dump(idx, f, indent=2)
+
 
 def add_record(item: Dict[str, Any]) -> None:
     idx = load_index()
@@ -33,6 +38,7 @@ def add_record(item: Dict[str, Any]) -> None:
     idx["items"].append(item)
     # optional: cap/rotation policy could go here
     save_index(idx)
+
 
 def query_index(
     *,

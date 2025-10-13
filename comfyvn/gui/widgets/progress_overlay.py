@@ -13,11 +13,13 @@ class ProgressOverlay(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, not cancellable)
         self.setWindowFlags(Qt.SubWindow)
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             background-color: rgba(0, 0, 0, 128);
             color: white;
             border-radius: 10px;
-        """)
+        """
+        )
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)

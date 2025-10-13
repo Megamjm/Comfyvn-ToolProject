@@ -1,0 +1,27 @@
+{
+  "integrations": {
+    "api_base": "http://127.0.0.1:8001",
+    "sillytavern_url": "http://127.0.0.1:8000",
+    "comfyui": {
+      "host": "http://127.0.0.1",
+      "port": 8188,
+      "ws": "ws://127.0.0.1:8188/ws"
+    }
+  },
+  "paths": {
+    "data_dir": "C:\\Silly\\Comfyvn-ToolProject\\data",
+    "exports_dir": "C:\\Silly\\Comfyvn-ToolProject\\exports",
+    "cache_dir": "C:\\Silly\\Comfyvn-ToolProject\\comfyvn\\cache",
+    "logs_dir": "C:\\Silly\\Comfyvn-ToolProject\\logs",
+    "snapshots_dir": "C:\\Silly\\Comfyvn-ToolProject\\data\\snapshots",
+    "models_dir": "C:\\Silly\\Comfyvn-ToolProject\\models",
+    "loras_dir": "C:\\Silly\\Comfyvn-ToolProject\\models\\loras",
+    "poses_dir": "C:\\Silly\\Comfyvn-ToolProject\\data\\poses",
+    "assets": {
+      "backgrounds": "C:\\Silly\\Comfyvn-ToolProject\\assets\\backgrounds",
+      "characters": "C:\\Silly\\Comfyvn-ToolProject\\assets\\characters",
+      "sprites": "C:\\Silly\\Comfyvn-ToolProject\\assets\\sprites",
+      "ui": "C:\\Silly\\Comfyvn-ToolProject\\assets\\ui"
+    }
+  }
+}

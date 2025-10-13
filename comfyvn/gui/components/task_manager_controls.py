@@ -6,8 +6,14 @@
 import threading, requests, json
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel,
-    QComboBox, QCheckBox, QMessageBox
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QPushButton,
+    QLabel,
+    QComboBox,
+    QCheckBox,
+    QMessageBox,
 )
 from comfyvn.core.system_monitor import SystemMonitor
 
@@ -44,7 +50,12 @@ class TaskManagerControls(QWidget):
         self.btn_rebalance = QPushButton("🔁 Rebalance Jobs")
         self.btn_swap = QPushButton("🔀 Move to GPU")
         self.btn_refresh = QPushButton("🔄 Refresh")
-        for b in [self.btn_auto_opt, self.btn_rebalance, self.btn_swap, self.btn_refresh]:
+        for b in [
+            self.btn_auto_opt,
+            self.btn_rebalance,
+            self.btn_swap,
+            self.btn_refresh,
+        ]:
             b.setMinimumWidth(120)
             top_row.addWidget(b)
         root.addLayout(top_row)
@@ -87,7 +98,11 @@ class TaskManagerControls(QWidget):
     def _auto_optimize(self):
         """Automatically rebalance queued/running jobs based on load."""
         res = self.latest_metrics.get("resources", {})
-        cpu, ram, gpu = res.get("cpu_percent", 0), res.get("ram_percent", 0), res.get("gpu_percent", 0)
+        cpu, ram, gpu = (
+            res.get("cpu_percent", 0),
+            res.get("ram_percent", 0),
+            res.get("gpu_percent", 0),
+        )
 
         msg = f"CPU {cpu:.1f}% | RAM {ram:.1f}% | GPU {gpu:.1f}%"
         self.message.emit(f"[Auto-Optimize] Metrics → {msg}")
@@ -97,9 +112,15 @@ class TaskManagerControls(QWidget):
 
         def _work():
             try:
-                r = requests.post(f"{self.server_url}/jobs/optimize", json={"target": target}, timeout=10)
+                r = requests.post(
+                    f"{self.server_url}/jobs/optimize",
+                    json={"target": target},
+                    timeout=10,
+                )
                 if r.status_code == 200:
-                    self.message.emit(f"[Auto-Optimize] Rebalanced toward {target.upper()}")
+                    self.message.emit(
+                        f"[Auto-Optimize] Rebalanced toward {target.upper()}"
+                    )
                 else:
                     self.message.emit(f"[Auto-Optimize] Server Error {r.status_code}")
             except Exception as e:
@@ -111,6 +132,7 @@ class TaskManagerControls(QWidget):
     @Slot()
     def _rebalance(self):
         """Rebalances queued jobs across available compute devices."""
+
         def _work():
             try:
                 r = requests.post(f"{self.server_url}/jobs/rebalance", timeout=10)
@@ -129,11 +151,16 @@ class TaskManagerControls(QWidget):
     def _swap_selected_to_gpu(self):
         """Moves selected CPU jobs to GPU (if supported by backend)."""
         dev = self.device_box.currentText().lower()
+
         def _work():
             try:
-                r = requests.post(f"{self.server_url}/jobs/move", json={"target": dev}, timeout=10)
+                r = requests.post(
+                    f"{self.server_url}/jobs/move", json={"target": dev}, timeout=10
+                )
                 if r.status_code == 200:
-                    self.message.emit(f"[Device-Swap] Moved selected tasks → {dev.upper()}")
+                    self.message.emit(
+                        f"[Device-Swap] Moved selected tasks → {dev.upper()}"
+                    )
                     self.refresh_jobs.emit()
                 else:
                     self.message.emit(f"[Device-Swap] Server Error {r.status_code}")
