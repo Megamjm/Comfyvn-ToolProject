@@ -1,0 +1,30 @@
+[
+  {
+    "id": "oga-menu-select",
+    "title": "Menu Select Beep",
+    "provider": "opengameart",
+    "category": "ui",
+    "license": "CC-BY-4.0",
+    "tags": ["menu", "ui", "beep"],
+    "format": "wav",
+    "duration_sec": 0.25,
+    "preview_url": "https://opengameart.org/sites/default/files/menu_select.wav",
+    "download_url": "https://opengameart.org/sites/default/files/menu_select.wav",
+    "pack_name": "OGA UI Pack",
+    "notes": "Attribution: 'Menu Select Beep' by Author X (CC-BY 4.0)"
+  },
+  {
+    "id": "oga-door-open",
+    "title": "Door Open",
+    "provider": "opengameart",
+    "category": "foley",
+    "license": "CC-BY-4.0",
+    "tags": ["door", "foley", "environment"],
+    "format": "wav",
+    "duration_sec": 1.2,
+    "preview_url": "https://opengameart.org/sites/default/files/door_open.wav",
+    "download_url": "https://opengameart.org/sites/default/files/door_open.wav",
+    "pack_name": "OGA Foley",
+    "notes": "Attribution: 'Door Open' by Author Y (CC-BY 4.0)"
+  }
+]
