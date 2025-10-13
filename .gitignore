@@ -61,6 +61,8 @@ comfyvn/**/ui_state.json
 # Ignore private data
 /data/
 /data/**
+data/
+data/**
 
 # but keep structure folders if empty
 !data/.gitkeep
