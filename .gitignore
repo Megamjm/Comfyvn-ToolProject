@@ -58,5 +58,10 @@ assets/sprites/
 # --- Local configs that shouldn’t ship ---
 comfyvn/*.local.json
 comfyvn/**/ui_state.json
-data/*
+# Ignore private data
+/data/
+/data/**
+
+# but keep structure folders if empty
+!data/.gitkeep
 renpy_project/
