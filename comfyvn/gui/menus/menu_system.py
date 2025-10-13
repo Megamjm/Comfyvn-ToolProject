@@ -1,21 +1,27 @@
 # comfyvn/gui/menus/menu_system.py
-# [🎨 GUI Code Production Chat]
-# System-level tools and layout/profile menu
+# 🧩 System Menu — Internal reloads, info, and maintenance
 
-from PySide6.QtGui import QAction, QMessageBox
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMessageBox
 
-def register_menu(parent):
-    menu = parent.addMenu("&System")
+
+def register_menu(window, menubar):
+    menu = menubar.addMenu("System")
 
     def _about():
-        QMessageBox.information(parent, "About ComfyVN",
-            "ComfyVN v0.4-dev\nVisual Novel Studio Environment\n© ComfyVN Team")
+        QMessageBox.information(
+            window,
+            "About ComfyVN",
+            "ComfyVN v4.0-dev\nVisual Novel Studio Environment\n© ComfyVN Team",
+        )
 
-    act_about = QAction("About ComfyVN", parent)
+    act_reload = QAction("🔁 Reload Menus", window)
+    act_reload.triggered.connect(
+        lambda: window.menu_bar.load_menus() if hasattr(window, "menu_bar") else None
+    )
+
+    act_about = QAction("ℹ️ About ComfyVN", window)
     act_about.triggered.connect(_about)
-
-    act_reload = QAction("Reload Menus", parent)
-    act_reload.triggered.connect(parent.parent()._reload_menus if hasattr(parent.parent(), "_reload_menus") else lambda: None)
 
     menu.addAction(act_reload)
     menu.addSeparator()

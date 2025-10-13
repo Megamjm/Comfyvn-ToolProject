@@ -10,8 +10,18 @@ from typing import List, Dict
 from PySide6.QtCore import Qt, QTimer, QPoint, QThread, Signal
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QMessageBox
+    QDockWidget,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QMenu,
+    QMessageBox,
 )
 
 from comfyvn.gui.components.task_resource_bar import TaskResourceBar
@@ -41,6 +51,7 @@ class _WSWorker(QThread):
 
     async def _loop(self):
         import asyncio, websockets  # noqa
+
         while not self._stop:
             try:
                 async with websockets.connect(self.url, ping_interval=20) as ws:
@@ -119,7 +130,9 @@ class AdvancedTaskManagerDock(QDockWidget):
     # ---------- table factory ----------
     def _make_table(self) -> QTableWidget:
         tbl = QTableWidget(0, 6)
-        tbl.setHorizontalHeaderLabels(["ID", "Type", "Status", "Progress", "Device", "Created"])
+        tbl.setHorizontalHeaderLabels(
+            ["ID", "Type", "Status", "Progress", "Device", "Created"]
+        )
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         tbl.setSelectionBehavior(QTableWidget.SelectRows)
         return tbl
@@ -157,6 +170,7 @@ class AdvancedTaskManagerDock(QDockWidget):
             except Exception:
                 # ignore errors; UI remains
                 pass
+
         threading.Thread(target=_work, daemon=True).start()
 
     # ---------- render tables ----------
@@ -255,16 +269,22 @@ class AdvancedTaskManagerDock(QDockWidget):
             self._poll_now()
             if fail:
                 QMessageBox.warning(self, "Reallocate", f"Moved {ok}, failed {fail}.")
+
         threading.Thread(target=work, daemon=True).start()
 
     def _manage(self, job_ids: List[str], action: str):
         def work():
             for jid in job_ids:
                 try:
-                    requests.post(f"{self.server_url}/jobs/{action}", json={"job_id": jid}, timeout=6)
+                    requests.post(
+                        f"{self.server_url}/jobs/{action}",
+                        json={"job_id": jid},
+                        timeout=6,
+                    )
                 except Exception:
                     pass
             self._poll_now()
+
         threading.Thread(target=work, daemon=True).start()
 
     # ---------- double click ----------
@@ -274,7 +294,11 @@ class AdvancedTaskManagerDock(QDockWidget):
         if not jid_item:
             return
         jid = jid_item.text()
-        QMessageBox.information(self, "Job", f"Open console for job: {jid}\n\n(Integrate TaskConsoleWindow)  # [🎨 GUI Code Production Chat]")
+        QMessageBox.information(
+            self,
+            "Job",
+            f"Open console for job: {jid}\n\n(Integrate TaskConsoleWindow)  # [🎨 GUI Code Production Chat]",
+        )
 
 
 from comfyvn.gui.components.charts.resource_chart_widget import ResourceChartWidget

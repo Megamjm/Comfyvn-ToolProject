@@ -4,10 +4,21 @@
 
 import os, json, requests
 from PySide6.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QTextEdit, QHBoxLayout, QMessageBox, QLineEdit, QCheckBox
+    QDockWidget,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QTextEdit,
+    QHBoxLayout,
+    QMessageBox,
+    QLineEdit,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt
+
 
 class CommunityAssetsBrowser(QDockWidget):
     def __init__(self, server_url="http://127.0.0.1:8000", parent=None):
@@ -42,14 +53,18 @@ class CommunityAssetsBrowser(QDockWidget):
         self.v.addLayout(btn_row)
 
         self.v.addWidget(QLabel("Add Custom Asset (⚠️ Not Verified in Safe Mode):"))
-        self.name_input = QLineEdit(); self.name_input.setPlaceholderText("Asset Name")
-        self.url_input = QLineEdit(); self.url_input.setPlaceholderText("Source URL or local path")
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Asset Name")
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText("Source URL or local path")
         self.btn_add = QPushButton("➕ Add Custom")
         self.v.addWidget(self.name_input)
         self.v.addWidget(self.url_input)
         self.v.addWidget(self.btn_add)
 
-        self.legal_box = QTextEdit(); self.legal_box.setReadOnly(True); self.legal_box.setMinimumHeight(120)
+        self.legal_box = QTextEdit()
+        self.legal_box.setReadOnly(True)
+        self.legal_box.setMinimumHeight(120)
         self.v.addWidget(QLabel("Legal Disclaimer:"))
         self.v.addWidget(self.legal_box)
 
@@ -91,12 +106,20 @@ class CommunityAssetsBrowser(QDockWidget):
             verified = r.get("assets", {}).get("verified", [])
             user = r.get("assets", {}).get("user", [])
             for a in verified:
-                item = QListWidgetItem(f"✅ {a['name']} ({a['type']}) – {a.get('license','N/A')}")
-                item.setToolTip(f"{a.get('description','')}\nSource: {a.get('source_url','')}")
+                item = QListWidgetItem(
+                    f"✅ {a['name']} ({a['type']}) – {a.get('license','N/A')}"
+                )
+                item.setToolTip(
+                    f"{a.get('description','')}\nSource: {a.get('source_url','')}"
+                )
                 self.list_assets.addItem(item)
             for a in user:
-                item = QListWidgetItem(f"⚠️ {a.get('name','(User Asset)')} — {a.get('license','Unknown')}")
-                item.setToolTip(f"{a.get('description','')}\nSource: {a.get('source_url','')}")
+                item = QListWidgetItem(
+                    f"⚠️ {a.get('name','(User Asset)')} — {a.get('license','Unknown')}"
+                )
+                item.setToolTip(
+                    f"{a.get('description','')}\nSource: {a.get('source_url','')}"
+                )
                 item.setForeground(Qt.darkYellow)
                 self.list_assets.addItem(item)
         except Exception as e:
@@ -115,18 +138,29 @@ class CommunityAssetsBrowser(QDockWidget):
 
     def add_custom(self):
         if self.chk_safe.isChecked():
-            QMessageBox.warning(self, "Safe Mode", "Disable Safe Mode to add unverified assets.")
+            QMessageBox.warning(
+                self, "Safe Mode", "Disable Safe Mode to add unverified assets."
+            )
             return
         name = self.name_input.text().strip()
         url = self.url_input.text().strip()
         if not name or not url:
             QMessageBox.warning(self, "Invalid", "Provide both Name and URL/path.")
             return
-        payload = {"name": name, "source_url": url, "type": "user", "license": "Unknown"}
+        payload = {
+            "name": name,
+            "source_url": url,
+            "type": "user",
+            "license": "Unknown",
+        }
         try:
-            r = requests.post(f"{self.server_url}/assets/register", json=payload, timeout=10)
+            r = requests.post(
+                f"{self.server_url}/assets/register", json=payload, timeout=10
+            )
             if r.status_code == 200:
-                QMessageBox.information(self, "Added", r.json().get("message","Added."))
+                QMessageBox.information(
+                    self, "Added", r.json().get("message", "Added.")
+                )
                 self.load_assets()
             else:
                 QMessageBox.warning(self, "Add", f"Failed: {r.text}")
@@ -137,18 +171,24 @@ class CommunityAssetsBrowser(QDockWidget):
         try:
             r = requests.get(f"{self.server_url}/legal/disclaimer", timeout=8)
             if r.status_code == 200:
-                self.legal_box.setPlainText(r.json().get("text",""))
+                self.legal_box.setPlainText(r.json().get("text", ""))
         except Exception as e:
             self.legal_box.setPlainText(f"Error loading disclaimer: {e}")
 
     def check_for_updates(self):
         try:
-            r = requests.get(f"{self.server_url}/assets/check_updates", timeout=6).json()
+            r = requests.get(
+                f"{self.server_url}/assets/check_updates", timeout=6
+            ).json()
             if r.get("update_available"):
                 note = QPushButton("⚠️ Registry update available — Click to apply")
-                note.setStyleSheet("background-color:#ffebcc;color:#333;border:1px solid #ffcc00;")
+                note.setStyleSheet(
+                    "background-color:#ffebcc;color:#333;border:1px solid #ffcc00;"
+                )
                 note.clicked.connect(self.update_github)
                 self.v.addWidget(note)
         except Exception:
             pass
+
+
 # ------------------------------------------------------------------

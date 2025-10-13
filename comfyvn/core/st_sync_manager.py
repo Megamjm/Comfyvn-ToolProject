@@ -16,10 +16,12 @@ META_FILE = os.path.join(SYNC_DIR, "meta.json")
 os.makedirs(SYNC_DIR, exist_ok=True)
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
 
+
 def _compute_hash(obj: Any) -> str:
     """Compute stable hash of JSON-serializable object."""
     s = json.dumps(obj, sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
+
 
 def _load_meta() -> Dict[str, Any]:
     if not os.path.exists(META_FILE):
@@ -27,13 +29,15 @@ def _load_meta() -> Dict[str, Any]:
     with open(META_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def _save_meta(meta: Dict[str, Any]):
     with open(META_FILE, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 
+
 class STSyncManager:
     """
-    Handles pulling / comparing / archiving of SillyTavern assets: 
+    Handles pulling / comparing / archiving of SillyTavern assets:
     worlds, lorebooks, characters, personas, chats.
     """
 
@@ -43,9 +47,13 @@ class STSyncManager:
         Assumes endpoints like /api/world/export, /api/character/export, etc.
         """
         self.base_url = base_url.rstrip("/")
-        self.meta = _load_meta()  # e.g. {"worlds": {key: hash,...}, "characters": {...}}
+        self.meta = (
+            _load_meta()
+        )  # e.g. {"worlds": {key: hash,...}, "characters": {...}}
 
-    def _pull_asset(self, asset_type: str, key: str, endpoint_suffix: str) -> Dict[str, Any]:
+    def _pull_asset(
+        self, asset_type: str, key: str, endpoint_suffix: str
+    ) -> Dict[str, Any]:
         """
         Pull JSON from ST for a given asset.
         endpoint_suffix is like "world/export" or "character/export".
@@ -59,7 +67,9 @@ class STSyncManager:
         except Exception as e:
             return {"status": "fail", "error": str(e)}
 
-    def sync_asset(self, asset_type: str, key: str, endpoint_suffix: str) -> Dict[str, Any]:
+    def sync_asset(
+        self, asset_type: str, key: str, endpoint_suffix: str
+    ) -> Dict[str, Any]:
         """
         Sync a single asset: compare, archive, update meta.
         Returns dict with keys: status: ("unchanged","updated","new","error"), details.
@@ -115,16 +125,21 @@ class STSyncManager:
         # try load latest archive
         # scanning archive files for matching asset_type & key, newest first
         candidates = [
-            f for f in os.listdir(ARCHIVE_DIR)
+            f
+            for f in os.listdir(ARCHIVE_DIR)
             if f.startswith(f"{asset_type}_{key}_") and f.endswith(".json")
         ]
         if candidates:
             candidates.sort(reverse=True)
-            with open(os.path.join(ARCHIVE_DIR, candidates[0]), "r", encoding="utf-8") as f:
+            with open(
+                os.path.join(ARCHIVE_DIR, candidates[0]), "r", encoding="utf-8"
+            ) as f:
                 blob = json.load(f)
         return {"key": key, "asset_type": asset_type, "hash": rec, "blob": blob}
 
-    def sync_many(self, asset_type: str, keys: List[str], endpoint_suffix: str) -> Dict[str, Any]:
+    def sync_many(
+        self, asset_type: str, keys: List[str], endpoint_suffix: str
+    ) -> Dict[str, Any]:
         results = {}
         for k in keys:
             results[k] = self.sync_asset(asset_type, k, endpoint_suffix)

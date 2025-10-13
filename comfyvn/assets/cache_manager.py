@@ -6,10 +6,13 @@
 import os, json, time
 from typing import Optional, Dict, Any
 
+
 class CacheManager:
     """Caches sprites and scene data for reuse and performance."""
 
-    def __init__(self, cache_path: str = "./cache/sprites", index_file: str = "cache_index.json"):
+    def __init__(
+        self, cache_path: str = "./cache/sprites", index_file: str = "cache_index.json"
+    ):
         self.cache_path = os.path.abspath(cache_path)
         self.index_path = os.path.join(self.cache_path, index_file)
         os.makedirs(self.cache_path, exist_ok=True)

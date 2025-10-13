@@ -3,6 +3,7 @@
 
 import json, requests, time, threading
 
+
 class ComfyUIBridge:
     """Handles all communications with ComfyUI REST API, now async-capable."""
 
@@ -30,14 +31,11 @@ class ComfyUIBridge:
         payload = {
             "prompt": {
                 "1": {
-                    "inputs": {
-                        "text": prompt_text,
-                        "seed": 42
-                    },
-                    "class_type": "CLIPTextEncode"
+                    "inputs": {"text": prompt_text, "seed": 42},
+                    "class_type": "CLIPTextEncode",
                 }
             },
-            "output": output_path
+            "output": output_path,
         }
         return self._safe_request("prompt", payload)
 
@@ -54,7 +52,12 @@ class ComfyUIBridge:
             time.sleep(interval)
         return {"status": "timeout", "job_id": job_id}
 
-    def queue_and_wait(self, prompt_text: str, output_path: str = "./outputs/latest.png", wait: bool = True):
+    def queue_and_wait(
+        self,
+        prompt_text: str,
+        output_path: str = "./outputs/latest.png",
+        wait: bool = True,
+    ):
         """Combined: Queue + optional wait for result."""
         queue_res = self.queue_render(prompt_text, output_path)
         job_id = queue_res.get("job_id") or queue_res.get("id") or "mock_job"

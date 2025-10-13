@@ -14,6 +14,7 @@ CATALOG_DIR.mkdir(parents=True, exist_ok=True)
 # Each provider has a manifest JSON file with a list of AudioAsset-like dicts.
 # Example file: data/audio/providers/kenney.json
 
+
 class AudioRepo:
     def __init__(self, providers: Optional[List[str]] = None):
         self.providers = providers or ["kenney", "freepd", "pixabay", "opengameart"]
@@ -36,7 +37,8 @@ class AudioRepo:
             return []
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(data, list): data = []
+            if not isinstance(data, list):
+                data = []
         except Exception:
             data = []
         self._cache[provider] = data
@@ -48,22 +50,32 @@ class AudioRepo:
             out.extend(self.load_catalog(p))
         return out
 
-    def search(self,
-               q: Optional[str] = None,
-               license_filter: Optional[List[str]] = None,
-               categories: Optional[List[str]] = None,
-               provider: Optional[str] = None,
-               limit: int = 200) -> List[Dict]:
+    def search(
+        self,
+        q: Optional[str] = None,
+        license_filter: Optional[List[str]] = None,
+        categories: Optional[List[str]] = None,
+        provider: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[Dict]:
         records = self.load_catalog(provider) if provider else self.all_assets()
+
         def keep(x: Dict) -> bool:
-            if license_filter and x.get("license") not in license_filter: return False
-            if categories and x.get("category") not in categories: return False
+            if license_filter and x.get("license") not in license_filter:
+                return False
+            if categories and x.get("category") not in categories:
+                return False
             if q:
                 ql = q.lower()
-                if ql not in (x.get("title","").lower()
-                              + " " + " ".join(x.get("tags",[])).lower()
-                              + " " + x.get("provider","").lower()):
+                if ql not in (
+                    x.get("title", "").lower()
+                    + " "
+                    + " ".join(x.get("tags", [])).lower()
+                    + " "
+                    + x.get("provider", "").lower()
+                ):
                     return False
             return True
+
         result = [r for r in records if keep(r)]
         return result[:limit]

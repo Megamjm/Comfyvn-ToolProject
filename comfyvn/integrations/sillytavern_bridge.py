@@ -6,6 +6,7 @@
 import os, json, httpx
 from typing import Optional, Any, Dict, List
 
+
 class SillyTavernBridge:
     """Handles async data pulling from SillyTavern's world / lorebook API."""
 
@@ -46,7 +47,9 @@ class SillyTavernBridge:
             print(f"[SillyTavernBridge] Failed to fetch worlds: {e}")
             return []
 
-    async def download_world(self, world_id: str, save_path: str = "./data/worlds") -> Optional[str]:
+    async def download_world(
+        self, world_id: str, save_path: str = "./data/worlds"
+    ) -> Optional[str]:
         """Download and persist a lorebook JSON file by ID."""
         try:
             client = await self._get_client()

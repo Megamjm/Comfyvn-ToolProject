@@ -6,7 +6,10 @@ import os
 from typing import List, Optional
 from PIL import Image
 
-def compose_scene_png(layers: List[str], out_path: str, size: Optional[tuple] = None) -> str:
+
+def compose_scene_png(
+    layers: List[str], out_path: str, size: Optional[tuple] = None
+) -> str:
     """
     layers: list of file paths in draw order [background, props..., characters..., fx]
     out_path: output PNG with alpha preserved

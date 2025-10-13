@@ -6,6 +6,7 @@
 import os, json
 from typing import List, Dict, Any
 
+
 class LoRAManager:
     """
     Handles LoRA discovery, registration, and metadata management.
@@ -23,7 +24,11 @@ class LoRAManager:
         """
         Return a sorted list of LoRA files containing the query substring.
         """
-        files = [f for f in os.listdir(self.data_path) if f.lower().endswith((".json", ".safetensors", ".pt"))]
+        files = [
+            f
+            for f in os.listdir(self.data_path)
+            if f.lower().endswith((".json", ".safetensors", ".pt"))
+        ]
         return sorted([f for f in files if query.lower() in f.lower()])
 
     # -------------------------------------------------

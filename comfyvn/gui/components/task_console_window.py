@@ -4,7 +4,12 @@
 
 import threading, requests, time
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QTextEdit, QPushButton, QLabel, QHBoxLayout
+    QDialog,
+    QVBoxLayout,
+    QTextEdit,
+    QPushButton,
+    QLabel,
+    QHBoxLayout,
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -65,7 +70,9 @@ class TaskConsoleWindow(QDialog):
 
     def _fetch(self):
         try:
-            r = requests.get(f"{self.server_url}/jobs/log", params={"id": self.job_id}, timeout=10)
+            r = requests.get(
+                f"{self.server_url}/jobs/log", params={"id": self.job_id}, timeout=10
+            )
             if r.status_code == 200:
                 data = r.json()
                 logs = data.get("lines", [])

@@ -1,0 +1,5 @@
+{
+  "name": "comfyvn-data-exporter",
+  "version": "1.3.0",
+  "main": "comfyvn-data-exporter.js"
+}

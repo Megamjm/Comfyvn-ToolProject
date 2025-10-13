@@ -97,7 +97,11 @@ class SystemMonitor:
             r = requests.get(self.targets["server"], timeout=3)
             latency = (time.time() - t0) * 1000
             if r.status_code == 200:
-                return {"state": "online", "latency_ms": round(latency, 1), "metrics": r.json()}
+                return {
+                    "state": "online",
+                    "latency_ms": round(latency, 1),
+                    "metrics": r.json(),
+                }
             # fallback to /status
             alt = requests.get(f"{self.api_base}/status", timeout=2)
             if alt.status_code == 200:
@@ -112,8 +116,16 @@ class SystemMonitor:
             r = requests.get(self.targets["lmstudio"], timeout=2)
             latency = (time.time() - t0) * 1000
             if r.status_code == 200:
-                js = r.json() if "application/json" in r.headers.get("Content-Type", "") else {}
-                return {"state": "online", "model": js.get("model", "unknown"), "latency_ms": round(latency, 1)}
+                js = (
+                    r.json()
+                    if "application/json" in r.headers.get("Content-Type", "")
+                    else {}
+                )
+                return {
+                    "state": "online",
+                    "model": js.get("model", "unknown"),
+                    "latency_ms": round(latency, 1),
+                }
         except Exception:
             pass
         return {"state": "offline"}
@@ -170,37 +182,54 @@ class SystemMonitor:
                 count = torch.cuda.device_count()
                 for i in range(count):
                     props = torch.cuda.get_device_properties(i)
-                    util = torch.cuda.utilization(i) if hasattr(torch.cuda, "utilization") else 0
-                    mem_total = props.total_memory / (1024 ** 2)
-                    mem_used = torch.cuda.memory_allocated(i) / (1024 ** 2)
-                    gpus.append({
-                        "id": i,
-                        "name": props.name,
-                        "utilization": util,
-                        "mem_used": round(mem_used, 1),
-                        "mem_total": round(mem_total, 1),
-                    })
+                    util = (
+                        torch.cuda.utilization(i)
+                        if hasattr(torch.cuda, "utilization")
+                        else 0
+                    )
+                    mem_total = props.total_memory / (1024**2)
+                    mem_used = torch.cuda.memory_allocated(i) / (1024**2)
+                    gpus.append(
+                        {
+                            "id": i,
+                            "name": props.name,
+                            "utilization": util,
+                            "mem_used": round(mem_used, 1),
+                            "mem_total": round(mem_total, 1),
+                        }
+                    )
                 return gpus
         except Exception:
             pass
 
         # --- fallback nvidia-smi ---
         try:
-            out = subprocess.check_output([
-                "nvidia-smi",
-                "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
-                "--format=csv,noheader,nounits",
-            ], stderr=subprocess.DEVNULL).decode().strip()
+            out = (
+                subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                )
+                .decode()
+                .strip()
+            )
             for line in out.splitlines():
-                idx, name, util, mem_used, mem_total, temp = [x.strip() for x in line.split(",")]
-                gpus.append({
-                    "id": int(idx),
-                    "name": name,
-                    "utilization": int(util),
-                    "mem_used": int(mem_used),
-                    "mem_total": int(mem_total),
-                    "temp_c": int(temp),
-                })
+                idx, name, util, mem_used, mem_total, temp = [
+                    x.strip() for x in line.split(",")
+                ]
+                gpus.append(
+                    {
+                        "id": int(idx),
+                        "name": name,
+                        "utilization": int(util),
+                        "mem_used": int(mem_used),
+                        "mem_total": int(mem_total),
+                        "temp_c": int(temp),
+                    }
+                )
         except Exception:
             pass
 

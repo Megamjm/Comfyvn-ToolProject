@@ -1,8 +1,5 @@
 # comfyvn/gui/playground_ui.py
 # 🎭 Playground UI — v0.4-dev (Phase 3.3-H)
-# Scene preview + prompt editing + SillyTavern / LM Studio links
-# Integrates SystemMonitor + StatusWidget Framework
-# [🎨 GUI Code Production Chat]
 
 import json
 import threading
@@ -12,12 +9,34 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal, Slot, QRectF
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-    QListWidget, QListWidgetItem, QPushButton, QTextEdit, QSplitter, QLabel, QFileDialog, QMessageBox, QFrame
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QGraphicsView,
+    QGraphicsScene,
+    QGraphicsPixmapItem,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QTextEdit,
+    QSplitter,
+    QLabel,
+    QFileDialog,
+    QMessageBox,
+    QFrame,
 )
 import requests
 
-# Internal imports
+# Optional EventBridge (fallback to no-op if missing)
+try:
+    from comfyvn.core.event_bridge import EventBridge
+except Exception:
+
+    class EventBridge:
+        def send(self, *_args, **_kwargs):
+            pass
+
+
 from comfyvn.gui.widgets.status_widget import StatusWidget
 from comfyvn.core.system_monitor import SystemMonitor
 
@@ -31,6 +50,11 @@ class PlaygroundUI(QWidget):
 
     def __init__(self):
         super().__init__()
+
+        # Local broadcast/event bridge
+        self.bridge = EventBridge()
+
+        # Scene / UI
         self.scene = QGraphicsScene(self)
         self.view = QGraphicsView(self.scene)
         self.layers_list = QListWidget()
@@ -40,6 +64,7 @@ class PlaygroundUI(QWidget):
         self.btn_export = QPushButton("Export Composite")
         self.btn_send_silly = QPushButton("Send to SillyTavern (JSON)")
         self.current_layers = []
+
         self._build_ui()
         self._wire_events()
 
@@ -75,8 +100,10 @@ class PlaygroundUI(QWidget):
         right.addLayout(row)
         right.addWidget(self.btn_send_silly)
 
-        w_left = QWidget(); w_left.setLayout(left)
-        w_right = QWidget(); w_right.setLayout(right)
+        w_left = QWidget()
+        w_left.setLayout(left)
+        w_right = QWidget()
+        w_right.setLayout(right)
         splitter.addWidget(w_left)
         splitter.addWidget(w_right)
         splitter.setStretchFactor(0, 3)
@@ -124,14 +151,20 @@ class PlaygroundUI(QWidget):
                 return "idle"
             return "online"
 
-        self.status_widget.update_indicator("cpu", load_to_state(cpu), f"CPU: {cpu:.0f}%")
-        self.status_widget.update_indicator("ram", load_to_state(ram), f"RAM: {ram:.0f}%")
+        self.status_widget.update_indicator(
+            "cpu", load_to_state(cpu), f"CPU: {cpu:.0f}%"
+        )
+        self.status_widget.update_indicator(
+            "ram", load_to_state(ram), f"RAM: {ram:.0f}%"
+        )
 
     # -------------------- Layers --------------------
 
     @Slot()
     def _add_layer(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Add Image Layer", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Add Image Layer", "", "Images (*.png *.jpg *.jpeg *.webp)"
+        )
         if not path:
             return
         pix = QPixmap(path)
@@ -149,7 +182,9 @@ class PlaygroundUI(QWidget):
 
     @Slot()
     def _export_composite(self):
-        out, _ = QFileDialog.getSaveFileName(self, "Export Composite", "composite.png", "PNG (*.png)")
+        out, _ = QFileDialog.getSaveFileName(
+            self, "Export Composite", "composite.png", "PNG (*.png)"
+        )
         if not out:
             return
         img = self._grab_scene()
@@ -161,7 +196,12 @@ class PlaygroundUI(QWidget):
         if self.scene.items():
             rect = self.scene.sceneRect()
             from PySide6.QtGui import QImage, QPainter
-            img = QImage(int(rect.width()), int(rect.height()), QImage.Format_ARGB32_Premultiplied)
+
+            img = QImage(
+                int(rect.width()),
+                int(rect.height()),
+                QImage.Format_ARGB32_Premultiplied,
+            )
             img.fill(0)
             painter = QPainter(img)
             self.scene.render(painter)
@@ -179,11 +219,18 @@ class PlaygroundUI(QWidget):
             QMessageBox.warning(self, "No Settings", "Settings not available.")
             return
 
-        base = cfg["integrations"]["lmstudio_base_url"].rstrip("/")
+        base = (
+            cfg["integrations"]
+            .get("lmstudio_base_url", "http://127.0.0.1:1234")
+            .rstrip("/")
+        )
         url = base + "/chat/completions"
 
         scene_desc = self._current_scene_json()
-        user_prompt = self.prompt_box.toPlainText().strip() or "Center the main character, add slight vignette."
+        user_prompt = (
+            self.prompt_box.toPlainText().strip()
+            or "Center the main character, add slight vignette."
+        )
         sys_prompt = (
             "You are a scene layout assistant for a visual novel engine. "
             "Given scene JSON (layers=ordered top-down), return updated JSON with numeric positions, scale, opacity, and fx tags. "
@@ -194,26 +241,42 @@ class PlaygroundUI(QWidget):
             "model": "gpt-4o-mini-or-local",
             "messages": [
                 {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": json.dumps({"scene": scene_desc, "instruction": user_prompt})}
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"scene": scene_desc, "instruction": user_prompt}
+                    ),
+                },
             ],
             "temperature": 0.3,
         }
+
+        # local broadcast for other panes
+        self.bridge.send("prompt_applied", {"scene": scene_desc, "prompt": user_prompt})
 
         def _work():
             try:
                 r = requests.post(url, json=body, timeout=60)
                 if r.status_code != 200:
-                    self.request_log.emit(f"LM Studio error: {r.status_code} - {r.text}")
+                    self.request_log.emit(
+                        f"LM Studio error: {r.status_code} - {r.text}"
+                    )
                     return
                 data = r.json()
-                out = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                out = (
+                    data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                )
                 try:
                     updated = json.loads(out)
                 except Exception:
                     import re
+
                     m = re.search(r"\{.*\}", out, re.DOTALL)
                     updated = json.loads(m.group(0)) if m else {}
-                self.request_log.emit("Scene updated by LLM. (Apply-to-view pending mapping)")
+                # TODO: map `updated` back to QGraphics items
+                self.request_log.emit(
+                    "Scene updated by LLM. (Apply-to-view mapping pending)"
+                )
             except Exception as e:
                 self.request_log.emit(f"LM Studio request failed: {e}")
 
@@ -225,15 +288,20 @@ class PlaygroundUI(QWidget):
             p = entry["path"]
             item = entry["item"]
             pos = item.pos()
-            layers.append({
-                "path": p,
-                "x": pos.x(),
-                "y": pos.y(),
-                "scale": 1.0,
-                "opacity": 1.0,
-                "fx": []
-            })
-        return {"layers": layers, "canvas": {"w": self.view.width(), "h": self.view.height()}}
+            layers.append(
+                {
+                    "path": p,
+                    "x": pos.x(),
+                    "y": pos.y(),
+                    "scale": 1.0,
+                    "opacity": 1.0,
+                    "fx": [],
+                }
+            )
+        return {
+            "layers": layers,
+            "canvas": {"w": self.view.width(), "h": self.view.height()},
+        }
 
     # -------------------- SillyTavern Bridge --------------------
 
@@ -244,7 +312,11 @@ class PlaygroundUI(QWidget):
         if not cfg:
             QMessageBox.warning(self, "No Settings", "Settings not available.")
             return
-        host = cfg["integrations"]["sillytavern_host"].rstrip("/")
+        host = (
+            cfg["integrations"]
+            .get("sillytavern_host", "http://127.0.0.1:8000")
+            .rstrip("/")
+        )
         url = host + "/comfyvn/scene"
 
         payload = {
@@ -256,7 +328,9 @@ class PlaygroundUI(QWidget):
         def _work():
             try:
                 r = requests.post(url, json=payload, timeout=30)
-                self.request_log.emit(f"SillyTavern reply: {r.status_code} - {r.text[:200]}...")
+                self.request_log.emit(
+                    f"SillyTavern reply: {r.status_code} - {r.text[:200]}..."
+                )
             except Exception as e:
                 self.request_log.emit(f"SillyTavern bridge failed: {e}")
 
@@ -271,4 +345,3 @@ class PlaygroundUI(QWidget):
         if parent and hasattr(parent, "collect_settings"):
             return parent.collect_settings()
         return None
-# -------------------- System Monitor Module --------------------

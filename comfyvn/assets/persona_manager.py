@@ -1,50 +1,171 @@
 # comfyvn/modules/persona_manager.py
-# 🫂 Persona Manager – Group Layout System (Patch F)
-# ComfyVN Architect | Server Core Integration Sync
-# [⚙️ 3. Server Core Production Chat]
+# 🫂 Persona & Group Production Chat — Phase 3.2
+# [Persona_ComfyUI_Bridge]
 
-from typing import List, Dict
+import os, json, glob, random
+
 
 class PersonaManager:
-    """
-    Determines character layout positions for visual novel scenes.
-    Provides positional mapping for left/center/right alignment
-    and future stage direction (depth, emotion, layering, etc.)
-    """
+    """Handles persona profiles, sprite binding, positioning, and ComfyUI export."""
 
-    def __init__(self) -> None:
-        self.persona_enabled: bool = True
-        self.group_positions: List[str] = ["left", "center", "right"]
+    def __init__(self, data_path="./data/personas", sprite_root="./assets/sprites"):
+        self.data_path = data_path
+        self.sprite_root = sprite_root
+        os.makedirs(self.data_path, exist_ok=True)
+        os.makedirs(self.sprite_root, exist_ok=True)
 
-    # -------------------------------------------------
-    # Layout Arrangement
-    # -------------------------------------------------
-    def arrange_characters(self, characters: List[Dict[str, str]]) -> Dict[str, str]:
-        """
-        Assigns each character an on-screen position.
-        Wraps positions cyclically if more than 3 characters exist.
-        Example input: [{"id": "luna"}, {"id": "caelum"}]
-        """
-        layout: Dict[str, str] = {}
-        if not characters:
-            return {"status": "error", "message": "No characters provided"}
+        self.personas = {}
+        self.group_layouts = {}
+        self.positions = ["left", "center", "right", "offscreen"]
 
-        for i, char in enumerate(characters):
-            cid = char.get("id") or f"char_{i}"
-            layout[cid] = self.group_positions[i % len(self.group_positions)]
+        # ComfyUI coordinate presets (x, y positions on stage)
+        self.stage_coords = {
+            "left": (-300, 0),
+            "center": (0, 0),
+            "right": (300, 0),
+            "offscreen": (9999, 9999),
+        }
 
-        print(f"[PersonaManager] Arranged {len(characters)} → {layout}")
+    # ------------------------------
+    # Persona CRUD
+    # ------------------------------
+    def register_persona(self, persona_id: str, profile: dict):
+        profile.setdefault("sprite_folder", os.path.join(self.sprite_root, persona_id))
+        profile.setdefault("expression", "neutral")
+        self.personas[persona_id] = profile
+        self._save_profile(persona_id, profile)
+
+    def _save_profile(self, persona_id: str, profile: dict):
+        path = os.path.join(self.data_path, f"{persona_id}.json")
+        with open(path, "w") as f:
+            json.dump(profile, f, indent=2)
+
+    def load_persona(self, persona_id: str):
+        path = os.path.join(self.data_path, f"{persona_id}.json")
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                profile = json.load(f)
+                self.personas[persona_id] = profile
+                return profile
+        return None
+
+    # ------------------------------
+    # Expression & Sprite Binding
+    # ------------------------------
+    def set_expression(self, persona_id: str, expression: str):
+        if persona_id not in self.personas:
+            return {"status": "error", "reason": "Persona not found"}
+
+        self.personas[persona_id]["expression"] = expression
+        sprite_path = self._resolve_sprite(persona_id, expression)
+        self.personas[persona_id]["current_sprite"] = sprite_path
+        self._save_profile(persona_id, self.personas[persona_id])
+        return {"status": "ok", "expression": expression, "sprite": sprite_path}
+
+    def _resolve_sprite(self, persona_id: str, expression: str):
+        persona = self.personas.get(persona_id)
+        if not persona:
+            return None
+        folder = persona.get("sprite_folder")
+        if not os.path.exists(folder):
+            return None
+        pattern = os.path.join(folder, f"{expression}.*")
+        matches = glob.glob(pattern)
+        if matches:
+            return matches[0]
+        fallback = glob.glob(os.path.join(folder, "neutral.*"))
+        return fallback[0] if fallback else (matches[0] if matches else None)
+
+    def random_expression(self, persona_id: str):
+        persona = self.personas.get(persona_id)
+        if not persona:
+            return None
+        folder = persona.get("sprite_folder")
+        if not os.path.exists(folder):
+            return None
+        files = [os.path.basename(f) for f in glob.glob(os.path.join(folder, "*.*"))]
+        expressions = [os.path.splitext(f)[0] for f in files]
+        if not expressions:
+            return None
+        expr = random.choice(expressions)
+        return self.set_expression(persona_id, expr)
+
+    # ------------------------------
+    # Group Layout Logic
+    # ------------------------------
+    def arrange_characters(self, scene_id: str, persona_ids: list):
+        layout = {}
+        for i, pid in enumerate(persona_ids):
+            layout[pid] = self.positions[i % len(self.positions)]
+        self.group_layouts[scene_id] = layout
         return layout
 
-    # -------------------------------------------------
-    # Toggle Persona Rendering
-    # -------------------------------------------------
-    def enable_personas(self, state: bool = True) -> bool:
-        """Enable or disable persona rendering globally."""
-        self.persona_enabled = bool(state)
-        print(f"[PersonaManager] Persona rendering → {self.persona_enabled}")
-        return self.persona_enabled
+    def get_layout(self, scene_id: str):
+        return self.group_layouts.get(scene_id, {})
 
-    def is_enabled(self) -> bool:
-        """Return current global persona toggle."""
-        return self.persona_enabled
+    # ------------------------------
+    # ComfyUI Node Export
+    # ------------------------------
+    def generate_comfyui_graph(self, scene_id: str):
+        """
+        Build a node graph dict for ComfyUI to composite persona sprites
+        according to their positions.
+        """
+        layout = self.group_layouts.get(scene_id)
+        if not layout:
+            return None
+
+        # Base ComfyUI node chain
+        graph = {"nodes": [], "connections": []}
+        node_id = 0
+
+        # Load and position nodes
+        for pid, pos in layout.items():
+            persona = self.personas.get(pid)
+            if not persona:
+                continue
+            sprite = persona.get("current_sprite")
+            if not sprite or not os.path.exists(sprite):
+                continue
+
+            x, y = self.stage_coords.get(pos, (0, 0))
+            load_node = {
+                "id": node_id,
+                "type": "LoadImage",
+                "inputs": {"filename": sprite},
+                "position": {"x": x, "y": y},
+                "persona": pid,
+            }
+            graph["nodes"].append(load_node)
+            node_id += 1
+
+        # Add a composite output node
+        graph["nodes"].append(
+            {
+                "id": node_id,
+                "type": "CompositeImage",
+                "inputs": {"images": [n["id"] for n in graph["nodes"][:-1]]},
+                "output": True,
+            }
+        )
+
+        return graph
+
+    # ------------------------------
+    # Serialization
+    # ------------------------------
+    def export_state(self, scene_id: str, export_path="./exports/persona_state.json"):
+        data = {
+            "scene_id": scene_id,
+            "layout": self.group_layouts.get(scene_id, {}),
+            "personas": {
+                pid: self.personas[pid]
+                for pid in self.group_layouts.get(scene_id, {})
+                if pid in self.personas
+            },
+            "comfyui_graph": self.generate_comfyui_graph(scene_id),
+        }
+        os.makedirs(os.path.dirname(export_path), exist_ok=True)
+        with open(export_path, "w") as f:
+            json.dump(data, f, indent=2)
+        return {"status": "exported", "path": export_path}

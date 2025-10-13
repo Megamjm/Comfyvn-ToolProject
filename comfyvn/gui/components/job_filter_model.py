@@ -39,8 +39,8 @@ class JobFilterModel(QSortFilterProxyModel):
         if not model:
             return True
 
-        idx_type = model.index(source_row, 1, source_parent)   # Type column
-        idx_status = model.index(source_row, 2, source_parent) # Status column
+        idx_type = model.index(source_row, 1, source_parent)  # Type column
+        idx_status = model.index(source_row, 2, source_parent)  # Status column
 
         job_type = model.data(idx_type, Qt.DisplayRole) or ""
         job_status = (model.data(idx_status, Qt.DisplayRole) or "").lower()
@@ -52,7 +52,11 @@ class JobFilterModel(QSortFilterProxyModel):
             return False
 
         # --- Status filters ---
-        if self.filters["active"] and job_status not in ("running", "processing", "active"):
+        if self.filters["active"] and job_status not in (
+            "running",
+            "processing",
+            "active",
+        ):
             return False
         if self.filters["failed"] and job_status not in ("failed", "error"):
             return False

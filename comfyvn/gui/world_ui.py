@@ -2,8 +2,14 @@
 # 🌍 World Manager GUI with integrated StatusBar feedback
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QComboBox, QPushButton,
-    QFileDialog, QLineEdit, QMessageBox
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QComboBox,
+    QPushButton,
+    QFileDialog,
+    QLineEdit,
+    QMessageBox,
 )
 from comfyvn.core.world_loader import WorldLoader
 from comfyvn.gui.status_bar import StatusBar
@@ -61,7 +67,9 @@ class WorldUI(QWidget):
     def manual_refresh(self):
         if self.source_box.currentText() != "SillyTavern":
             self._set_status("warning", "Source not set to SillyTavern.")
-            QMessageBox.warning(self, "Invalid Source", "Switch to 'SillyTavern' to sync remotely.")
+            QMessageBox.warning(
+                self, "Invalid Source", "Switch to 'SillyTavern' to sync remotely."
+            )
             return
 
         self.loader.bridge.api_url = self.api_input.text()
