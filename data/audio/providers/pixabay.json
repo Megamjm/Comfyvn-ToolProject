@@ -1,0 +1,28 @@
+[
+  {
+    "id": "pixabay-rain-loop",
+    "title": "Rain Ambience Loop",
+    "provider": "pixabay",
+    "category": "ambience",
+    "license": "Pixabay",
+    "tags": ["weather", "rain", "loop", "ambience"],
+    "format": "mp3",
+    "duration_sec": 58.0,
+    "preview_url": "https://cdn.pixabay.com/download/audio/2022/05/14/audio_abcdef1234.mp3",
+    "download_url": "https://cdn.pixabay.com/download/audio/2022/05/14/audio_abcdef1234.mp3",
+    "pack_name": "Pixabay Weather Pack"
+  },
+  {
+    "id": "pixabay-foley-footsteps",
+    "title": "Footsteps on Grass",
+    "provider": "pixabay",
+    "category": "foley",
+    "license": "Pixabay",
+    "tags": ["footsteps", "grass", "walk", "movement"],
+    "format": "mp3",
+    "duration_sec": 10.0,
+    "preview_url": "https://cdn.pixabay.com/download/audio/2023/04/01/audio_ghijk5678.mp3",
+    "download_url": "https://cdn.pixabay.com/download/audio/2023/04/01/audio_ghijk5678.mp3",
+    "pack_name": "Pixabay Foley Pack"
+  }
+]

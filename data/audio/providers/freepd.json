@@ -1,0 +1,28 @@
+[
+  {
+    "id": "freepd-calm1",
+    "title": "Calm Field",
+    "provider": "freepd",
+    "category": "music",
+    "license": "Public-Domain",
+    "tags": ["music", "ambient", "background", "calm"],
+    "format": "mp3",
+    "duration_sec": 120.0,
+    "preview_url": "https://freepd.com/music/Calm%20Field.mp3",
+    "download_url": "https://freepd.com/music/Calm%20Field.mp3",
+    "pack_name": "FreePD Calm Collection"
+  },
+  {
+    "id": "freepd-tense1",
+    "title": "Tense Suspense",
+    "provider": "freepd",
+    "category": "music",
+    "license": "Public-Domain",
+    "tags": ["music", "suspense", "tension"],
+    "format": "mp3",
+    "duration_sec": 95.0,
+    "preview_url": "https://freepd.com/music/Tense%20Suspense.mp3",
+    "download_url": "https://freepd.com/music/Tense%20Suspense.mp3",
+    "pack_name": "FreePD Drama Collection"
+  }
+]

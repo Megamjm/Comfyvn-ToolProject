@@ -1,0 +1,54 @@
+[
+  {
+    "id": "kenney-ui-click-01",
+    "title": "UI Click 01",
+    "provider": "kenney",
+    "category": "ui",
+    "license": "CC0",
+    "tags": ["ui", "click", "button", "confirm"],
+    "format": "wav",
+    "duration_sec": 0.15,
+    "preview_url": "https://kenney.nl/assets/ui-audio/ui_click_01.wav",
+    "download_url": "https://kenney.nl/assets/ui-audio/ui_click_01.wav",
+    "pack_name": "Kenney UI Audio"
+  },
+  {
+    "id": "kenney-ui-hover-01",
+    "title": "UI Hover 01",
+    "provider": "kenney",
+    "category": "ui",
+    "license": "CC0",
+    "tags": ["ui", "hover", "menu", "move"],
+    "format": "wav",
+    "duration_sec": 0.2,
+    "preview_url": "https://kenney.nl/assets/ui-audio/ui_hover_01.wav",
+    "download_url": "https://kenney.nl/assets/ui-audio/ui_hover_01.wav",
+    "pack_name": "Kenney UI Audio"
+  },
+  {
+    "id": "kenney-error-01",
+    "title": "Error Beep 01",
+    "provider": "kenney",
+    "category": "ui",
+    "license": "CC0",
+    "tags": ["ui", "error", "alert"],
+    "format": "wav",
+    "duration_sec": 0.3,
+    "preview_url": "https://kenney.nl/assets/ui-audio/ui_error_01.wav",
+    "download_url": "https://kenney.nl/assets/ui-audio/ui_error_01.wav",
+    "pack_name": "Kenney UI Audio"
+  },
+  {
+    "id": "kenney-ambience-room",
+    "title": "Room Ambience Loop",
+    "provider": "kenney",
+    "category": "ambience",
+    "license": "CC0",
+    "tags": ["loop", "ambience", "indoor", "soft"],
+    "format": "wav",
+    "duration_sec": 45.0,
+    "preview_url": "https://kenney.nl/assets/audio/room_ambience.wav",
+    "download_url": "https://kenney.nl/assets/audio/room_ambience.wav",
+    "pack_name": "Kenney Ambience"
+  }
+]

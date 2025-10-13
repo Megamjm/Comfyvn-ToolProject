@@ -58,3 +58,4 @@ assets/sprites/
 # --- Local configs that shouldn’t ship ---
 comfyvn/*.local.json
 comfyvn/**/ui_state.json
+data/roleplay/raw/Fang.txt
