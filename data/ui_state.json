@@ -1,0 +1,9 @@
+{
+  "drawers": {
+    "🎨 Render Options": true,
+    "🔊 Audio / FX": false,
+    "🔗 Integrations": false,
+    "📂 Project Paths": true,
+    "🧱 Snapshot Defaults": false
+  }
+}

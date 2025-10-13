@@ -10,6 +10,7 @@ from shutil import copyfile
 ROOT = Path(__file__).resolve().parents[1]
 PKG_NAME = "comfyvn"
 
+
 # ---------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------
@@ -21,10 +22,12 @@ def backup_file(path: Path):
     except Exception:
         return None
 
+
 def list_py_files(root: Path):
     for p in root.rglob("*.py"):
         if "__pycache__" not in str(p):
             yield p
+
 
 # ---------------------------------------------------------------------
 # NEW FEATURE: Self-Import Guard
@@ -52,6 +55,7 @@ def remove_self_imports(file_path: str):
             f.writelines(new_lines)
     return changed
 
+
 # ---------------------------------------------------------------------
 # Import Rewriter
 # ---------------------------------------------------------------------
@@ -62,10 +66,12 @@ def heal_imports(file_path: Path):
 
     # Normalize imports like "from modules" → "from comfyvn.modules"
     pattern = re.compile(r"^from\s+(?!(?:\.)|comfyvn)([a-zA-Z0-9_\.]+)\s+import", re.M)
+
     def repl(m):
         nonlocal changed
         target = m.group(1)
-        if target.startswith("comfyvn"): return m.group(0)
+        if target.startswith("comfyvn"):
+            return m.group(0)
         changed = True
         return f"from {PKG_NAME}.{target} import"
 
@@ -73,10 +79,12 @@ def heal_imports(file_path: Path):
 
     # Normalize bare imports "import modules" → "import comfyvn.modules"
     pattern2 = re.compile(r"^import\s+(?!(?:\.)|comfyvn)([a-zA-Z0-9_\.]+)", re.M)
+
     def repl2(m):
         nonlocal changed
         target = m.group(1)
-        if target.startswith("comfyvn"): return m.group(0)
+        if target.startswith("comfyvn"):
+            return m.group(0)
         changed = True
         return f"import {PKG_NAME}.{target}"
 
@@ -88,6 +96,7 @@ def heal_imports(file_path: Path):
         print(f"🛠  Fixed imports in {file_path}")
     return changed
 
+
 # ---------------------------------------------------------------------
 # __init__.py Sync
 # ---------------------------------------------------------------------
@@ -98,9 +107,10 @@ def sync_init_exports(pkg_root: Path):
             init = sub / "__init__.py"
             py_files = [p.stem for p in sub.glob("*.py") if p.name != "__init__.py"]
             content = "\n".join([f"from . import {m}" for m in py_files])
-            content += "\n__all__ = [" + ", ".join([f'\"{m}\"' for m in py_files]) + "]\n"
+            content += "\n__all__ = [" + ", ".join([f'"{m}"' for m in py_files]) + "]\n"
             init.write_text(content, encoding="utf-8")
             print(f"  → Updated {init}")
+
 
 # ---------------------------------------------------------------------
 # Import Verifier
@@ -114,17 +124,22 @@ def verify_package(pkg_name: str):
         print(f"  → Testing {pkg_name} ... FAILED ({type(e).__name__}: {e})")
         return False
 
+
 # ---------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--deep", action="store_true", help="Run deep healing scan")
-    parser.add_argument("--sync", action="store_true", help="Rebuild __init__.py exports")
+    parser.add_argument(
+        "--sync", action="store_true", help="Rebuild __init__.py exports"
+    )
     args = parser.parse_args()
 
     print("🔍 ComfyVN Import Auto-Heal v0.9 — Self-Healing Edition")
-    print(f"{'💠 Deep Adaptive Mode enabled' if args.deep else '🩵 Quick Sync Mode active'}")
+    print(
+        f"{'💠 Deep Adaptive Mode enabled' if args.deep else '🩵 Quick Sync Mode active'}"
+    )
 
     root_pkg = ROOT / PKG_NAME
     fixed = 0
@@ -144,7 +159,16 @@ def main():
 
     print("\n🧠 Verifying packages...\n")
     all_ok = True
-    for sub in ["assets", "core", "gui", "integrations", "modules", "scripts", "tools", "utils"]:
+    for sub in [
+        "assets",
+        "core",
+        "gui",
+        "integrations",
+        "modules",
+        "scripts",
+        "tools",
+        "utils",
+    ]:
         if not verify_package(f"{PKG_NAME}.{sub}"):
             all_ok = False
 
@@ -158,6 +182,7 @@ def main():
         print("\n✅ All comfyvn packages import successfully.")
     else:
         print("\n⚠️ Verification failed. Backups were kept for safety.")
+
 
 # ---------------------------------------------------------------------
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any, List
 
+
 class RenPyBridge:
     """Converts processed scene plans into Ren'Py .rpy, supports multi-scene compilation."""
 
@@ -25,7 +26,9 @@ class RenPyBridge:
         return "\n".join(header) + "\n"
 
     def _normalize_scene_id(self, scene_id: str) -> str:
-        return (scene_id or f"scene_{datetime.now().strftime('%Y%m%d_%H%M%S')}").replace("-", "_")
+        return (
+            scene_id or f"scene_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        ).replace("-", "_")
 
     # ---------- single-scene ----------
     def scene_to_rpy(self, scene_plan: Dict[str, Any]) -> str:
@@ -38,7 +41,9 @@ class RenPyBridge:
         lines = []
 
         # naive split: alternate sentences to speakers if provided
-        sentences = [s.strip() for s in raw_text.replace("\n", " ").split(". ") if s.strip()]
+        sentences = [
+            s.strip() for s in raw_text.replace("\n", " ").split(". ") if s.strip()
+        ]
         if characters:
             for i, sentence in enumerate(sentences or [raw_text]):
                 speaker = characters[i % len(characters)].get("name") or f"Char{i+1}"
@@ -107,7 +112,9 @@ class RenPyBridge:
 
         # optional entry point that jumps to first scene
         if make_entry_label:
-            first_scene_id = self._normalize_scene_id(scenes[0].get("scene_id", "scene_1"))
+            first_scene_id = self._normalize_scene_id(
+                scenes[0].get("scene_id", "scene_1")
+            )
             entry = (
                 f"label {chapter_label}:\n"
                 f"    # auto-generated entry\n"
@@ -120,12 +127,14 @@ class RenPyBridge:
             sid = self._normalize_scene_id(s.get("scene_id"))
             script = self.scene_to_rpy(s)
             body_parts.append(script)
-            manifest.append({
-                "scene_id": sid,
-                "background": s.get("background", "default_room"),
-                "has_choices": bool(s.get("choices")),
-                "characters": [c.get("name") for c in (s.get("characters") or [])],
-            })
+            manifest.append(
+                {
+                    "scene_id": sid,
+                    "background": s.get("background", "default_room"),
+                    "has_choices": bool(s.get("choices")),
+                    "characters": [c.get("name") for c in (s.get("characters") or [])],
+                }
+            )
 
         script_text = "\n".join(body_parts)
 

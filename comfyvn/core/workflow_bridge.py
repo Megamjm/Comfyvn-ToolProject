@@ -5,10 +5,15 @@
 import os, io, json, base64, time
 from typing import Dict, Optional, Tuple
 import requests
-from PIL import Image  # pillow is common in comfy stacks; if unavailable, replace with png bytes
+from PIL import (
+    Image,
+)  # pillow is common in comfy stacks; if unavailable, replace with png bytes
 
-DEFAULT_COMFYUI = os.getenv("COMFYUI_API", "http://127.0.0.1:8188")  # typical ComfyUI server
+DEFAULT_COMFYUI = os.getenv(
+    "COMFYUI_API", "http://127.0.0.1:8188"
+)  # typical ComfyUI server
 DEFAULT_TIMEOUT = float(os.getenv("COMFYUI_TIMEOUT", "45.0"))
+
 
 def _transparent_png_bytes() -> bytes:
     # Minimal valid 1x1 RGBA PNG
@@ -17,6 +22,7 @@ def _transparent_png_bytes() -> bytes:
         b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0cIDATx\x9cc`\x00"
         b"\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
     )
+
 
 def _png_bytes_from_b64(data_uri: str) -> Optional[bytes]:
     try:
@@ -28,22 +34,25 @@ def _png_bytes_from_b64(data_uri: str) -> Optional[bytes]:
     except Exception:
         return None
 
+
 def _encode_png_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
 
-def ping_comfyui(api_base: str = DEFAULT_COMFYUI, timeout: float = DEFAULT_TIMEOUT) -> bool:
+
+def ping_comfyui(
+    api_base: str = DEFAULT_COMFYUI, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
     try:
         r = requests.get(f"{api_base}/system_stats", timeout=timeout)
         return r.status_code == 200
     except Exception:
         return False
 
+
 def render_character_with_comfyui(
-    payload: Dict,
-    api_base: str = DEFAULT_COMFYUI,
-    timeout: float = DEFAULT_TIMEOUT
+    payload: Dict, api_base: str = DEFAULT_COMFYUI, timeout: float = DEFAULT_TIMEOUT
 ) -> Tuple[bytes, Dict]:
     """
     Minimal, generic ComfyUI render: expects a 'workflow' dict or
@@ -68,10 +77,13 @@ def render_character_with_comfyui(
                 "base_model": payload.get("base_model", ""),
                 "lora_stack": payload.get("lora_stack", []),
                 "controlnets": payload.get("controlnets", []),
-                "positive": payload.get("positive", "character, full body, clean lines, transparent background"),
+                "positive": payload.get(
+                    "positive",
+                    "character, full body, clean lines, transparent background",
+                ),
                 "negative": payload.get("negative", "low quality, extra limbs"),
                 "width": payload.get("width", 768),
-                "height": payload.get("height", 1024)
+                "height": payload.get("height", 1024),
             }
         }
 
@@ -90,9 +102,13 @@ def render_character_with_comfyui(
 
         # If your instance requires polling /history/<id>, add it here.
         # Fallback if no image found:
-        return _transparent_png_bytes(), {"origin": "comfyui-placeholder", "reason": "no_inline_image"}
+        return _transparent_png_bytes(), {
+            "origin": "comfyui-placeholder",
+            "reason": "no_inline_image",
+        }
     except Exception as e:
         return _transparent_png_bytes(), {"origin": "comfyui-error", "error": str(e)}
+
 
 def render_character(payload: Dict) -> Tuple[bytes, Dict]:
     """
@@ -107,4 +123,7 @@ def render_character(payload: Dict) -> Tuple[bytes, Dict]:
 
     # (Future) LM Studio / other backends can go here using localhost:1234
     # If none available, return a transparent placeholder.
-    return _transparent_png_bytes(), {"origin": "fallback", "reason": "no_backend_available_or_offline"}
+    return _transparent_png_bytes(), {
+        "origin": "fallback",
+        "reason": "no_backend_available_or_offline",
+    }

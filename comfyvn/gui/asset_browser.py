@@ -7,91 +7,142 @@ import os, json, platform, subprocess, threading, traceback
 from datetime import datetime
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem,
-    QHBoxLayout, QListView, QAbstractItemView, QMenu, QFrame, QMessageBox
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QListWidget,
+    QListWidgetItem,
+    QHBoxLayout,
+    QListView,
+    QAbstractItemView,
+    QMenu,
+    QFrame,
+    QMessageBox,
 )
 from PySide6.QtGui import QPixmap, QIcon, QCursor, QDrag, QDesktopServices
-from PySide6.QtCore import Qt, QSize, QTimer, QPoint, QByteArray, QMimeData, QUrl, QObject, QEvent
+from PySide6.QtCore import (
+    Qt,
+    QSize,
+    QTimer,
+    QPoint,
+    QByteArray,
+    QMimeData,
+    QUrl,
+    QObject,
+    QEvent,
+)
 
 # ---------------------------------------------------------------------------------
 # Optional imports (fallback shims so the widget still works if modules are absent)
 # ---------------------------------------------------------------------------------
 
+
 def _warn(msg: str):
     print(f"[AssetBrowser][WARN] {msg}")
+
 
 # ProgressOverlay
 try:
     from comfyvn.gui.widgets.progress_overlay import ProgressOverlay
 except Exception:
+
     class ProgressOverlay(QWidget):
         def __init__(self, parent=None, text="Processing …", cancellable=False):
             super().__init__(parent)
             self._text = text
             self.hide()
-        def set_text(self, t): self._text = t
-        def start(self): self.show()
-        def stop(self): self.hide()
+
+        def set_text(self, t):
+            self._text = t
+
+        def start(self):
+            self.show()
+
+        def stop(self):
+            self.hide()
+
 
 # Dialog helpers
 try:
     from comfyvn.gui.widgets.dialog_helpers import info, error, confirm
 except Exception:
-    def info(parent, title, msg): QMessageBox.information(parent, title, msg)
-    def error(parent, title, msg): QMessageBox.critical(parent, title, msg)
-    def confirm(parent, title, msg): return QMessageBox.question(parent, title, msg) == QMessageBox.Yes
+
+    def info(parent, title, msg):
+        QMessageBox.information(parent, title, msg)
+
+    def error(parent, title, msg):
+        QMessageBox.critical(parent, title, msg)
+
+    def confirm(parent, title, msg):
+        return QMessageBox.question(parent, title, msg) == QMessageBox.Yes
+
 
 # StatusWidget
 try:
     from comfyvn.gui.widgets.status_widget import StatusWidget
 except Exception:
+
     class StatusWidget(QWidget):
         def __init__(self, parent=None):
             super().__init__(parent)
             l = QHBoxLayout(self)
             self._labels = {}
+
         def add_indicator(self, key, label):
             lab = QLabel(f"{label}: n/a")
             self.layout().addWidget(lab)
             self._labels[key] = lab
+
         def update_indicator(self, key, text):
             if key in self._labels:
                 self._labels[key].setText(text)
+
 
 # ServerBridge (simple HTTP fallback)
 try:
     from comfyvn.gui.server_bridge import ServerBridge
 except Exception:
     import requests
+
     class ServerBridge:
         def __init__(self, base_url):
             self.base_url = base_url
+
         def send_render_request(self, payload: dict, callback):
             try:
-                r = requests.post(f"{self.base_url}/export/scene", json=payload, timeout=15)
+                r = requests.post(
+                    f"{self.base_url}/export/scene", json=payload, timeout=15
+                )
                 callback(r.json())
             except Exception as e:
                 callback({"error": str(e)})
+
 
 # SystemMonitor
 try:
     from comfyvn.core.system_monitor import SystemMonitor
 except Exception:
+
     class SystemMonitor:
         def __init__(self, server_url):
             self.cb = None
+
         def on_update(self, cb):
             self.cb = cb
+
         def start(self, interval=6):
             # trivial timer to simulate updates
             def tick():
                 if self.cb:
                     self.cb({"gpu": "n/a", "cpu": "ok", "ram": "ok", "server": "ok"})
+
             t = QTimer()
             t.timeout.connect(tick)
             t.start(6000)
             # Keep a reference so it's not GC'd
             self._timer = t
+
 
 # PoseBrowser
 try:
@@ -108,16 +159,19 @@ try:
 except Exception:
     try:
         from comfyvn.modules.pose_manager import PoseManager as _PM
+
         PoseManager = _PM
     except Exception:
         _warn("PoseManager not found — pose features limited.")
 
 try:
     from comfyvn.assets.export_manager import ExportManager as _EM
+
     ExportManager = _EM
 except Exception:
     try:
         from comfyvn.modules.export_manager import ExportManager as _EM
+
         ExportManager = _EM
     except Exception:
         _warn("ExportManager not found — exports will be simulated.")
@@ -126,11 +180,15 @@ except Exception:
 # Main Widget
 # ---------------------------------------------------------------------------------
 
+
 class AssetBrowser(QWidget):
     """Asset Browser & Sprite Manager with multi-select, drag-drop, and system status."""
+
     asset_dropped = None
 
-    def __init__(self, server_url="http://127.0.0.1:8000", export_dir="./exports/assets"):
+    def __init__(
+        self, server_url="http://127.0.0.1:8000", export_dir="./exports/assets"
+    ):
         super().__init__()
         self.server_url = server_url
         self.export_dir = export_dir
@@ -155,10 +213,10 @@ class AssetBrowser(QWidget):
         layout.addLayout(btn_layout)
 
         self.btn_generate_sprite = QPushButton("🎨 Render Sprite")
-        self.btn_export_scene   = QPushButton("📦 Export Scene")
-        self.btn_select_pose    = QPushButton("🧍 Select Pose")
-        self.btn_refresh        = QPushButton("🔄 Refresh Assets")
-        self.btn_clear_cache    = QPushButton("🧹 Clear Cache")
+        self.btn_export_scene = QPushButton("📦 Export Scene")
+        self.btn_select_pose = QPushButton("🧍 Select Pose")
+        self.btn_refresh = QPushButton("🔄 Refresh Assets")
+        self.btn_clear_cache = QPushButton("🧹 Clear Cache")
 
         for b in [
             self.btn_generate_sprite,
@@ -216,7 +274,7 @@ class AssetBrowser(QWidget):
         # ------------------------------------------------------------------
         # Pose & Export Managers
         # ------------------------------------------------------------------
-        self.pose_manager   = PoseManager() if PoseManager else None
+        self.pose_manager = PoseManager() if PoseManager else None
         self.export_manager = ExportManager() if ExportManager else None
         self.selected_pose_id = None
 
@@ -279,7 +337,11 @@ class AssetBrowser(QWidget):
             if isinstance(resp, dict) and "error" in resp:
                 error(self, "Render Failed", resp.get("error", "Unknown error"))
             else:
-                info(self, "Render Complete", f"Server response:\n{json.dumps(resp, indent=2)}")
+                info(
+                    self,
+                    "Render Complete",
+                    f"Server response:\n{json.dumps(resp, indent=2)}",
+                )
             self.refresh_assets()
 
         # Reuse /export/scene fallback in ServerBridge shim
@@ -288,7 +350,11 @@ class AssetBrowser(QWidget):
     def _export_scene(self):
         items = self.asset_list.selectedItems()
         assets = [i.data(Qt.UserRole) or i.text() for i in items]
-        scene = {"scene_id": "forest_path", "assets": assets, "pose_ids": [self.selected_pose_id] if self.selected_pose_id else []}
+        scene = {
+            "scene_id": "forest_path",
+            "assets": assets,
+            "pose_ids": [self.selected_pose_id] if self.selected_pose_id else [],
+        }
 
         self.overlay.set_text("Exporting Scene …")
         self.overlay.start()
@@ -308,7 +374,11 @@ class AssetBrowser(QWidget):
         self.overlay.set_text("Clearing cache …")
         self.overlay.start()
         threading.Timer(
-            1.2, lambda: (self.overlay.stop(), info(self, "Cache Cleared", "Cache cleared successfully."))
+            1.2,
+            lambda: (
+                self.overlay.stop(),
+                info(self, "Cache Cleared", "Cache cleared successfully."),
+            ),
         ).start()
 
     # ==============================================================
@@ -330,11 +400,19 @@ class AssetBrowser(QWidget):
                 item.setData(Qt.UserRole, fpath)
                 pm = QPixmap(fpath)
                 if not pm.isNull():
-                    item.setIcon(QIcon(pm.scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
+                    item.setIcon(
+                        QIcon(
+                            pm.scaled(
+                                96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                            )
+                        )
+                    )
                 self.asset_list.addItem(item)
                 count += 1
 
-        self.meta_summary.setText(f"Loaded {count} image assets from {os.path.abspath(self.export_dir)}")
+        self.meta_summary.setText(
+            f"Loaded {count} image assets from {os.path.abspath(self.export_dir)}"
+        )
 
     def _poll_jobs(self):
         """Update job status periodically; if you have /jobs/poll, wire it here."""
@@ -347,10 +425,12 @@ class AssetBrowser(QWidget):
     def _on_monitor_update(self, data: dict):
         """System monitor callback to update indicators."""
         try:
-            self.status_widget.update_indicator("server", f"Server: {data.get('server','n/a')}")
-            self.status_widget.update_indicator("gpu",    f"GPU: {data.get('gpu','n/a')}")
-            self.status_widget.update_indicator("cpu",    f"CPU: {data.get('cpu','n/a')}")
-            self.status_widget.update_indicator("ram",    f"RAM: {data.get('ram','n/a')}")
+            self.status_widget.update_indicator(
+                "server", f"Server: {data.get('server','n/a')}"
+            )
+            self.status_widget.update_indicator("gpu", f"GPU: {data.get('gpu','n/a')}")
+            self.status_widget.update_indicator("cpu", f"CPU: {data.get('cpu','n/a')}")
+            self.status_widget.update_indicator("ram", f"RAM: {data.get('ram','n/a')}")
         except Exception as e:
             _warn(f"Monitor update failed: {e}")
 
@@ -391,7 +471,10 @@ class AssetBrowser(QWidget):
 
     # Drag source (optional)
     def eventFilter(self, obj: QObject, event: QEvent):
-        if obj is self.asset_list.viewport() and event.type() == QEvent.MouseButtonPress:
+        if (
+            obj is self.asset_list.viewport()
+            and event.type() == QEvent.MouseButtonPress
+        ):
             item = self.asset_list.itemAt(event.position().toPoint())
             if item:
                 drag = QDrag(self)

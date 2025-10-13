@@ -1,81 +1,231 @@
-ComfyVN — Visual Novel Toolchain
-Version: 0.2 Development Branch
-License: GPL-3.0
+🧠 SUMMARY
 
-Description:
-ComfyVN is a modular, AI-assisted Visual Novel production system designed to bridge ComfyUI, SillyTavern, and Ren’Py into a unified creative pipeline. It converts AI-driven dialogues or existing chat logs into structured, playable visual novels with dynamic rendering, layered sprites, and scalable interaction depth.
+ComfyVN has evolved from a static Visual Novel scene exporter into a multi-layer interactive VN generation framework.
+This update introduces the Roleplay Import System, WebSocket job management, adaptive GUI framework, and multi-world integration, preparing for the next milestone — Phase 3.2 Interactive Pipeline Sync.
 
-Project Objective:
-To create a flexible multi-mode Visual Novel engine that can:
-• Reuse and render text-based chat sessions as VN storylines.
-• Integrate ComfyUI for generative art and scene rendering.
-• Support Ren’Py for classic VN presentation and export.
-• Leverage SillyTavern for adaptive dialogue logic and memory systems.
-• Allow interactive live generation modes for dynamic storytelling.
+🪟 GUI SYSTEM (🎨 2. GUI Code Production Chat)
 
-Core Systems Overview:
+Version: v1.1.7 → v1.2.0-dev
+Files Affected:
 
-Logic Layer (SillyTavern Integration)
-Handles dialogue, emotion inference, memory, and branching logic.
+/gui/main_window.py
 
-Render Layer (ComfyUI + Server Core)
-Generates sprites, environments, and effects dynamically based on structured scene data.
+/gui/components/task_manager_dock.py
 
-Presentation Layer (Ren’Py)
-Displays the story as a fully navigable visual novel.
+/gui/components/progress_overlay.py
 
-Render Stages:
-0 — Classic VN (static)
-1 — Reactive VN (expressions auto-sync per line)
-2 — Active VN (animated entries, persona sprite support)
-3 — Semi-Live VN (basic 2D world movement)
-4 — Cinematic VN (AI-generated video or advanced FX)
+/gui/components/tray_system.py (new)
 
-World Lore Integration:
-The system reads world-lore JSON files to automatically set environmental themes, props, colors, and ambience for each scene. The World_Loader module maintains cached world profiles and dynamically merges location and faction data into rendering tasks.
+/gui/dialogs/settings_ui.py (new)
 
-Persona and Group Logic:
-User avatars can appear as characters, mirror expressions, or share frame space with dialogue participants. Multi-character scenes are arranged automatically using Persona_Manager for spatial layout and group focus.
+Added:
 
-Audio and Effects:
-Audio_Manager manages toggles for sound, music, ambience, voice, and FX. Each media type can be globally or per-scene controlled. Fallback detection automatically disables features unsupported by the host hardware.
+🧩 Task Manager Dock with live polling and right-click actions (Kill, Reset, Move).
 
-Asset and Sprite System:
-Handles sprite composition, background NPC generation, and asset caching. Export_Manager provides batch character dumps for all expressions, poses, and outfits. NPC_Manager populates background crowds as faceless silhouettes for immersion.
+🔄 Job History Rotation (10 log file limit, auto-rotation).
 
-Scene Preprocessing:
-Scene_Preprocessor merges world, character, emotion, and environment data into a unified Scene JSON format. This serves as the primary contract between all subsystems.
+💬 Live Console Viewer (TaskConsoleWindow) with color-coded job states.
 
-Playground System:
-A live editing environment that allows scene modification through natural-language prompts. Users can change lighting, emotions, or setting details and commit changes as new narrative branches.
+🔔 Tray Notification System scaffold using QSystemTrayIcon.
 
-LoRA Management:
-LoRA_Manager searches, registers, and caches character or object LoRAs for consistent visual reproduction. Optional lightweight training may be enabled for recurring characters or assets.
+⚙️ Settings UI for path configuration and render mode selection.
 
-Server Core:
-The FastAPI server routes all subsystem operations. Endpoints cover chat ingestion, scene preprocessing, rendering, LoRA search, asset export, safety profiles, and playground operations.
+🌐 WebSocket Client Stub (ready for /jobs/ws integration).
 
-Packaging and Export:
-Ren’Py export scripts convert processed scene graphs into .rpy files for final VN assembly. Asset bundles and metadata are packaged for deployment or distribution.
+Improved:
 
-Performance Profiles:
-ComfyVN dynamically scales based on detected hardware capabilities, disabling or reducing high-cost rendering and media when necessary.
+Unified top menu layout (File / View / Help).
 
-Safety and Content Controls:
-Three safety tiers (Safe, Neutral, Mature) govern rendering limits and filtering behavior. Each prompt or generation task is validated through the safety manager before execution.
+Thread termination guards for background listeners.
 
-Development Phase Summary (as of version 0.2):
-• All subsystem scaffolds established.
-• Core server endpoints defined.
-• World_Loader integrated and verified.
-• Audio toggles and environment injection in active development.
-• Playground mutation API under construction.
-• GUI integration ongoing.
-• LoRA caching functional; training disabled by default.
+Status bar integration for job feedback.
 
-Next Objectives:
-• Complete full render mode switching via Mode_Manager.
-• Implement world-aware ambience defaults.
-• Expand GUI for scene editing and system configuration.
-• Begin cinematic renderer integration (Stage 4).
-• Complete Playground mutation and export testing.
+Async-safe requests using httpx.
+
+Planned:
+
+Full WebSocket message push (replacing poll).
+
+Import Roleplay dialog integration.
+
+Live mode switch indicator.
+
+⚙️ SERVER CORE (3. Server Core Production Chat)
+
+Version: v3.0.3 → v3.2.0-pre
+Files Affected:
+
+/server/app.py
+
+/server/modules/job_manager.py (new)
+
+/server/modules/mode_manager.py
+
+/server/modules/scene_preprocessor.py
+
+/server/modules/ws_utils.py (new)
+
+Added:
+
+🧩 JobManager (create/update/broadcast jobs).
+
+🌐 WebSocket Endpoint /jobs/ws for live GUI push updates.
+
+📜 Job Polling API (/jobs/poll, /jobs/reset, /jobs/logs).
+
+🧱 Schema Validation Plan for scene JSON.
+
+🧭 Subsystem Health Check endpoint (/status/subsystems).
+
+Improved:
+
+Async-safe FastAPI routes.
+
+Locked shared dicts with asyncio.Lock.
+
+Logging standardized to /logs/server.log.
+
+Modularized startup/shutdown events.
+
+Planned:
+
+Scene validator integration (Pydantic).
+
+ComfyUI workflow trigger for cinematic rendering.
+
+🌍 WORLD LORE SYSTEM (4. World Lore Production Chat)
+
+Version: v1.1.1 → v1.3.0
+Files Affected: /server/modules/world_loader.py
+
+Added:
+
+🌤 Weather and Day/Night Profiles.
+
+🧠 World Cache System with TTL auto-refresh.
+
+🔄 Active World Selector for GUI dropdown.
+
+📦 World Prop Injection (stage layout data for render).
+
+Improved:
+
+JSON loading with fallback for incomplete fields.
+
+Thread-safe cache invalidation.
+
+Integrated with ModeManager for ambience switching.
+
+🔊 AUDIO & FX (5. Audio & Effects Production Chat)
+
+Version: v0.2 → v0.3.1
+Files Affected: /server/modules/audio_manager.py
+
+Added:
+
+🔉 Centralized toggle state JSON config.
+
+🧠 Adaptive layering plan (emotion-based).
+
+⚙️ Volume normalization stubs for ambient/music/fx.
+
+Improved:
+
+Threaded playback for non-blocking operations.
+
+Exception-safe audio calls.
+
+Future integration hooks for Roleplay Analyzer tone.
+
+🫂 PERSONA & GROUP SYSTEM (6. Persona & Group Chat)
+
+Version: v0.3 → v0.5-dev
+Files Affected: /server/modules/persona_manager.py
+
+Added:
+
+🧍‍♂️ Layout enum for left/center/right positioning.
+
+🎭 Emotion blend stub (pre-animation tweening).
+
+🪞 User Persona overlay logic.
+
+📁 Persona state serializer /data/persona/state.json.
+
+Improved:
+
+Deterministic layout rotation.
+
+Integration hook for Roleplay participant auto-layout.
+
+Sync to Playground for live updates.
+
+🧪 PLAYGROUND SYSTEM (7. Playground Chat)
+
+Version: v0.2 → v0.4-dev
+Files Affected: /server/modules/playground_manager.py
+
+Added:
+
+🧠 Scene mutation API (placeholder).
+
+↩️ Undo/Redo stack base (deque).
+
+🔍 Scene backup system (/data/playground/history/).
+
+Improved:
+
+Async-safe writes.
+
+Mutations return proper job status.
+
+Linked to upcoming Roleplay Import system.
+
+🧬 LORA MANAGER (8. LoRA Chat)
+
+Version: v0.3 → v0.4-dev
+Files Affected: /server/modules/lora_manager.py
+
+Added:
+
+🔍 Local LoRA registry with metadata cache.
+
+⚙️ Async search and registration stubs.
+
+🧱 Local index lora_index.json with sha256 validation.
+
+Improved:
+
+Model versioning and integrity checks.
+
+Planned GUI integration for LoRA lookups.
+
+📦 PACKAGING & BUILD (9. Packaging Chat)
+
+Version: v0.1 → v0.3-dev
+Files Affected: /build/export_renpy.py, /build/build_assets.py
+
+Added:
+
+🧩 Smart Asset Bundling system (planned).
+
+🪶 Lightweight export preview mode.
+
+📜 Export logs (/logs/build.log).
+
+Improved:
+
+Sanitized scene filenames for cross-platform builds.
+
+Integrated with JobManager.
+
+🧾 CODE UPDATES (10. Code Updates Chat)
+
+Version: Meta
+Files: None (central synchronization & QA).
+
+Added:
+
+Unified linter/formatter (black, flake8) setup.
+
+File structure restructure:

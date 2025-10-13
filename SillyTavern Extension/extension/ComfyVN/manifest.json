@@ -1,0 +1,10 @@
+{
+  "display_name": "ComfyVN Bridge",
+  "loading_order": 300,
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "ComfyVN Architect",
+  "version": "1.0.4",
+  "auto_update": true
+}

@@ -16,13 +16,23 @@ class TaskResourceBar(QWidget):
         lay.setSpacing(8)
 
         self.lbl_cpu = QLabel("CPU")
-        self.bar_cpu = QProgressBar(); self.bar_cpu.setRange(0, 100)
+        self.bar_cpu = QProgressBar()
+        self.bar_cpu.setRange(0, 100)
         self.lbl_gpu = QLabel("GPU")
-        self.bar_gpu = QProgressBar(); self.bar_gpu.setRange(0, 100)
+        self.bar_gpu = QProgressBar()
+        self.bar_gpu.setRange(0, 100)
         self.lbl_ram = QLabel("RAM")
-        self.bar_ram = QProgressBar(); self.bar_ram.setRange(0, 100)
+        self.bar_ram = QProgressBar()
+        self.bar_ram.setRange(0, 100)
 
-        for w in (self.lbl_cpu, self.bar_cpu, self.lbl_gpu, self.bar_gpu, self.lbl_ram, self.bar_ram):
+        for w in (
+            self.lbl_cpu,
+            self.bar_cpu,
+            self.lbl_gpu,
+            self.bar_gpu,
+            self.lbl_ram,
+            self.bar_ram,
+        ):
             lay.addWidget(w)
 
         self.monitor = SystemMonitor()

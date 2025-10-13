@@ -23,19 +23,16 @@ REWRITE_MAP = {
     r"comfyvn\.modules\.scene_preprocessor": "comfyvn.core.scene_preprocessor",
     r"comfyvn\.modules\.comfy_bridge": "comfyvn.core.bridge_comfyui",
     r"comfyvn\.modules\.system_monitor": "comfyvn.core.system_monitor",
-
     # Assets
     r"comfyvn\.modules\.npc_manager": "comfyvn.assets.npc_manager",
     r"comfyvn\.modules\.persona_manager": "comfyvn.assets.persona_manager",
     r"comfyvn\.modules\.export_manager": "comfyvn.assets.export_manager",
     r"comfyvn\.modules\.cache_manager": "comfyvn.assets.cache_manager",
-
     # Integrations
     r"comfyvn\.modules\.lm_bridge": "comfyvn.integrations.lmstudio_bridge",
     r"comfyvn\.modules\.workflow_bridge": "comfyvn.integrations.workflow_bridge",
     r"comfyvn\.modules\.renpy_bridge": "comfyvn.integrations.renpy_bridge",
     r"comfyvn\.modules\.sillytavern_bridge": "comfyvn.integrations.sillytavern_bridge",
-
     # GUI components → widgets
     r"comfyvn\.gui\.components\.": "comfyvn.gui.widgets.",
 }
@@ -82,7 +79,9 @@ if "--rewrite" in sys.argv:
 
         path.write_text(text, encoding="utf-8")
         touched.append((path, backup))
-        print(f"🛠 Rewritten imports in {path.relative_to(ROOT)} (backup saved as {backup.name})")
+        print(
+            f"🛠 Rewritten imports in {path.relative_to(ROOT)} (backup saved as {backup.name})"
+        )
 
 # ------------------------------------------------------------------
 # VERIFY & CLEANUP PHASE

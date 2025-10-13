@@ -6,6 +6,7 @@
 import hashlib, json
 from typing import Any, Literal
 
+
 def _ensure_bytes(data: Any) -> bytes:
     """
     Normalize arbitrary input into bytes for hashing.
@@ -19,6 +20,7 @@ def _ensure_bytes(data: Any) -> bytes:
         data = str(data)
     return data.encode("utf-8")
 
+
 # -------------------------------------------------
 # Core Hashers
 # -------------------------------------------------
@@ -26,9 +28,11 @@ def sha1(data: Any) -> str:
     """Return a SHA-1 hex digest of the given data."""
     return hashlib.sha1(_ensure_bytes(data)).hexdigest()
 
+
 def sha256(data: Any) -> str:
     """Return a SHA-256 hex digest of the given data."""
     return hashlib.sha256(_ensure_bytes(data)).hexdigest()
+
 
 # -------------------------------------------------
 # Verification Helper

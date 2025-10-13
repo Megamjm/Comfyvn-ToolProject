@@ -6,6 +6,7 @@
 import re, json
 from typing import Dict, Any, List
 
+
 def preprocess_scene(scene_data: Dict[str, Any], mode: str) -> Dict[str, Any]:
     """
     Prepare scene data for rendering and scripting pipelines.
@@ -41,8 +42,10 @@ def preprocess_scene(scene_data: Dict[str, Any], mode: str) -> Dict[str, Any]:
         "render_ready_prompt": render_prompt,
     }
 
-    print(f"[ScenePreprocessor] {mode.upper()} scene prepared: "
-          f"{len(characters)} chars, bg='{background}', cues={len(stage_cues)}")
+    print(
+        f"[ScenePreprocessor] {mode.upper()} scene prepared: "
+        f"{len(characters)} chars, bg='{background}', cues={len(stage_cues)}"
+    )
     return plan
 
 

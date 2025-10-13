@@ -1,0 +1,27 @@
+{
+  "paths": {
+    "project_root": "",
+    "assets_dir": "assets/",
+    "renpy_project": "renpy_project/"
+  },
+  "integrations": {
+    "comfyui_host": "http://127.0.0.1:8188",
+    "comfyui_workflow": "workflows/sprite_gen.json",
+    "lmstudio_base_url": "http://127.0.0.1:1234/v1",
+    "sillytavern_host": "http://127.0.0.1:8000",
+    "sillytavern_extension": "sillytavern_extensions.js"
+  },
+  "audio": {
+    "music": true,
+    "sfx": true,
+    "voice": false,
+    "fx": true
+  },
+  "render": {
+    "quality": "Standard",
+    "width": 768,
+    "height": 1024,
+    "npc_background_mode": false,
+    "full_character_dump": false
+  }
+}

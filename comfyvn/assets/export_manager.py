@@ -1,6 +1,6 @@
 # comfyvn/modules/export_manager.py
-# 🧍 Export Manager v0.4 — Pose, License, and Asset Index Integration
-# ComfyVN_Architect (Unified Asset Sprite System)
+# 🧍 Export Manager v0.4 – Pose, License, and Asset Index Integration
+# ComfyVN_Architect (Unified Asset Sprite System | Phase 3.7 Sync)
 
 import os
 import json
@@ -8,8 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 # --- Linked Modules ---
-# Removed circular import (PoseManager self-reference)
-from comfyvn.assets.asset_index import add_record  # global registry for all assets
+from comfyvn.assets.asset_index import add_record  # global registry
 
 # --- Community asset registry for license verification ---
 COMMUNITY_ASSET_PATH = "./comfyvn/data/community_assets_registry.json"
@@ -28,8 +27,7 @@ class ExportManager:
     """
     Handles exporting of sprites, dumps, and asset bundles.
     Integrates:
-    - Pose metadata and registry sync
-    - Alpha-safe sprite creation
+    - Pose metadata (optional)
     - License snapshot generation
     - Asset Index registry updates
     """
@@ -38,12 +36,21 @@ class ExportManager:
         self.export_dir = export_dir
         os.makedirs(export_dir, exist_ok=True)
 
-        # linked managers
-        self.pose_manager = PoseManager()
+        # Optional PoseManager (safe import)
+        self.pose_manager = None
+        try:
+            from comfyvn.assets.pose_manager import PoseManager
+
+            self.pose_manager = PoseManager()
+        except ImportError:
+            print(
+                "[ExportManager][WARN] PoseManager not available — continuing without pose support."
+            )
+
         self.community_registry = _load_registry()
 
     # ------------------------------------------------------------
-    # 🔧 Utility Helpers
+    # Utility
     # ------------------------------------------------------------
     def _stampdir(self, prefix: str) -> str:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -67,7 +74,6 @@ class ExportManager:
             f.write(rgba_1x1_png if with_alpha else rgb_1x1_png)
 
     def _write_license_snapshot(self, folder: str, sources: List[Dict]):
-        """Write license snapshot file containing attribution and verification info."""
         snapshot = {
             "timestamp": datetime.now().isoformat(),
             "sources": sources,
@@ -77,7 +83,7 @@ class ExportManager:
             json.dump(snapshot, f, indent=2)
 
     # ------------------------------------------------------------
-    # 💾 CHARACTER EXPORT
+    # Character Export
     # ------------------------------------------------------------
     def export_character_dump(
         self,
@@ -90,22 +96,21 @@ class ExportManager:
         transparent: bool = True,
         sources: Optional[List[Dict]] = None,
     ) -> str:
-        """Export full character sprite with pose, license, and asset index metadata."""
+        """Export full character sprite with optional pose and license metadata."""
         char_id = character_data.get("id", "unknown")
         folder = self._stampdir(char_id)
 
-        # --- Pose integration ---
+        # Optional Pose integration
         pose_data = None
-        if pose_id:
+        if pose_id and self.pose_manager:
             pose_data = self.pose_manager.get_pose(pose_id)
-            if not pose_data:
-                print(f"[WARN] Pose '{pose_id}' not found in registry.")
-            else:
+            if pose_data:
                 self.pose_manager.registry[pose_id] = pose_data
                 self.pose_manager._save_registry()
                 print(f"[OK] Linked pose '{pose_id}' for {char_id}.")
+            else:
+                print(f"[WARN] Pose '{pose_id}' not found in registry.")
 
-        # --- Metadata assembly ---
         meta = {
             "type": "character",
             "id": char_id,
@@ -119,12 +124,10 @@ class ExportManager:
             "export_time": datetime.now().isoformat(),
         }
 
-        # Write metadata JSON
         meta_path = os.path.join(folder, f"{char_id}.json")
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
-        # --- Sprite export ---
         sprite_path = os.path.join(folder, f"{char_id}.png")
         if sprite_png_bytes:
             with open(sprite_path, "wb") as f:
@@ -132,27 +135,27 @@ class ExportManager:
         else:
             self._write_empty_png(sprite_path, with_alpha=True)
 
-        # --- License snapshot ---
         self._write_license_snapshot(folder, sources or [])
 
-        # --- Asset Index sync ---
-        add_record({
-            "type": "character",
-            "character": character_data,
-            "style_id": style_id,
-            "pose_id": pose_id,
-            "export_path": folder,
-            "png_path": sprite_path,
-            "control_stack": control_stack or [],
-            "identity_profile": identity_profile or {},
-            "license_sources": sources or []
-        })
+        add_record(
+            {
+                "type": "character",
+                "character": character_data,
+                "style_id": style_id,
+                "pose_id": pose_id,
+                "export_path": folder,
+                "png_path": sprite_path,
+                "control_stack": control_stack or [],
+                "identity_profile": identity_profile or {},
+                "license_sources": sources or [],
+            }
+        )
 
         print(f"[EXPORT] Character '{char_id}' exported to {folder}")
         return folder
 
     # ------------------------------------------------------------
-    # 🧩 SCENE EXPORT
+    # Scene Export
     # ------------------------------------------------------------
     def export_scene_layer(
         self,
@@ -168,9 +171,8 @@ class ExportManager:
         """Export a full scene bundle (background + characters + poses)."""
         path = os.path.join(self.export_dir, f"{scene_id}_bundle.json")
 
-        # --- Pose embedding ---
         pose_entries = []
-        if pose_ids:
+        if pose_ids and self.pose_manager:
             for pid in pose_ids:
                 pose = self.pose_manager.get_pose(pid)
                 if pose:
@@ -191,43 +193,46 @@ class ExportManager:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(bundle, f, indent=2)
 
-        # --- Asset Index sync ---
-        add_record({
-            "type": "scene",
-            "scene_id": scene_id,
-            "style_id": style_id,
-            "export_path": path,
-            "assets": assets,
-            "poses_used": pose_entries,
-            "license_sources": sources or []
-        })
+        add_record(
+            {
+                "type": "scene",
+                "scene_id": scene_id,
+                "style_id": style_id,
+                "export_path": path,
+                "assets": assets,
+                "poses_used": pose_entries,
+                "license_sources": sources or [],
+            }
+        )
 
-        # --- License snapshot ---
         if sources:
-            license_folder = os.path.dirname(path)
-            self._write_license_snapshot(license_folder, sources)
+            self._write_license_snapshot(os.path.dirname(path), sources)
 
         print(f"[EXPORT] Scene '{scene_id}' exported with {len(pose_entries)} poses.")
         return path
 
     # ------------------------------------------------------------
-    # 🔁 POSE SYNC UTILITY
+    # Pose Sync Utility
     # ------------------------------------------------------------
     def sync_existing_exports(self) -> int:
         """Re-scan exports and ensure PoseManager registry includes all poses."""
+        if not self.pose_manager:
+            print("[SYNC] PoseManager not active — skipped.")
+            return 0
+
         synced = 0
         for root, _, files in os.walk(self.export_dir):
             for file in files:
                 if file.endswith(".json"):
-                    path = os.path.join(root, file)
-                    with open(path, "r", encoding="utf-8") as f:
+                    with open(os.path.join(root, file), "r", encoding="utf-8") as f:
                         data = json.load(f)
-                    if "pose_id" in data and data["pose_id"]:
-                        pid = data["pose_id"]
-                        if pid not in self.pose_manager.registry and "pose_data" in data:
+                    pid = data.get("pose_id")
+                    if pid and "pose_data" in data:
+                        if pid not in self.pose_manager.registry:
                             self.pose_manager.registry[pid] = data["pose_data"]
                             synced += 1
-        if synced > 0:
+
+        if synced:
             self.pose_manager._save_registry()
             print(f"[SYNC] {synced} new poses synced into PoseManager registry.")
         return synced

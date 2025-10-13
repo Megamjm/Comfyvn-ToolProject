@@ -17,10 +17,10 @@ class StatusBar(QLabel):
     def set_status(self, state: str, message: str):
         """Update message and background color based on state."""
         colors = {
-            "success": QColor(46, 204, 113),   # green
-            "warning": QColor(241, 196, 15),   # yellow
-            "error": QColor(231, 76, 60),      # red
-            "idle": QColor(149, 165, 166),     # gray
+            "success": QColor(46, 204, 113),  # green
+            "warning": QColor(241, 196, 15),  # yellow
+            "error": QColor(231, 76, 60),  # red
+            "idle": QColor(149, 165, 166),  # gray
         }
         color = colors.get(state, colors["idle"])
 

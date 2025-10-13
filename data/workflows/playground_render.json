@@ -1,0 +1,107 @@
+{
+  "name": "ComfyVN_Playground_Render",
+  "description": "Render a Visual Novel scene from PlaygroundManager JSON input.",
+  "version": "1.0",
+  "prompt": "Render a visual novel scene based on provided JSON data.",
+  "workflow": {
+    "nodes": [
+      {
+        "id": 1,
+        "type": "KSampler",
+        "inputs": {
+          "model": 3,
+          "positive": 2,
+          "negative": 4,
+          "latent_image": 5,
+          "steps": 30,
+          "cfg": 7,
+          "sampler_name": "Euler",
+          "scheduler": "normal"
+        },
+        "outputs": {
+          "samples": 6
+        }
+      },
+      {
+        "id": 2,
+        "type": "CLIPTextEncode",
+        "inputs": {
+          "text": "Render a visual novel background and characters in style of Japanese anime, using details from the JSON prompt."
+        },
+        "outputs": {
+          "conditioning": "positive"
+        }
+      },
+      {
+        "id": 3,
+        "type": "CheckpointLoaderSimple",
+        "inputs": {
+          "ckpt_name": "v1-5-pruned-emaonly.safetensors"
+        },
+        "outputs": {
+          "model": "model",
+          "clip": "clip",
+          "vae": "vae"
+        }
+      },
+      {
+        "id": 4,
+        "type": "CLIPTextEncode",
+        "inputs": {
+          "text": "low quality, blurry, bad hands, distorted faces"
+        },
+        "outputs": {
+          "conditioning": "negative"
+        }
+      },
+      {
+        "id": 5,
+        "type": "EmptyLatentImage",
+        "inputs": {
+          "width": 768,
+          "height": 512,
+          "batch_size": 1
+        },
+        "outputs": {
+          "latent": "latent_image"
+        }
+      },
+      {
+        "id": 6,
+        "type": "VAEDecode",
+        "inputs": {
+          "samples": 6,
+          "vae": 3
+        },
+        "outputs": {
+          "image": "image"
+        }
+      },
+      {
+        "id": 7,
+        "type": "SaveImage",
+        "inputs": {
+          "filename_prefix": "playground_render",
+          "images": 6,
+          "output_path": "./data/renders/"
+        },
+        "outputs": {}
+      }
+    ],
+    "links": [
+      [3, "model", 1, "model"],
+      [2, "conditioning", 1, "positive"],
+      [4, "conditioning", 1, "negative"],
+      [5, "latent_image", 1, "latent_image"],
+      [1, "samples", 6, "samples"],
+      [6, "image", 7, "images"]
+    ]
+  },
+  "metadata": {
+    "author": "ComfyVN Architect",
+    "created": "2025-10-12",
+    "target_path": "./data/renders/",
+    "input_type": "Playground JSON",
+    "output_type": "PNG Image"
+  }
+}

@@ -6,11 +6,13 @@
 import json, os
 from enum import Enum
 
+
 class Modes(Enum):
     VISUAL_NOVEL = "vn"
     RPG = "rpg"
     CINEMATIC = "cinematic"
     PLAYGROUND = "playground"
+
 
 class ModeManager:
     """
@@ -33,7 +35,9 @@ class ModeManager:
             self._save_mode()
             print(f"[ModeManager] Mode switched → {self.current_mode.value}")
         except ValueError:
-            raise ValueError(f"Unknown mode: {mode_name}. Valid: {[m.value for m in Modes]}")
+            raise ValueError(
+                f"Unknown mode: {mode_name}. Valid: {[m.value for m in Modes]}"
+            )
 
     def get_mode(self) -> str:
         """Return current runtime mode name."""
