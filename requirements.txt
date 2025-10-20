@@ -4,6 +4,7 @@ requests>=2.31.0
 # --- ComfyVN v1.0 additions ---
 PySide6>=6.7
 fastapi>=0.110
+httpx>=0.27
 uvicorn>=0.30
 SQLAlchemy>=2.0
 requests>=2.31
