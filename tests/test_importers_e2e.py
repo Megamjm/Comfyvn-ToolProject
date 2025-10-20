@@ -1,0 +1,98 @@
+from __future__ import annotations
+
+import io
+import json
+import sys
+import types
+import zipfile
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("httpx")
+
+from fastapi.testclient import TestClient
+
+
+# Provide a minimal PySide6 stub so dynamic router imports do not fail in tests.
+if "PySide6" not in sys.modules:
+    pyside6 = types.ModuleType("PySide6")
+    qtgui = types.ModuleType("PySide6.QtGui")
+    qtgui.QAction = type("QAction", (), {})
+    pyside6.QtGui = qtgui
+    sys.modules["PySide6"] = pyside6
+    sys.modules["PySide6.QtGui"] = qtgui
+
+
+from comfyvn.server.app import create_app
+
+
+@pytest.fixture()
+def client(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_TOKEN", "testtoken")
+    app = create_app()
+    with TestClient(app) as c:
+        yield c
+
+
+def _make_demo_package(path: Path) -> Path:
+    pkg = path / "demo.cvnpack"
+    with zipfile.ZipFile(pkg, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.json", json.dumps({"name": "demo", "licenses": []}))
+        z.writestr("scenes/intro.json", json.dumps({"id": "intro", "title": "Intro", "nodes": []}))
+        z.writestr("characters/alice.json", json.dumps({"id": "alice", "name": "Alice"}))
+        z.writestr("assets/readme.txt", b"hello")
+    return pkg
+
+
+def test_vn_import_blocking_and_jobs_status(client: TestClient, tmp_path: Path):
+    package = _make_demo_package(tmp_path)
+    resp = client.post(
+        "/vn/import",
+        json={"path": str(package), "blocking": True, "overwrite": True},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["ok"] is True
+    job_id = payload["job"]["id"]
+    summary = payload["import"]
+    assert summary["adapter"] in {"generic", "renpy", "lightvn"}
+    assert "intro" in summary.get("scenes", [])
+
+    # Poll generic jobs/status API
+    status = client.get(f"/jobs/status/{job_id}")
+    assert status.status_code == 200, status.text
+    job = status.json()["job"]
+    assert job["status"] in {"done", "error"}
+
+    # VN-specific status endpoint should also work
+    vn_status = client.get(f"/vn/import/{job_id}")
+    assert vn_status.status_code == 200
+    assert vn_status.json()["ok"] is True
+
+
+def test_vn_import_bad_input_returns_400(client: TestClient):
+    r = client.post("/vn/import", json={})
+    assert r.status_code == 400
+
+
+def test_roleplay_import_bad_input_returns_400(client: TestClient):
+    # Missing both text and lines -> HTTP 400
+    r = client.post("/roleplay/import", json={})
+    assert r.status_code in {400, 422}
+
+
+def test_roleplay_import_log_stream_present(client: TestClient):
+    body = {
+        "text": "Alice: Hello!\nBob: Hi Alice.",
+        "title": "Importer E2E",
+        "world": "test-world",
+    }
+    r = client.post("/roleplay/import", json=body)
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    # Log endpoint returns plain text
+    log = client.get(f"/roleplay/imports/{job_id}/log")
+    assert log.status_code == 200
+    assert "scene_id=" in log.text or "[ok]" in log.text
+
