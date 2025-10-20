@@ -1,58 +1,174 @@
-from PySide6.QtGui import QAction
-import io, hashlib
+from __future__ import annotations
+
+import json
+import logging
+import tempfile
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from comfyvn.server.core.trash import move_to_trash
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from PIL import Image
+from pydantic import BaseModel, Field
+
+from comfyvn.server.core.trash import move_to_trash
 from comfyvn.server.modules.auth import require_scope
+from comfyvn.studio.core import AssetRegistry
 
-router = APIRouter()
-ASSETS = Path("./data/assets").resolve()
-THUMBS = (ASSETS / "_thumbs").resolve()
-ASSETS.mkdir(parents=True, exist_ok=True); THUMBS.mkdir(parents=True, exist_ok=True)
+router = APIRouter(prefix="/assets", tags=["Assets"])
 
-def _thumb_for(path: Path) -> Path:
-    rel = path.relative_to(ASSETS)
-    th = THUMBS / rel
-    th = th.with_suffix(".png")
-    th.parent.mkdir(parents=True, exist_ok=True)
-    return th
+LOGGER = logging.getLogger(__name__)
 
-@router.get("/list")
-async def list_assets():
-    items = []
-    for p in sorted(ASSETS.rglob("*")):
-        if p.is_dir() or "_thumbs" in p.parts: continue
-        th = _thumb_for(p)
-        items.append({"path": str(p.relative_to(ASSETS)), "size": p.stat().st_size, "thumb": str(th.relative_to(ASSETS)) if th.exists() else None})
-    return {"ok": True, "items": items}
+_asset_registry = AssetRegistry()
+
+
+def _parse_metadata(meta: Any) -> Dict[str, Any]:
+    if meta in (None, "", b""):
+        return {}
+    if isinstance(meta, dict):
+        return meta
+    if isinstance(meta, (bytes, bytearray)):
+        meta = meta.decode("utf-8", errors="replace")
+    if isinstance(meta, str):
+        try:
+            return json.loads(meta)
+        except json.JSONDecodeError as exc:  # pragma: no cover - validation
+            raise HTTPException(status_code=400, detail=f"metadata must be valid JSON: {exc}") from exc
+    raise HTTPException(status_code=400, detail="metadata must be a JSON object or string.")
+
+
+def _sanitize_relative_path(value: Optional[str]) -> Optional[Path]:
+    if not value:
+        return None
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise HTTPException(status_code=400, detail="dest_path must be relative to assets root.")
+    return candidate
+
+
+@router.get("/")
+def list_assets(
+    asset_type: Optional[str] = Query(None, alias="type", description="Optional asset type filter."),
+    limit: int = Query(200, ge=1, le=1000),
+):
+    """List assets stored in the registry."""
+    assets = _asset_registry.list_assets(asset_type)
+    return {"ok": True, "items": assets[:limit], "total": len(assets)}
+
+
+@router.get("/{uid}")
+def get_asset(uid: str):
+    asset = _asset_registry.get_asset(uid)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    return {"ok": True, "asset": asset}
+
+
+@router.get("/{uid}/download")
+def download_asset(uid: str):
+    asset = _asset_registry.get_asset(uid)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    path = _asset_registry.resolve_path(uid)
+    if not path or not path.exists():
+        raise HTTPException(status_code=404, detail="Asset file missing on disk.")
+    return FileResponse(path, filename=path.name)
+
 
 @router.post("/upload")
-async def upload(file: UploadFile = File(...), _: bool = Depends(require_scope(["assets.write"]))):
-    data = await file.read()
-    name = file.filename or "asset.bin"
-    dest = (ASSETS / name).resolve()
-    if not str(dest).startswith(str(ASSETS)): raise HTTPException(status_code=400, detail="bad path")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
+async def upload_asset(
+    file: UploadFile = File(...),
+    asset_type: str = Form("generic", description="Logical asset type bucket."),
+    dest_path: Optional[str] = Form(None, description="Optional relative destination path inside assets."),
+    metadata: Optional[str] = Form(None, description="JSON metadata to attach to the asset."),
+    _: bool = Depends(require_scope(["assets.write"])),
+):
+    """Upload a new asset and register it with sidecar + thumbnail support."""
+    meta = _parse_metadata(metadata)
+    dest_relative = _sanitize_relative_path(dest_path)
+
+    suffix = Path(file.filename or "asset.bin").suffix
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        data = await file.read()
+        tmp.write(data)
+        tmp_path = Path(tmp.name)
+
+    if dest_relative and dest_relative.suffix:
+        dest = dest_relative
+    elif dest_relative:
+        dest = dest_relative / (file.filename or tmp_path.name)
+    else:
+        dest = Path(asset_type) / (file.filename or tmp_path.name)
     try:
-        im = Image.open(io.BytesIO(data)); im.thumbnail((256,256))
-        th = _thumb_for(dest); im.save(th, "PNG")
-    except Exception: pass
-    sha = hashlib.sha256(data).hexdigest()
-    return {"ok": True, "path": str(dest.relative_to(ASSETS)), "sha256": sha}
+        asset_info = _asset_registry.register_file(
+            tmp_path,
+            asset_type=asset_type,
+            dest_relative=dest,
+            metadata=meta,
+            copy=True,
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
-@router.get("/download")
-async def download(path: str):
-    fp = (ASSETS / path).resolve()
-    if not str(fp).startswith(str(ASSETS)): raise HTTPException(status_code=400, detail="bad path")
-    if not fp.exists(): raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(str(fp), filename=fp.name)
+    LOGGER.info("Asset uploaded uid=%s type=%s", asset_info["uid"], asset_type)
+    return {"ok": True, "asset": asset_info}
 
-@router.delete("/delete")
-async def delete(path: str, _: bool = Depends(require_scope(["assets.write"]))):
-    fp = (ASSETS / path).resolve()
-    if not str(fp).startswith(str(ASSETS)): raise HTTPException(status_code=400, detail="bad path")
-    if not fp.exists(): raise HTTPException(status_code=404, detail="not found")
-    move_to_trash(fp); return {"ok": True, "trashed": True}
+
+class RegisterAssetRequest(BaseModel):
+    path: str = Field(..., description="Absolute or relative path to the source file.")
+    asset_type: str = Field("generic", description="Logical asset type bucket.")
+    dest_path: Optional[str] = Field(None, description="Optional relative destination path inside assets.")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata dictionary or JSON string.")
+    copy: bool = Field(True, description="Copy the file into the assets directory.")
+
+
+@router.post("/register")
+def register_existing_asset(
+    payload: RegisterAssetRequest,
+    _: bool = Depends(require_scope(["assets.write"])),
+):
+    """Register an existing file on disk into the asset registry."""
+    source = Path(payload.path).expanduser()
+    if not source.exists():
+        raise HTTPException(status_code=404, detail="Source file does not exist.")
+
+    asset_type = payload.asset_type or "generic"
+    dest_relative = _sanitize_relative_path(payload.dest_path)
+    if dest_relative and not dest_relative.suffix:
+        dest_relative = dest_relative / source.name
+    meta = _parse_metadata(payload.metadata)
+    copy = payload.copy
+
+    asset_info = _asset_registry.register_file(
+        source,
+        asset_type=asset_type,
+        dest_relative=dest_relative,
+        metadata=meta,
+        copy=copy,
+    )
+
+    LOGGER.info("Registered existing asset uid=%s path=%s", asset_info["uid"], source)
+    return {"ok": True, "asset": asset_info}
+
+
+@router.delete("/{uid}")
+def delete_asset(
+    uid: str,
+    remove_files: bool = Query(False, description="Physically remove files instead of moving to trash."),
+    _: bool = Depends(require_scope(["assets.write"])),
+):
+    """Delete an asset registry entry and optionally remove the underlying files."""
+    asset = _asset_registry.get_asset(uid)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+
+    if remove_files:
+        _asset_registry.remove_asset(uid, delete_files=True)
+        LOGGER.info("Removed asset uid=%s (files deleted)", uid)
+        return {"ok": True, "removed": True}
+
+    path = _asset_registry.resolve_path(uid)
+    _asset_registry.remove_asset(uid, delete_files=False)
+    if path and path.exists():
+        move_to_trash(path)
+    LOGGER.info("Trashed asset uid=%s", uid)
+    return {"ok": True, "trashed": True}

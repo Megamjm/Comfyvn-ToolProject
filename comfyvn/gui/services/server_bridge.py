@@ -65,33 +65,42 @@ class ServerBridge(QObject):
     # ─────────────────────────────
     # REST helpers
     # ─────────────────────────────
-    def _post(self, path: str, payload: Dict[str, Any], cb: Optional[Callable[[Dict[str, Any]], None]] = None):
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: Optional[Dict[str, Any]] = None,
+        cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ):
         url = f"{self.base_url}{path}"
 
         def _worker():
             result: Dict[str, Any]
             try:
                 with httpx.Client(timeout=5.0) as cli:
-                    response = cli.post(url, json=payload)
+                    if method.upper() == "POST":
+                        response = cli.post(url, json=payload)
+                    else:
+                        response = cli.get(url, params=payload)
                 result = {"ok": response.status_code < 400, "status": response.status_code}
                 try:
                     result["data"] = response.json()
                 except Exception:
                     result["data"] = response.text
-                logger.debug("POST %s -> %s", url, result["status"])
+                logger.debug("%s %s -> %s", method.upper(), url, result["status"])
             except Exception as exc:
-                logger.error("POST %s failed: %s", url, exc, exc_info=True)
+                logger.error("%s %s failed: %s", method.upper(), url, exc, exc_info=True)
                 result = {"ok": False, "error": str(exc)}
             if cb:
                 cb(result)
             return result
 
-        thread = threading.Thread(target=_worker, daemon=True, name=f"ServerBridgePOST:{path}")
+        thread = threading.Thread(target=_worker, daemon=True, name=f"ServerBridge{method.upper()}:{path}")
         thread.start()
         return thread
 
     def save_settings(self, payload: Dict[str, Any], cb: Optional[Callable[[Dict[str, Any]], None]] = None):
-        return self._post("/settings/save", payload, cb)
+        return self._request("POST", "/settings/save", payload, cb)
 
     def set_host(self, host: str) -> str:
         self.base_url = host.rstrip("/")
@@ -105,6 +114,17 @@ class ServerBridge(QObject):
     @base.setter
     def base(self, value: str) -> None:
         self.set_host(value)
+
+    def post(self, path: str, payload: Dict[str, Any], cb: Optional[Callable[[Dict[str, Any]], None]] = None):
+        """Public helper to POST arbitrary Studio endpoints."""
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return self._request("POST", path, payload, cb)
+
+    def get_json(self, path: str, params: Optional[Dict[str, Any]] = None, cb: Optional[Callable[[Dict[str, Any]], None]] = None):
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return self._request("GET", path, params, cb)
 
     def get(self, path: str, default=None):
         try:

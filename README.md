@@ -129,3 +129,23 @@ Validation	Schema templates /docs/schema/scene.json, /docs/schema/world.json.
 Thread Safety	Added cleanup hooks and WebSocket lock protection.
 Error Handling	Replaced bare except: with structured exceptions and logs.
 Testing	Added pytest stubs for API endpoints.
+
+## Running ComfyVN Locally
+
+1. Launch the full studio stack with `python run_comfyvn.py`. The launcher bootstraps `.venv`, installs/updates requirements, normalises logging targets, and opens the GUI plus embedded backend.
+2. For API-only work, run `uvicorn comfyvn.app:app --reload --port 8001`. The `create_app()` factory wires every router under `comfyvn.server.modules`, applies CORS, and initialises structured logging.
+3. The GUI’s “Start Server” helper now delegates to `python comfyvn/app.py`, matching the manual entrypoint above and writing output to `logs/server_detached.log`.
+
+## Logging & Debugging
+
+- Server logs aggregate at `logs/server.log`. Override defaults with `COMFYVN_LOG_FILE`/`COMFYVN_LOG_LEVEL` before launching `uvicorn` or the CLI.
+- GUI messages write to `logs/gui.log`; launcher activity goes to `logs/launcher.log`.
+- CLI commands (e.g. `python -m comfyvn bundle ...`) create timestamped run directories under `logs/run-*/run.log` via `comfyvn.logging_setup`.
+- When tracking regressions, run `pytest tests/test_server_entrypoint.py` to confirm `/health`, `/healthz`, and `/status` remain reachable.
+- The quick HTTP/WS diagnostics in `smoke_checks.py` exercise `/limits/status`, `/scheduler/health`, and the collab WebSocket. Run it while the backend is online to capture network traces.
+
+## Health & Smoke Checks
+
+- `curl http://127.0.0.1:8001/health` validates the FastAPI wiring from `comfyvn.server.app`.
+- `curl http://127.0.0.1:8001/healthz` remains available for legacy tooling expecting the older probe.
+- `python smoke_checks.py` performs REST + WebSocket checks against a locally running server and prints any failures alongside connection debug information.

@@ -1,52 +1,105 @@
+"""
+ComfyVN FastAPI entrypoint.
+
+Provides a ``create_app`` factory that configures logging, CORS, core routes,
+and dynamically loads all available API routers under ``comfyvn.server.modules``.
+"""
+
 from __future__ import annotations
+
+import importlib
+import logging
 import os
+import pkgutil
 from pathlib import Path
+from typing import Iterable, Optional
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 
 from comfyvn.server.core.logging_ex import setup_logging
 
-# Logging Setup
-LOG_PATH = Path(__file__).resolve().parents[2] / "logs" / "server.log"
-LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("COMFYVN_LOG_FILE", str(LOG_PATH))
-setup_logging()
-
 try:
     from fastapi.responses import ORJSONResponse as _ORJSON
-    _DEFAULT = _ORJSON
-except Exception:
-    _DEFAULT = None
+except Exception:  # pragma: no cover - optional dependency
+    _ORJSON = None
 
-app = FastAPI(title="ComfyVN", version="0.8.0")
+LOGGER = logging.getLogger(__name__)
+APP_VERSION = os.getenv("COMFYVN_VERSION", "0.8.0")
+MODULE_PACKAGE = "comfyvn.server.modules"
+MODULE_PATH = Path(__file__).resolve().parent / "modules"
+LOG_PATH = Path(__file__).resolve().parents[2] / "logs" / "server.log"
 
-# Router includes (generated elsewhere in file)
-app.include_router(r_flow_registry_router)
-app.include_router(r_health_router)
-app.include_router(r_ops_routes_router)
-app.include_router(jobs_jobs_api_router)
-app.include_router(root_jobs_api_router)
-app.include_router(router_snapshots_api_router)
-app.include_router(router_admin_api_router)
-app.include_router(router_agent_api_router)
-app.include_router(router_artifacts_api_router)
-app.include_router(router_assets_api_router)
-app.include_router(router_assets_api_ex_router)
-app.include_router(router_assets_pipeline_api_router)
-app.include_router(router_asset_store_api_router)
-app.include_router(router_audit_api_router)
-app.include_router(router_auth_api_router)
-app.include_router(router_auth_oidc_api_router)
-app.include_router(router_branchmap_api_router)
-app.include_router(router_bridgehub_api_router)
-app.include_router(router_bridge_api_router)
-app.include_router(router_characters_api_router)
-app.include_router(router_collab_api_router)
-app.include_router(router_comfyui_bridge_api_router)
-app.include_router(router_comfy_bridge_api_router)
-app.include_router(router_continuity_api_router)
-app.include_router(router_control_api_router)
-app.include_router(router_db_api_router)
-app.include_router(router_devices_api_router)
-app.include_router(router_device_api_router)
-app.include_router(router_diagnostics_api_router)
-app.include_router(router_env_api_router)
+
+def _configure_logging() -> None:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve user override but ensure default path exists
+    os.environ.setdefault("COMFYVN_LOG_FILE", str(LOG_PATH))
+    setup_logging()
+    LOGGER.info("Server logging configured -> %s", os.environ.get("COMFYVN_LOG_FILE"))
+
+
+def _iter_module_names() -> Iterable[str]:
+    for module_info in pkgutil.walk_packages([str(MODULE_PATH)], f"{MODULE_PACKAGE}."):
+        if module_info.ispkg:
+            continue
+        yield module_info.name
+
+
+def _include_routers(app: FastAPI) -> None:
+    for module_name in _iter_module_names():
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            LOGGER.warning("Skipping router %s (import failed: %s)", module_name, exc)
+            continue
+        router = getattr(module, "router", None)
+        if router is None:
+            continue
+        try:
+            app.include_router(router)
+            LOGGER.debug("Included router: %s", module_name)
+        except Exception as exc:
+            LOGGER.warning("Failed to include router %s: %s", module_name, exc)
+
+
+def create_app(*, enable_cors: bool = True, allowed_origins: Optional[list[str]] = None) -> FastAPI:
+    """Application factory used by both CLI launches and ASGI servers."""
+    _configure_logging()
+
+    default_kwargs = {"default_response_class": _ORJSON} if _ORJSON else {}
+    app = FastAPI(title="ComfyVN", version=APP_VERSION, **default_kwargs)
+    app.state.version = APP_VERSION
+
+    if enable_cors:
+        origins = allowed_origins or ["*"]
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        LOGGER.info("CORS enabled for origins: %s", origins)
+
+    _include_routers(app)
+
+    @app.get("/health", tags=["System"], summary="Simple health probe")
+    async def core_health():
+        return {"status": "ok"}
+
+    @app.get("/status", tags=["System"], summary="Service status overview")
+    async def core_status():
+        routes = [
+            route.path
+            for route in app.routes
+            if isinstance(route, APIRoute)
+        ]
+        return {"ok": True, "version": APP_VERSION, "routes": routes}
+
+    LOGGER.info("FastAPI application created with %d routes", len(app.routes))
+    return app
+
+
+app = create_app()

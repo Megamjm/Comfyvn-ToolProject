@@ -1,26 +1,111 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-from fastapi import APIRouter, HTTPException
-from typing import Any
-from comfyvn.core.task_registry import task_registry
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+
+from comfyvn.core.task_registry import TaskItem, task_registry
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
+LOGGER = logging.getLogger(__name__)
+
+
+def _format_ts(value: float | None) -> str | None:
+    if not value:
+        return None
+    return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+
+
+def _serialize_task(task: TaskItem) -> Dict[str, Any]:
+    data = {
+        "id": task.id,
+        "kind": task.kind,
+        "status": task.status,
+        "progress": task.progress,
+        "message": task.message,
+        "meta": task.meta,
+        "created_at": _format_ts(task.created_at),
+        "updated_at": _format_ts(task.updated_at),
+    }
+    return data
+
+
 @router.post("/enqueue")
-async def enqueue_job(job: dict[str, Any]):
-    """Accepts {"kind": str, "payload": {...}}; returns {"id": "..."}"""
+async def enqueue_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Accepts {"kind": str, "payload": {...}}; returns {"id": "..."}."""
     kind = job.get("kind") or "generic"
     payload = job.get("payload") or {}
-    tid = task_registry.register(kind, payload)
-    return {"ok": True, "id": tid}
+    message = job.get("message", "")
+    meta = job.get("meta")
+    task_id = task_registry.register(kind, payload, message=message, meta=meta)
+    return {"ok": True, "id": task_id}
 
-@router.get("/status/{tid}")
-async def job_status(tid: str):
-    j = task_registry.get(tid)
-    if not j:
-        raise HTTPException(404, "job not found")
-    return {"ok": True, "job": j}
+
+@router.get("/status/{task_id}")
+async def job_status(task_id: str) -> Dict[str, Any]:
+    task = task_registry.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="job not found")
+    return {"ok": True, "job": _serialize_task(task)}
+
 
 @router.get("/all")
-async def job_all():
-    return {"ok": True, "jobs": task_registry.list()}
+async def job_all() -> Dict[str, Any]:
+    tasks = [_serialize_task(task) for task in task_registry.list()]
+    return {"ok": True, "jobs": tasks}
+
+
+@router.websocket("/ws")
+async def job_stream(websocket: WebSocket):
+    await websocket.accept()
+    LOGGER.info("Job stream client connected from %s", websocket.client)
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=128)
+
+    def listener(task: TaskItem) -> None:
+        payload = {
+            "type": "job.update",
+            "job": _serialize_task(task),
+        }
+
+        def _enqueue() -> None:
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                    LOGGER.debug("Job stream queue full; dropping oldest event")
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(payload)
+
+        loop.call_soon_threadsafe(_enqueue)
+
+    task_registry.subscribe(listener)
+
+    async def send_snapshot() -> None:
+        snapshot = [_serialize_task(task) for task in task_registry.list()]
+        await websocket.send_json({"type": "snapshot", "jobs": snapshot})
+
+    async def heartbeat() -> None:
+        while True:
+            await asyncio.sleep(15)
+            await websocket.send_json({"type": "ping"})
+
+    heartbeat_task = asyncio.create_task(heartbeat())
+
+    try:
+        await send_snapshot()
+        LOGGER.debug("Job stream snapshot sent (%d jobs)", len(task_registry.list()))
+        while True:
+            payload = await queue.get()
+            await websocket.send_json(payload)
+    except WebSocketDisconnect:
+        LOGGER.info("Job stream client disconnected: %s", websocket.client)
+    except Exception as exc:
+        LOGGER.warning("Job stream error for %s: %s", websocket.client, exc)
+    finally:
+        heartbeat_task.cancel()
+        task_registry.unsubscribe(listener)

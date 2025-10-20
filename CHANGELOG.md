@@ -1,3 +1,44 @@
+### 2025-10-20 — VN Importer Pipeline (chat: Importer)
+- Added `comfyvn/server/core/vn_importer.py` to unpack `.cvnpack/.zip` bundles with manifest auditing, license capture, and structured logging.
+- New `/vn/import` FastAPI endpoint exposes the importer; GUI `VNImporterWindow` now POSTs to the route and surfaces summaries/warnings.
+- `/vn/import` runs through `TaskRegistry`, exposing job IDs (`/jobs/status/:id`) and progress updates; GUI polls job status until completion.
+- Import summary persisted per job (`data/imports/vn/<id>/summary.json`) to assist debugging and provenance checks.
+- Tests cover importer + API workflows (`tests/test_vn_importer.py`).
+
+### 2025-10-21 — Audio & Advisory API scaffolding (chat: Audio & Policy)
+- TTS stub (`comfyvn/core/audio_stub.py`) now emits artifact + sidecar with deterministic caching and structured logging.
+- FastAPI modules expose `/api/tts/synthesize`, `/voice/*`, and `/api/advisory/*` endpoints with validation and debug logs.
+- Advisory core now tracks issue IDs, timestamps, and resolution notes for downstream provenance.
+- Documentation: added `docs/studio_phase6_audio.md` and `docs/studio_phase7_advisory.md` for subsystem playbooks.
+
+### 2025-10-21 — Server Entrypoint Consolidation (chat: Core Updates)
+- `comfyvn/app.py` now delegates to `comfyvn.server.app.create_app`, keeping `/healthz` for legacy checks.
+- Added `tests/test_server_entrypoint.py` to verify `/health`, `/healthz`, and `/status` coverage.
+- Documentation refreshed with logging/debug guidance and entrypoint notes.
+
+### 2025-10-21 — Roleplay Import + Asset Registry Integration (chats: Asset & Sprite System, Roleplay/World Lore)
+- `/roleplay/import` now persists scenes and characters via the studio registries, records jobs/import rows, and archives raw transcripts to `logs/imports/roleplay_*` for debugging.
+- `GET /roleplay/imports/{job_id}` aggregates job + import metadata (including log paths) so the GUI can surface importer status.
+- `/assets/*` router delegates to `AssetRegistry` for list/detail/upload/register/delete, validates metadata, and resolves file downloads while keeping sidecars/thumbnails consistent.
+- Studio core gains `JobRegistry`, `ImportRegistry`, and character link helpers that underpin the importer pipeline.
+
+### 2025-10-20 — S2 Scene Bundle Export (chat: S2)
+- Added `comfyvn/scene_bundle.py` to convert ST raw → Scene Bundle (schema-valid).
+- CLI: `comfyvn bundle --raw ...` emits `bundles/*.bundle.json`.
+- Tag support: [[bg:]], [[label:]], [[goto:]], [[expr:]] injected as stage events.
+- Tests: `tests/test_scene_bundle.py`.
+
+### 2025-10-20 — Studio Phase 1 & 2 Foundations
+- Server bootstrap now uses `create_app()` factory with `/health` + `/status`, CORS, and unified logging (`comfyvn/server/app.py`).
+- GUI shell stabilised: menu guard, ServerBridge host/save hooks, metrics polling, and dock tabbing (Phase 1 completion).
+- Phase-06 rebuild script provisions all studio tables (variables/templates/providers/settings) with column backfills.
+- Studio registry package (`comfyvn/studio/core`) gains template/variable registries and asset `register_file` helper emitting sidecars.
+- Documentation: `docs/studio_phase1.md`, `docs/studio_phase2.md`, and `docs/studio_assets.md` outline the current state.
+- Studio coordination API (`/api/studio/*`) added with logging; new `comfyvn/gui/studio_window.py` prototype uses these endpoints. Docs: `docs/api_studio.md`.
+- Roleplay importer hardened: `POST /roleplay/import` + status endpoint emit structured logs, persist raw transcripts, create scenes/characters, and index assets. Docs: `docs/import_roleplay.md`.
+
+
+
 ComfyVN ToolProject
 Change Log — Version 0.2 Development Branch
 

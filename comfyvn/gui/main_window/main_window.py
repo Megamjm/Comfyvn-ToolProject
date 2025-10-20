@@ -48,7 +48,7 @@ def _detached_server():
     """Launch the backend as a detached process; return Popen or None."""
     try:
         exe = sys.executable
-        script = Path("comfyvn/server/app.py").resolve()
+        script = Path("comfyvn/app.py").resolve()
         log_path = Path("logs/server_detached.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log:

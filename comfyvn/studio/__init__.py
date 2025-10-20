@@ -8,6 +8,10 @@ from .core import (
     SceneRegistry,
     CharacterRegistry,
     WorldRegistry,
+    TemplateRegistry,
+    VariableRegistry,
+    JobRegistry,
+    ImportRegistry,
 )
 
 __all__ = [
@@ -16,4 +20,8 @@ __all__ = [
     "SceneRegistry",
     "CharacterRegistry",
     "WorldRegistry",
+    "TemplateRegistry",
+    "VariableRegistry",
+    "JobRegistry",
+    "ImportRegistry",
 ]
