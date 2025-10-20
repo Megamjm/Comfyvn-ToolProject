@@ -1,23 +1,56 @@
+// .devcontainer/devcontainer.json
+// [ComfyVN_Architect | VS Code Devcontainer Merge — 2025-10-20]
+
 {
-  "name": "ComfyVN Studio Suite",
+  "name": "ComfyVN Studio Suite (Local Codespace)",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
   "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    }
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
   },
-  "postCreateCommand": "pip install -r requirements.txt",
+
+  // Includes libGL + glib for PySide/OpenCV/etc, upgrades pip, then installs project deps.
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0 && pip install -U pip && pip install -r requirements.txt",
+
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
         "ms-toolsai.jupyter",
         "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+
+        // AI helpers
         "GitHub.copilot",
-        "GitHub.copilot-chat"
-      ]
+        "GitHub.copilot-chat",
+        "openai.chatgpt" // optional: OpenAI ChatGPT “Work with Apps”
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
     }
   },
-  "forwardPorts": [8000, 8001],
-  "mounts": ["source=data,target=/workspaces/ComfyVN/data,type=bind"]
+
+  // Union of both sets
+  "forwardPorts": [8000, 8001, 8188, 1234],
+  "portsAttributes": {
+    "8000": { "label": "ComfyVN API" },
+    "8001": { "label": "ComfyVN v1 API" },
+    "8188": { "label": "ComfyUI" },
+    "1234": { "label": "LM Studio" }
+  },
+
+  // Runtime env inside the remote context
+  "remoteEnv": {
+    "COMFYVN_ENV": "dev",
+    "LMSTUDIO_BASE_URL": "http://host.docker.internal:1234"
+  },
+
+  // Bind local ./data to container workspace path; tweak target if your repo folder name differs.
+  "mounts": [
+    "source=${localWorkspaceFolder}/data,target=/workspaces/ComfyVN/data,type=bind"
+  ],
+
+  // GPU passthrough (optional): set to ["--gpus=all"] when NVIDIA Container Toolkit is installed.
+  "runArgs": []
 }
