@@ -36,6 +36,18 @@ def _parse_metadata(meta: Any) -> Dict[str, Any]:
     raise HTTPException(status_code=400, detail="metadata must be a JSON object or string.")
 
 
+def _normalize_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
+    meta = asset.get("meta")
+    if isinstance(meta, str):
+        try:
+            asset["meta"] = json.loads(meta)
+        except json.JSONDecodeError:
+            asset["meta"] = {"raw": meta}
+    elif meta is None:
+        asset["meta"] = {}
+    return asset
+
+
 def _sanitize_relative_path(value: Optional[str]) -> Optional[Path]:
     if not value:
         return None
@@ -51,7 +63,7 @@ def list_assets(
     limit: int = Query(200, ge=1, le=1000),
 ):
     """List assets stored in the registry."""
-    assets = _asset_registry.list_assets(asset_type)
+    assets = [_normalize_asset_payload(dict(item)) for item in _asset_registry.list_assets(asset_type)]
     return {"ok": True, "items": assets[:limit], "total": len(assets)}
 
 
@@ -60,7 +72,7 @@ def get_asset(uid: str):
     asset = _asset_registry.get_asset(uid)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found.")
-    return {"ok": True, "asset": asset}
+    return {"ok": True, "asset": _normalize_asset_payload(dict(asset))}
 
 
 @router.get("/{uid}/download")

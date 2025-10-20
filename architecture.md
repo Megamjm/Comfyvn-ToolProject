@@ -66,7 +66,7 @@ comfyvn/
 scripts/
   install_manager.py
   run_comfyvn.py
-tools/
+setup/
   apply_phase06_rebuild.py
 data/
   templates/

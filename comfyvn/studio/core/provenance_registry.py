@@ -20,6 +20,26 @@ LOGGER = logging.getLogger(__name__)
 class ProvenanceRegistry(BaseRegistry):
     TABLE = "provenance"
 
+    def _ensure_schema(self) -> None:
+        super()._ensure_schema()
+        with self.connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS provenance (
+                    id INTEGER PRIMARY KEY,
+                    project_id TEXT DEFAULT 'default',
+                    asset_id INTEGER,
+                    source TEXT,
+                    workflow_hash TEXT,
+                    commit_hash TEXT,
+                    inputs_json JSON,
+                    c2pa_like JSON,
+                    user_id TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+
     def record(
         self,
         asset_id: int,

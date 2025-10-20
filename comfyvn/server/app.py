@@ -21,8 +21,16 @@ from fastapi.routing import APIRoute
 from comfyvn.server.core.logging_ex import setup_logging
 
 try:
+    import orjson as _orjson  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    _orjson = None
+
+try:
     from fastapi.responses import ORJSONResponse as _ORJSON
 except Exception:  # pragma: no cover - optional dependency
+    _ORJSON = None
+
+if _ORJSON is not None and _orjson is None:
     _ORJSON = None
 
 LOGGER = logging.getLogger(__name__)
@@ -41,10 +49,26 @@ def _configure_logging() -> None:
 
 
 def _iter_module_names() -> Iterable[str]:
-    for module_info in pkgutil.walk_packages([str(MODULE_PATH)], f"{MODULE_PACKAGE}."):
-        if module_info.ispkg:
-            continue
-        yield module_info.name
+    def _walk(paths: list[str], prefix: str) -> Iterable[str]:
+        for module_info in pkgutil.iter_modules(paths, prefix):
+            name = module_info.name
+            if module_info.ispkg:
+                sub_paths: list[str] = []
+                finder = getattr(module_info, "module_finder", None)
+                find_spec = getattr(finder, "find_spec", None)
+                if find_spec is not None:
+                    try:
+                        spec = find_spec(name)
+                    except Exception:  # pragma: no cover - defensive
+                        spec = None
+                    if spec and spec.submodule_search_locations:
+                        sub_paths = list(spec.submodule_search_locations)
+                if sub_paths:
+                    yield from _walk(sub_paths, f"{name}.")
+                continue
+            yield name
+
+    yield from _walk([str(MODULE_PATH)], f"{MODULE_PACKAGE}.")
 
 
 def _include_routers(app: FastAPI) -> None:

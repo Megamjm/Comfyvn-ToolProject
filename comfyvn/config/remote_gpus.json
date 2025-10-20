@@ -1,0 +1,32 @@
+{
+  "providers": [
+    {
+      "name": "RunPod",
+      "kind": "provider",
+      "api_base": "https://api.runpod.io",
+      "docs_url": "https://docs.runpod.io",
+      "pricing_url": "https://www.runpod.io/console/gpu-browse"
+    },
+    {
+      "name": "Vast.ai",
+      "kind": "market",
+      "api_base": "https://vast.ai/api/v0",
+      "docs_url": "https://vast.ai/docs/overview/",
+      "pricing_url": "https://vast.ai/instances/"
+    },
+    {
+      "name": "Lambda Cloud",
+      "kind": "cloud",
+      "api_base": "https://cloud.lambdalabs.com/api/v1",
+      "docs_url": "https://docs.lambdalabs.com/",
+      "pricing_url": "https://lambdalabs.com/service/gpu-cloud/pricing"
+    },
+    {
+      "name": "Modal",
+      "kind": "serverless",
+      "api_base": "https://api.modal.com",
+      "docs_url": "https://modal.com/docs",
+      "pricing_url": "https://modal.com/pricing"
+    }
+  ]
+}

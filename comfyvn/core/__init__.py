@@ -1,5 +1,4 @@
-from PySide6.QtGui import QAction
-"""Auto-generated module exports."""
+"""Core subsystem exports for ComfyVN."""
 
 __all__ = [
     "bridge_comfyui",

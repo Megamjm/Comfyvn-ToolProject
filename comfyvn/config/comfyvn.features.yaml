@@ -1,0 +1,13 @@
+  - id: S2
+    name: SceneBundleExport
+    subsystem: Glue
+    intent: MVP
+    status: PARTIAL   # set READY after first bundle passes schema + plays in Ren'Py
+    expected:
+      summary: Convert SillyTavern raw chat JSON to Scene Bundle (schema-valid).
+      schema_ref: "docs/scene_bundle.schema.json"
+    desired:
+      summary: Emotion inference + tag-based stage events ([[bg:...]] [[label:...]] [[goto:...]] [[expr:...]])
+    accept:
+      - "comfyvn bundle --raw authoring/<file>.json → bundles/<name>.bundle.json"
+      - "Bundle validates (jsonschema present) and lists characters/expressions"

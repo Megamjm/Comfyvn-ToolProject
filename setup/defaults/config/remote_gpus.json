@@ -1,0 +1,29 @@
+{
+  "endpoints": [
+    {
+      "name": "RunPod",
+      "endpoint": "https://api.runpod.ai",
+      "docs": "https://www.runpod.io/"
+    },
+    {
+      "name": "Modal",
+      "endpoint": "https://api.modal.com",
+      "docs": "https://modal.com/docs"
+    },
+    {
+      "name": "Replicate",
+      "endpoint": "https://api.replicate.com",
+      "docs": "https://replicate.com/"
+    },
+    {
+      "name": "Banana",
+      "endpoint": "https://api.banana.dev",
+      "docs": "https://www.banana.dev/"
+    },
+    {
+      "name": "Paperspace",
+      "endpoint": "https://api.paperspace.io",
+      "docs": "https://docs.digitalocean.com/products/paperspace/"
+    }
+  ]
+}

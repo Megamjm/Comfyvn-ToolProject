@@ -72,6 +72,3 @@ data/**
 renpy_project/
 .venv
 .bak
-config/
-models/
-tools/

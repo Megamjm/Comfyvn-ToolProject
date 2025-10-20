@@ -6,11 +6,10 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
-from comfyvn.server.modules.auth import require_scope
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +69,7 @@ def _spawn_import_job(task_id: str, package_path: str, overwrite: bool) -> None:
 
 
 @router.post("/import")
-async def import_vn(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=10))):
+async def import_vn(payload: Dict[str, Any]):
     """Import a ComfyVN package (.cvnpack/.zip/.pak) into the local workspace."""
 
     path_value = payload.get("path") or payload.get("package_path")
@@ -115,7 +114,7 @@ async def import_vn(payload: Dict[str, Any], _: bool = Depends(require_scope(["c
 
 
 @router.get("/import/{job_id}")
-async def import_status(job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))):
+async def import_status(job_id: str):
     task = task_registry.get(job_id)
     if not task:
         raise HTTPException(status_code=404, detail="job not found")

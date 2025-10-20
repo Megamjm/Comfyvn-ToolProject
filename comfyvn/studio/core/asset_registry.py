@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +40,26 @@ class AssetRegistry(BaseRegistry):
         self.THUMB_ROOT.mkdir(parents=True, exist_ok=True)
         self._provenance = ProvenanceRegistry(db_path=self.db_path, project_id=self.project_id)
 
+    def _ensure_schema(self) -> None:
+        super()._ensure_schema()
+        with self.connection() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS assets_registry (
+                    id INTEGER PRIMARY KEY,
+                    project_id TEXT DEFAULT 'default',
+                    uid TEXT UNIQUE,
+                    type TEXT,
+                    path_full TEXT,
+                    path_thumb TEXT,
+                    hash TEXT,
+                    bytes INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    meta JSON
+                )
+                """
+            )
+
     # ---------------------
     # Public query helpers
     # ---------------------
@@ -55,7 +76,7 @@ class AssetRegistry(BaseRegistry):
                 f"FROM {self.TABLE} WHERE project_id = ? ORDER BY id DESC",
                 [self.project_id],
             )
-        return [dict(row) for row in rows]
+        return [self._format_asset_row(row) for row in rows]
 
     def get_asset(self, uid: str) -> Optional[Dict[str, Any]]:
         row = self.fetchone(
@@ -63,7 +84,7 @@ class AssetRegistry(BaseRegistry):
             f"FROM {self.TABLE} WHERE project_id = ? AND uid = ?",
             [self.project_id, uid],
         )
-        return dict(row) if row else None
+        return self._format_asset_row(row) if row else None
 
     # ---------------------
     # Registration helpers
@@ -234,6 +255,21 @@ class AssetRegistry(BaseRegistry):
         sidecar_path.parent.mkdir(parents=True, exist_ok=True)
         sidecar_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         LOGGER.debug("Sidecar written: %s", sidecar_path)
+
+    @staticmethod
+    def _format_asset_row(row: sqlite3.Row) -> Dict[str, Any]:
+        payload = dict(row)
+        payload["path"] = payload.pop("path_full")
+        thumb = payload.pop("path_thumb", None)
+        if thumb is not None:
+            payload["thumb"] = thumb
+        meta = payload.get("meta")
+        if isinstance(meta, str):
+            try:
+                payload["meta"] = json.loads(meta)
+            except json.JSONDecodeError:
+                payload["meta"] = meta
+        return payload
 
     def _create_thumbnail(self, dest: Path, uid: str) -> Optional[str]:
         if Image is None:
