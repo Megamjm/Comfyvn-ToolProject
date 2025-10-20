@@ -1,18 +1,23 @@
 {
-  // [🎨 GUI Code Production Chat] ComfyVN GUI Dev Container
-  "name": "ComfyVN GUI Dev",
-  "build": {
-    "dockerfile": "Dockerfile"
+  "name": "ComfyVN Studio Suite",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
   },
+  "postCreateCommand": "pip install -r requirements.txt",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
+        "ms-toolsai.jupyter",
         "ms-python.vscode-pylance",
-        "ms-toolsai.jupyter"
+        "GitHub.copilot",
+        "GitHub.copilot-chat"
       ]
     }
   },
-  "postCreateCommand": "pip install PySide6 requests",
-  "remoteUser": "vscode"
+  "forwardPorts": [8000, 8001],
+  "mounts": ["source=data,target=/workspaces/ComfyVN/data,type=bind"]
 }
