@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -38,7 +39,7 @@ def _execute_import(task_id: str, package_path: str, overwrite: bool) -> Dict[st
 
     meta = _task_meta(task_id)
     meta["result"] = summary
-    meta["summary_path"] = summary.get("import_id")
+    meta["summary_path"] = summary.get("summary_path")
     stats = (
         f"scenes={len(summary.get('scenes', []))} "
         f"characters={len(summary.get('characters', []))} "
@@ -111,3 +112,36 @@ async def import_vn(payload: Dict[str, Any], _: bool = Depends(require_scope(["c
         raise HTTPException(status_code=500, detail="vn import spawn failed") from exc
 
     return {"ok": True, "job": {"id": task_id}}
+
+
+@router.get("/import/{job_id}")
+async def import_status(job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))):
+    task = task_registry.get(job_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="job not found")
+    summary = _load_summary_from_meta(task.meta or {})
+    return {"ok": True, "job": _serialize_task(task), "summary": summary}
+def _load_summary_from_meta(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    summary = meta.get("result") if isinstance(meta, dict) else None
+    if summary:
+        return summary
+    path = meta.get("summary_path") if isinstance(meta, dict) else None
+    if path:
+        try:
+            file_path = Path(path)
+            if file_path.exists():
+                return json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to load summary from %s: %s", path, exc)
+    return None
+
+
+def _serialize_task(task) -> Dict[str, Any]:
+    return {
+        "id": task.id,
+        "kind": task.kind,
+        "status": task.status,
+        "progress": task.progress,
+        "message": task.message,
+        "meta": task.meta,
+    }

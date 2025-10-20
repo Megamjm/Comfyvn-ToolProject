@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import logging
 import os
@@ -18,6 +19,20 @@ BOOTSTRAP_FLAG = "COMFYVN_BOOTSTRAPPED"
 LOGGER = logging.getLogger("comfyvn.launcher")
 
 
+def _env_int(key: str, fallback: int) -> int:
+    try:
+        value = os.environ.get(key)
+        return int(value) if value is not None else fallback
+    except (TypeError, ValueError):
+        return fallback
+
+
+DEFAULT_SERVER_HOST = os.environ.get("COMFYVN_SERVER_HOST", "127.0.0.1")
+DEFAULT_SERVER_PORT = _env_int("COMFYVN_SERVER_PORT", 8001)
+DEFAULT_SERVER_APP = os.environ.get("COMFYVN_SERVER_APP", "comfyvn.server.app:app")
+DEFAULT_SERVER_LOG_LEVEL = os.environ.get("COMFYVN_SERVER_LOG_LEVEL", "info")
+
+
 def log(message: str) -> None:
     LOGGER.info(message)
     print(f"[ComfyVN] {message}")
@@ -33,6 +48,125 @@ def configure_launcher_logging() -> None:
         handler.setFormatter(formatter)
         LOGGER.addHandler(handler)
         LOGGER.setLevel(logging.INFO)
+
+
+def parse_arguments(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="ComfyVN launcher and server utility.")
+    parser.add_argument(
+        "--server-only",
+        "--headless",
+        "--no-gui",
+        action="store_true",
+        dest="server_only",
+        help="Run only the FastAPI server (skip the Qt GUI).",
+    )
+    parser.add_argument(
+        "--server-host",
+        default=DEFAULT_SERVER_HOST,
+        help=f"Host interface for the server (default: {DEFAULT_SERVER_HOST}).",
+    )
+    parser.add_argument(
+        "--server-port",
+        type=int,
+        default=DEFAULT_SERVER_PORT,
+        help=f"TCP port for the server (default: {DEFAULT_SERVER_PORT}).",
+    )
+    parser.add_argument(
+        "--server-url",
+        default=None,
+        help="Override the server base URL the GUI connects to (implies remote mode).",
+    )
+    parser.add_argument(
+        "--server-reload",
+        action="store_true",
+        help="Enable uvicorn reload (useful for development).",
+    )
+    parser.add_argument(
+        "--server-workers",
+        type=int,
+        default=None,
+        help="Number of uvicorn worker processes (default: uvicorn default).",
+    )
+    parser.add_argument(
+        "--server-log-level",
+        default=DEFAULT_SERVER_LOG_LEVEL,
+        help=f"uvicorn log level (default: {DEFAULT_SERVER_LOG_LEVEL}).",
+    )
+    parser.add_argument(
+        "--uvicorn-app",
+        default=DEFAULT_SERVER_APP,
+        help=f"ASGI app to run when using --server-only (default: {DEFAULT_SERVER_APP}).",
+    )
+    parser.add_argument(
+        "--uvicorn-factory",
+        action="store_true",
+        help="Treat --uvicorn-app as a factory callable instead of an ASGI instance.",
+    )
+    parser.add_argument(
+        "--no-server-autostart",
+        action="store_true",
+        help="Prevent the GUI from auto-starting a local server.",
+    )
+    return parser.parse_args(argv)
+
+
+def derive_server_base(host: str, port: int) -> str:
+    lowered = host.strip().lower()
+    if lowered in {"0.0.0.0", "0", "*"}:
+        connect_host = "127.0.0.1"
+    elif lowered in {"::", "[::]", "::0"}:
+        connect_host = "localhost"
+    else:
+        connect_host = host
+    return f"http://{connect_host}:{port}"
+
+
+def apply_launcher_environment(args: argparse.Namespace) -> None:
+    if args.server_url:
+        os.environ["COMFYVN_SERVER_BASE"] = args.server_url.rstrip("/")
+    else:
+        os.environ.setdefault("COMFYVN_SERVER_BASE", derive_server_base(args.server_host, args.server_port))
+
+    os.environ["COMFYVN_SERVER_HOST"] = args.server_host
+    os.environ["COMFYVN_SERVER_PORT"] = str(args.server_port)
+
+    if args.no_server_autostart or args.server_only:
+        os.environ["COMFYVN_SERVER_AUTOSTART"] = "0"
+    else:
+        os.environ.setdefault("COMFYVN_SERVER_AUTOSTART", "1")
+
+    os.environ["COMFYVN_SERVER_APP"] = args.uvicorn_app
+    os.environ["COMFYVN_SERVER_LOG_LEVEL"] = args.server_log_level
+
+
+def launch_server(
+    app_path: str,
+    host: str,
+    port: int,
+    *,
+    log_level: str = "info",
+    reload: bool = False,
+    workers: Optional[int] = None,
+    factory: bool = False,
+) -> None:
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover - only when uvicorn missing
+        raise RuntimeError(
+            "uvicorn is required to start the ComfyVN backend. Install dependencies with `pip install -r requirements.txt`."
+        ) from exc
+
+    log(f"🚀 Starting ComfyVN server at http://{host}:{port} (app={app_path}) …")
+    uvicorn_kwargs = {
+        "host": host,
+        "port": port,
+        "log_level": log_level,
+        "reload": reload,
+        "factory": factory,
+    }
+    if workers:
+        uvicorn_kwargs["workers"] = workers
+    uvicorn.run(app_path, **uvicorn_kwargs)
 
 
 def running_inside_venv(venv_dir: Path) -> bool:
@@ -211,6 +345,11 @@ def bootstrap_environment() -> None:
 def launch_app() -> None:
     gui_log_dir = REPO_ROOT / "logs"
     gui_log_dir.mkdir(parents=True, exist_ok=True)
+    server_base = os.environ.get("COMFYVN_SERVER_BASE")
+    if server_base:
+        log(f"GUI target server: {server_base}")
+    if os.environ.get("COMFYVN_SERVER_AUTOSTART") == "0":
+        log("Auto-start for local server is disabled (COMFYVN_SERVER_AUTOSTART=0).")
     init_gui_logging(str(gui_log_dir), filename="gui.log")
     from PySide6.QtGui import QAction  # noqa: F401
     from comfyvn.gui.main_window import main
@@ -219,9 +358,22 @@ def launch_app() -> None:
     main()
 
 
-def main() -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     configure_launcher_logging()
+    args = parse_arguments(argv)
+    apply_launcher_environment(args)
     bootstrap_environment()
+    if args.server_only:
+        launch_server(
+            args.uvicorn_app,
+            args.server_host,
+            args.server_port,
+            log_level=args.server_log_level,
+            reload=args.server_reload,
+            workers=args.server_workers,
+            factory=args.uvicorn_factory,
+        )
+        return
     launch_app()
 
 

@@ -57,6 +57,15 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert status_payload["output"]["scene_id"] == data["scene_db_id"]
     assert status_payload["output"]["asset_uid"] == asset["uid"]
 
+    list_resp = client.get("/roleplay/imports")
+    assert list_resp.status_code == 200
+    jobs = list_resp.json()["items"]
+    assert any(job["id"] == data["job_id"] for job in jobs)
+
+    log_resp = client.get(f"/roleplay/imports/{data['job_id']}/log")
+    assert log_resp.status_code == 200
+    assert "scene_id=" in log_resp.text
+
 
 def _auth_headers() -> dict[str, str]:
     token = os.environ.get("API_TOKEN", "testtoken")

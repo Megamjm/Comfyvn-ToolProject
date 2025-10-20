@@ -132,9 +132,21 @@ Testing	Added pytest stubs for API endpoints.
 
 ## Running ComfyVN Locally
 
-1. Launch the full studio stack with `python run_comfyvn.py`. The launcher bootstraps `.venv`, installs/updates requirements, normalises logging targets, and opens the GUI plus embedded backend.
-2. For API-only work, run `uvicorn comfyvn.app:app --reload --port 8001`. The `create_app()` factory wires every router under `comfyvn.server.modules`, applies CORS, and initialises structured logging.
-3. The GUI’s “Start Server” helper now delegates to `python comfyvn/app.py`, matching the manual entrypoint above and writing output to `logs/server_detached.log`.
+`python run_comfyvn.py [options]` bootstraps the virtualenv, installs requirements, and then launches either the GUI or the FastAPI server depending on the flags you pass. Handy commands:
+
+- `python run_comfyvn.py` – launch the GUI and auto-start a local backend on the default port.
+- `python run_comfyvn.py --server-only --server-host 0.0.0.0 --server-port 9001` – start only the FastAPI server (headless) listening on an alternate interface/port.
+- `python run_comfyvn.py --server-url http://remote-host:8001 --no-server-autostart` – open the GUI but connect to an already-running remote server without spawning a local instance.
+- `python run_comfyvn.py --server-only --server-reload` – headless development loop with uvicorn’s auto-reload.
+- `python run_comfyvn.py --uvicorn-app comfyvn.server.app:create_app --uvicorn-factory` – run the server via the application factory if you need a fresh app per worker.
+
+Environment variables honour the same knobs:
+
+- `COMFYVN_SERVER_BASE` – default base URL for the GUI and CLI helpers (set automatically from `--server-url` or the derived host/port).
+- `COMFYVN_SERVER_AUTOSTART=0` – disable GUI auto-start of a local server.
+- `COMFYVN_SERVER_HOST`, `COMFYVN_SERVER_PORT`, `COMFYVN_SERVER_APP`, `COMFYVN_SERVER_LOG_LEVEL` – default values consumed by the launcher when flags are omitted.
+
+The GUI’s “Start Server” helper still delegates to `python comfyvn/app.py`, logging output to `logs/server_detached.log`, so manual invocations remain in sync with UI behaviour.
 
 ## Logging & Debugging
 

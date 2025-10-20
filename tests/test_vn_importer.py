@@ -61,12 +61,14 @@ def test_import_vn_package(tmp_path: Path):
     assert summary["assets"] == ["backgrounds/bg1.png"]
     assert summary["manifest"]["id"] == "demo-project"
     assert summary["licenses"] == [{"name": "CC-BY", "scope": "backgrounds"}]
+    assert summary["summary_path"]
 
     assert (data_root / "scenes" / "demo_scene.json").exists()
     assert (data_root / "characters" / "hero.json").exists()
     assert (data_root / "timelines" / "main.json").exists()
     assert (data_root / "assets" / "backgrounds" / "bg1.png").exists()
     assert (data_root / "imports" / "vn").exists()
+    assert Path(summary["summary_path"]).exists()
 
 
 def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
@@ -88,7 +90,14 @@ def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
     summary = payload["import"]
     assert summary["scenes"] == ["demo_scene"]
     assert summary["characters"] == ["hero"]
+    assert Path(summary["summary_path"]).exists()
     assert (data_root / "scenes" / "demo_scene.json").exists()
+
+    status = client.get(f"/vn/import/{payload['job']['id']}")
+    assert status.status_code == 200
+    status_payload = status.json()
+    assert status_payload["job"]["status"] == "done"
+    assert status_payload["summary"]["scenes"] == ["demo_scene"]
 
 
 def test_import_vn_api_job(tmp_path: Path, monkeypatch):
@@ -129,3 +138,10 @@ def test_import_vn_api_job(tmp_path: Path, monkeypatch):
     assert summary is not None
     assert summary["scenes"] == ["demo_scene"]
     assert (data_root / "scenes" / "demo_scene.json").exists()
+
+    detail = client.get(f"/vn/import/{job_id}")
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    assert detail_payload["job"]["status"] in {"done", "error"}
+    if detail_payload["summary"]:
+        assert detail_payload["summary"]["scenes"] == ["demo_scene"]

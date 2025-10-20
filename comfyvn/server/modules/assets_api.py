@@ -99,12 +99,23 @@ async def upload_asset(
     else:
         dest = Path(asset_type) / (file.filename or tmp_path.name)
     try:
+        provenance_payload = {
+            "source": meta.get("source") or "api.upload",
+            "inputs": {
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "size_bytes": len(data),
+            },
+            "user_id": meta.get("user_id"),
+        }
         asset_info = _asset_registry.register_file(
             tmp_path,
             asset_type=asset_type,
             dest_relative=dest,
             metadata=meta,
             copy=True,
+            provenance=provenance_payload,
+            license_tag=meta.get("license"),
         )
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -137,6 +148,14 @@ def register_existing_asset(
         dest_relative = dest_relative / source.name
     meta = _parse_metadata(payload.metadata)
     copy = payload.copy
+    provenance_payload = {
+        "source": meta.get("source") or "api.register_existing",
+        "inputs": {
+            "path": str(source),
+            "copy": copy,
+        },
+        "user_id": meta.get("user_id"),
+    }
 
     asset_info = _asset_registry.register_file(
         source,
@@ -144,6 +163,8 @@ def register_existing_asset(
         dest_relative=dest_relative,
         metadata=meta,
         copy=copy,
+        provenance=provenance_payload,
+        license_tag=meta.get("license"),
     )
 
     LOGGER.info("Registered existing asset uid=%s path=%s", asset_info["uid"], source)

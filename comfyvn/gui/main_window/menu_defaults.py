@@ -8,18 +8,26 @@ from comfyvn.core.menu_runtime_bridge import MenuRegistry
 def register_core_menu_items(registry: MenuRegistry) -> None:
     """Populate the registry with built-in menu entries."""
     # File menu
-    registry.add("Open Projects Folder", "open_projects_folder", section="File", order=10)
-    registry.add("Open Data Folder", "open_data_folder", section="File", order=20)
-    registry.add("Open Logs Folder", "open_logs_folder", section="File", order=30)
-    registry.add("Exit", "close", section="File", separator_before=True, order=100)
+    registry.add("New Project", "new_project", section="File", order=10)
+    registry.add("Close Project", "close_project", section="File", order=20)
+    registry.add("Recent Projects", "open_recent_projects", section="File", order=30)
+    registry.add("Open Projects Folder", "open_projects_folder", section="File", separator_before=True, order=40)
+    registry.add("Open Data Folder", "open_data_folder", section="File", order=50)
+    registry.add("Open Logs Folder", "open_logs_folder", section="File", order=60)
+    registry.add("Exit", "close", section="File", separator_before=True, order=200)
 
     # Module-centric entries reflect the primary dock panels.
     registry.add("Studio Center", "open_studio_center", section="Modules", order=10)
-    registry.add("Assets", "open_asset_browser", section="Modules", order=20)
-    registry.add("Playground", "open_playground", section="Modules", order=30)
-    registry.add("Timeline", "open_timeline", section="Modules", order=40)
-    registry.add("System Status", "open_telemetry", section="Modules", separator_before=True, order=50)
-    registry.add("Log Hub", "open_log_hub", section="Modules", order=60)
+    registry.add("Scenes", "open_scenes_panel", section="Modules", order=20)
+    registry.add("Characters", "open_characters_panel", section="Modules", order=30)
+    registry.add("Assets", "open_asset_browser", section="Modules", order=40)
+    registry.add("Playground", "open_playground", section="Modules", order=50)
+    registry.add("Timeline", "open_timeline", section="Modules", order=60)
+    registry.add("Imports", "open_imports_panel", section="Modules", separator_before=True, order=70)
+    registry.add("Audio", "open_audio_panel", section="Modules", order=80)
+    registry.add("Advisory", "open_advisory_panel", section="Modules", order=90)
+    registry.add("System Status", "open_telemetry", section="Modules", separator_before=True, order=100)
+    registry.add("Log Hub", "open_log_hub", section="Modules", order=110)
 
     # Tools and Extensions utility entries.
     registry.add("Reload Menus", "reload_menus", section="Tools", order=5)

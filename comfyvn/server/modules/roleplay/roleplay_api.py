@@ -5,7 +5,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from starlette.datastructures import UploadFile
 
 from comfyvn.studio.core import (
@@ -37,6 +38,38 @@ _character_registry = CharacterRegistry()
 _job_registry = JobRegistry()
 _import_registry = ImportRegistry()
 _asset_registry = AssetRegistry()
+
+
+def _loads_json(value: Any) -> Any:
+    if isinstance(value, str) and value:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def _serialize_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    response = {
+        "id": job["id"],
+        "type": job["type"],
+        "status": job["status"],
+        "submit_ts": job["submit_ts"],
+        "done_ts": job["done_ts"],
+        "owner": job["owner"],
+        "input": _loads_json(job.get("input_json")),
+        "output": _loads_json(job.get("output_json")),
+        "logs_path": job.get("logs_path"),
+    }
+
+    output = response.get("output") or {}
+    import_id = output.get("import_id")
+    import_record = _import_registry.get_import(import_id) if import_id else None
+
+    if import_record:
+        response["import"] = import_record
+
+    return response
 
 
 @router.post("/import")
@@ -170,12 +203,25 @@ async def import_roleplay(request: Request):
             "original_filename": original_filename,
             "extra": metadata,
         }
+        provenance_payload = {
+            "source": source or "roleplay_import",
+            "inputs": {
+                "job_id": job_id,
+                "import_id": import_id,
+                "world": world,
+                "participants": scene_payload.get("meta", {}).get("participants", []),
+                "original_filename": original_filename,
+            },
+            "user_id": metadata.get("submitted_by") if isinstance(metadata, dict) else None,
+        }
         asset_info = _asset_registry.register_file(
             raw_path,
             asset_type=ASSET_TYPE,
             dest_relative=Path(ASSET_TYPE) / raw_path.name,
             metadata=asset_metadata,
             copy=True,
+            provenance=provenance_payload,
+            license_tag=metadata.get("license") if isinstance(metadata, dict) else None,
         )
 
         _import_registry.mark_processed(import_id, meta={**import_meta, "scene_id": scene_db_id, "asset_uid": asset_info["uid"]})
@@ -244,31 +290,38 @@ def import_status(job_id: int):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    def _loads(value: Any) -> Any:
-        if isinstance(value, str) and value:
-            try:
-                return json.loads(value)
-            except json.JSONDecodeError:
-                return value
-        return value
+    return {"ok": True, "job": _serialize_job(job)}
 
-    response = {
-        "id": job["id"],
-        "type": job["type"],
-        "status": job["status"],
-        "submit_ts": job["submit_ts"],
-        "done_ts": job["done_ts"],
-        "owner": job["owner"],
-        "input": _loads(job.get("input_json")),
-        "output": _loads(job.get("output_json")),
-        "logs_path": job.get("logs_path"),
-    }
 
-    output = response.get("output") or {}
-    import_id = output.get("import_id")
-    import_record = _import_registry.get_import(import_id) if import_id else None
+@router.get("/imports")
+def list_imports(limit: int = Query(20, ge=1, le=100)):
+    """List recent roleplay import jobs."""
+    jobs = _job_registry.list_jobs("roleplay_import", limit)
+    items = []
+    for job in jobs:
+        job_detail = _job_registry.get_job(job["id"])
+        if job_detail:
+            items.append(_serialize_job(job_detail))
+    return {"ok": True, "items": items}
 
-    if import_record:
-        response["import"] = import_record
 
-    return {"ok": True, "job": response}
+@router.get("/imports/{job_id}/log", response_class=PlainTextResponse)
+def get_import_log(job_id: int):
+    """Return the textual log output for a roleplay import job."""
+    job = _job_registry.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    log_path = job.get("logs_path")
+    if not log_path:
+        raise HTTPException(status_code=404, detail="Log not recorded for this job.")
+
+    path = Path(log_path).expanduser().resolve()
+    try:
+        path.relative_to(LOG_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Log path outside allowed directory.")
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Log file missing.")
+
+    return path.read_text(encoding="utf-8")

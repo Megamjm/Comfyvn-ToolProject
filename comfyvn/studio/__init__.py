@@ -12,6 +12,7 @@ from .core import (
     VariableRegistry,
     JobRegistry,
     ImportRegistry,
+    ProvenanceRegistry,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "VariableRegistry",
     "JobRegistry",
     "ImportRegistry",
+    "ProvenanceRegistry",
 ]

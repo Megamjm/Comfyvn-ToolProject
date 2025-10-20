@@ -162,9 +162,9 @@ Acceptance: Importing any asset yields a registry row + thumbnail + sidecar.
 
 Status:
 - ~~Registry copy/hash/sidecar helpers available via `AssetRegistry.register_file`.~~ ✅ 2025-10-20
-- Thumbnail worker & provenance hooks pending (Pillow optional thumbnail stub in place).
+- ⚠ Thumbnail worker still inline; background worker deferred while Pillow-powered path handles PNGs.
 - ✅ 2025-10-21 — `/assets` router now fronts the registry (list/detail/upload/register/delete), ensuring metadata sidecars + thumbnails stay in sync and logging uploads to aid debugging.
-- ⚠ 2025-10-21 — Provenance stamping still outstanding; new job/import registries ready for downstream hooks.
+- ✅ 2025-10-21 — Provenance ledger + PNG metadata stamp in place; asset sidecars include provenance id/source/workflow hash.
 
 Part C — Provenance & licensing
 
@@ -177,6 +177,10 @@ Provenance stamps in EXIF (images/audio) + DB ledger row
 License tagging in assets_registry.meta
 
 Acceptance: Exported asset carries minimal embedded stamp; provenance manifest available per asset.
+
+Status:
+- ✅ 2025-10-21 — AssetRegistry records provenance rows, embeds `comfyvn_provenance` markers in PNGs, and preserves license tags in metadata/sidecars.
+- ⚠ Audio/voice stamping pending ID3 integration; current implementation logs a warning for unsupported formats.
 
 Phase 3 — Import infrastructure
 
@@ -195,6 +199,7 @@ Acceptance: ~~Small sample produces Scenes + Characters linked; job logs visible
 Progress:
 - ✅ 2025-10-21 — `/roleplay/import` persists scenes + characters via registries, writes importer logs to `logs/imports/`, and registers source transcripts as assets.
 - ✅ 2025-10-21 — `/roleplay/imports/{job_id}` aggregates job + import metadata for GUI status polling.
+- ✅ 2025-10-21 — `/roleplay/imports` list + `/roleplay/imports/{job_id}/log` enable Studio shell dashboards and log viewers; docs outline curl + sqlite inspection steps.
 - ⚠ Background job offload + multi-scene splitting still pending; current implementation runs synchronously per request.
 
 Part B — VN “pak/zip” importer
@@ -214,6 +219,7 @@ Acceptance: Import a known VN pack → Scenes, Characters, Assets populated and 
 Status:
 - ✅ 2025-10-20 — `/vn/import` API available; `import_vn_package` unpacks `.cvnpack/.zip` bundles, writes scenes/characters/assets, persists manifest + license flags, and logs summaries to support debugging.
 - ✅ 2025-10-20 — TaskRegistry-backed job flow enqueues imports (`jobs/status/:id`), GUI VN importer polls completion, and per-job metadata captures importer summary + warnings for traceability.
+- ✅ 2025-10-21 — `/vn/import/{job_id}` exposes job meta + cached summary JSON; backend writes `summary_path` + log artifacts for downstream UI.
 - ⚠ Adapter selection (Ren’Py vs. generic), overwrite policy UX, and queued job cancellation still pending.
 
 Part C — Manga → VN importer
@@ -244,6 +250,9 @@ Inline play/preview
 
 Acceptance: Create/edit scenes, persist changes; valid JSON schema; undo/redo.
 
+Progress:
+- ✅ 2025-10-21 — Dockable Scenes panel lists registry scenes and refreshes when projects change (baseline browser, no editor yet).
+
 Part B — Characters view (lab)
 
 Owner: Persona & Group Chat
@@ -255,6 +264,9 @@ Traits editor, portrait/expression linker; LoRA preview hooks
 Links to scenes containing this character
 
 Acceptance: Changing portrait/expression reflects in preview and persisted model.
+
+Progress:
+- ✅ 2025-10-21 — Characters dock lists registry entries and displays origin metadata; updates automatically on project switch (editing still pending).
 
 Part C — Timeline builder
 
@@ -275,6 +287,9 @@ Outputs:
 Grid/list with thumbnails, tags, provenance; quick open in finder
 
 Acceptance: Clicking any asset opens inspector; provenance “Show lineage” works.
+
+Progress:
+- ✅ 2025-10-21 — Imports, Audio, and Advisory panels wired to backend `/jobs`, `/api/tts`, and `/api/advisory` endpoints for live monitoring; asset inspector remains TODO.
 
 Phase 5 — Compute & scheduling
 
@@ -496,7 +511,7 @@ Outputs:
 
 install_setup_comfyvn.ps1 (venv, deps, health check)
 
-run_comfyvn.py (press Enter to launch)
+run_comfyvn.py (CLI launcher with `--server-only`, `--server-url`, `--server-reload`, etc.)
 
 Acceptance: Fresh machine can install + launch studio reliably.
 

@@ -7,18 +7,23 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:  # thumbnail generation optional
     from PIL import Image  # type: ignore
+    from PIL import PngImagePlugin  # type: ignore
 except Exception:  # pragma: no cover - pillow optional
     Image = None  # type: ignore
+    PngImagePlugin = None  # type: ignore
 
 from .base_registry import BaseRegistry
+from .provenance_registry import ProvenanceRegistry
 
 LOGGER = logging.getLogger(__name__)
+PROVENANCE_TAG = "comfyvn_provenance"
 
 
 class AssetRegistry(BaseRegistry):
@@ -32,6 +37,7 @@ class AssetRegistry(BaseRegistry):
         self.ASSETS_ROOT.mkdir(parents=True, exist_ok=True)
         self.META_ROOT.mkdir(parents=True, exist_ok=True)
         self.THUMB_ROOT.mkdir(parents=True, exist_ok=True)
+        self._provenance = ProvenanceRegistry(db_path=self.db_path, project_id=self.project_id)
 
     # ---------------------
     # Public query helpers
@@ -70,6 +76,8 @@ class AssetRegistry(BaseRegistry):
         dest_relative: Optional[Path | str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         copy: bool = True,
+        provenance: Optional[Dict[str, Any]] = None,
+        license_tag: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Copy (or reference) a file into the assets directory and index it."""
         source = Path(source_path).expanduser().resolve()
@@ -89,7 +97,9 @@ class AssetRegistry(BaseRegistry):
 
         file_hash = self._sha256(dest)
         uid = file_hash[:16]
-        meta_payload = metadata or {}
+        meta_payload = metadata.copy() if metadata else {}
+        if license_tag:
+            meta_payload.setdefault("license", license_tag)
         size_bytes = dest.stat().st_size
         thumb_path = self._create_thumbnail(dest, uid)
         thumb_rel = str(thumb_path) if thumb_path else None
@@ -120,6 +130,26 @@ class AssetRegistry(BaseRegistry):
                 ),
             )
 
+        asset_row = self.fetchone(
+            f"SELECT id FROM {self.TABLE} WHERE project_id = ? AND uid = ?",
+            [self.project_id, uid],
+        )
+        asset_db_id = int(asset_row["id"]) if asset_row else None
+
+        provenance_record = None
+        if provenance and asset_db_id is not None:
+            provenance_record = self._record_provenance(
+                asset_db_id,
+                uid,
+                file_hash,
+                provenance,
+                meta_payload,
+            )
+            if copy:
+                self._embed_provenance_marker(dest, provenance_record)
+        elif provenance:
+            LOGGER.warning("Provenance payload supplied but asset id unavailable for uid=%s", uid)
+
         sidecar = {
             "uid": uid,
             "type": asset_type,
@@ -128,6 +158,8 @@ class AssetRegistry(BaseRegistry):
             "bytes": size_bytes,
             "meta": meta_payload,
         }
+        if provenance_record:
+            sidecar["provenance"] = provenance_record
         self._write_sidecar(rel_path, sidecar)
         LOGGER.info("Registered asset %s (%s)", uid, rel_path)
         return {
@@ -138,6 +170,7 @@ class AssetRegistry(BaseRegistry):
             "hash": file_hash,
             "bytes": size_bytes,
             "meta": meta_payload,
+            "provenance": provenance_record,
         }
 
     def resolve_path(self, uid: str) -> Optional[Path]:
@@ -215,3 +248,75 @@ class AssetRegistry(BaseRegistry):
         except Exception as exc:  # pragma: no cover - optional
             LOGGER.warning("Thumbnail generation failed for %s: %s", dest, exc)
             return None
+
+    # ---------------------
+    # Provenance helpers
+    # ---------------------
+    def _record_provenance(
+        self,
+        asset_db_id: int,
+        uid: str,
+        file_hash: str,
+        provenance: Dict[str, Any],
+        meta_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        source = (provenance.get("source") or meta_payload.get("source") or "unspecified").strip()
+        user_id = provenance.get("user_id") or meta_payload.get("user_id") or os.getenv("COMFYVN_USER")
+        workflow_hash = provenance.get("workflow_hash")
+        commit_hash = provenance.get("commit_hash") or os.getenv("COMFYVN_GIT_COMMIT")
+        inputs = provenance.get("inputs") or {}
+        inputs.setdefault("asset_uid", uid)
+        inputs.setdefault("asset_hash", file_hash)
+        c2pa_like = provenance.get("c2pa_like") or {}
+
+        record = self._provenance.record(
+            asset_db_id,
+            source=source,
+            workflow_hash=workflow_hash,
+            commit_hash=commit_hash,
+            inputs=inputs,
+            c2pa_like=c2pa_like,
+            user_id=user_id,
+        )
+        record["asset_uid"] = uid
+        return record
+
+    def _embed_provenance_marker(self, dest: Path, provenance_record: Dict[str, Any]) -> None:
+        if Image is None:
+            LOGGER.debug("Skipping provenance stamp for %s (Pillow unavailable)", dest)
+            return
+
+        marker = json.dumps(
+            {
+                "provenance_id": provenance_record.get("id"),
+                "source": provenance_record.get("source"),
+                "workflow_hash": provenance_record.get("workflow_hash"),
+                "created_at": provenance_record.get("created_at"),
+            },
+            ensure_ascii=False,
+        )
+
+        suffix = dest.suffix.lower()
+        try:
+            if suffix == ".png" and PngImagePlugin is not None:
+                self._stamp_png(dest, marker)
+            else:
+                LOGGER.debug("No provenance marker implementation for %s files", suffix)
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.warning("Failed to embed provenance marker for %s: %s", dest, exc)
+
+    @staticmethod
+    def _stamp_png(dest: Path, marker: str) -> None:
+        if Image is None or PngImagePlugin is None:
+            return
+        with Image.open(dest) as img:  # type: ignore[attr-defined]
+            png_info = PngImagePlugin.PngInfo()  # type: ignore[attr-defined]
+            if hasattr(img, "text"):
+                for key, value in getattr(img, "text").items():
+                    png_info.add_text(key, value)
+            else:
+                for key, value in img.info.items():
+                    if isinstance(value, str):
+                        png_info.add_text(key, value)
+            png_info.add_text(PROVENANCE_TAG, marker)
+            img.save(dest, pnginfo=png_info)

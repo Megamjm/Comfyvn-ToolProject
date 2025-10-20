@@ -135,5 +135,6 @@ class GPUSetupWindow(QDialog):
         hosts = [h.strip() for h in raw.split(",") if h.strip()]
         self.info.append("<p><b>Pinging remotes…</b></p>")
         for h in hosts:
-            alive = self.bridge.get_json(f"{h}/health", default=None) is not None
+            result = self.bridge.get_json(f"{h}/health", default=None)
+            alive = isinstance(result, dict) and result.get("ok")
             self.info.append(f"<p>{h}: {'🟢 OK' if alive else '🔴 Unreachable'}</p>")

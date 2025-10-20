@@ -1,7 +1,21 @@
+### 2025-10-22 — Launcher & Server Bridge Alignment (chat: Studio Ops)
+- `run_comfyvn.py` now exposes unified CLI flags (`--server-only`, `--server-url`, `--server-reload`, `--uvicorn-app`, etc.) so the same entrypoint drives GUI launches, headless server runs, and remote-attach workflows.
+- Launcher propagates `COMFYVN_SERVER_BASE`, `COMFYVN_SERVER_AUTOSTART`, host/port, and uvicorn defaults to the GUI and re-exec bootstrap, enabling reproducible headless test runs.
+- `ServerBridge` adds synchronous helpers (`ping`, `ensure_online`, `projects*`) plus optional async callbacks, ensuring GUI menus/panels can connect to remote or local servers without requiring Qt to be installed server-side.
+- Main window status polling now consumes the new bridge contract, and settings/gpu panels surface success/error states from REST calls.
+- Documentation refreshed (`README.md`, `architecture.md`) with a startup command list and environment variable guide for the new launcher.
+
+### 2025-10-21 — Asset Provenance Ledger (chat: Core Updates)
+- `AssetRegistry.register_file` now records provenance rows, preserves license metadata, and writes sidecars containing provenance ids/source/hash.
+- PNG assets receive an inline `comfyvn_provenance` marker (Pillow-backed); unsupported formats log a debug notice without mutating originals.
+- REST endpoints (`/assets/upload`, `/assets/register`, `/roleplay/import`) pass provenance payloads so responses include ledger data for debugging.
+- Added `ProvenanceRegistry`, updated docs (`docs/studio_assets.md`, `docs/studio_phase2.md`, `architecture.md`), and introduced `tests/test_asset_provenance.py` to validate the workflow.
+
 ### 2025-10-20 — VN Importer Pipeline (chat: Importer)
 - Added `comfyvn/server/core/vn_importer.py` to unpack `.cvnpack/.zip` bundles with manifest auditing, license capture, and structured logging.
 - New `/vn/import` FastAPI endpoint exposes the importer; GUI `VNImporterWindow` now POSTs to the route and surfaces summaries/warnings.
 - `/vn/import` runs through `TaskRegistry`, exposing job IDs (`/jobs/status/:id`) and progress updates; GUI polls job status until completion.
+- Added `GET /vn/import/{job_id}` for downstream tooling to fetch job metadata + cached summary JSON; importer now records `summary_path` for audit trails.
 - Import summary persisted per job (`data/imports/vn/<id>/summary.json`) to assist debugging and provenance checks.
 - Tests cover importer + API workflows (`tests/test_vn_importer.py`).
 
@@ -19,6 +33,7 @@
 ### 2025-10-21 — Roleplay Import + Asset Registry Integration (chats: Asset & Sprite System, Roleplay/World Lore)
 - `/roleplay/import` now persists scenes and characters via the studio registries, records jobs/import rows, and archives raw transcripts to `logs/imports/roleplay_*` for debugging.
 - `GET /roleplay/imports/{job_id}` aggregates job + import metadata (including log paths) so the GUI can surface importer status.
+- `GET /roleplay/imports` + `GET /roleplay/imports/{job_id}/log` expose importer dashboards and inline log streaming for the Studio shell.
 - `/assets/*` router delegates to `AssetRegistry` for list/detail/upload/register/delete, validates metadata, and resolves file downloads while keeping sidecars/thumbnails consistent.
 - Studio core gains `JobRegistry`, `ImportRegistry`, and character link helpers that underpin the importer pipeline.
 
@@ -36,6 +51,8 @@
 - Documentation: `docs/studio_phase1.md`, `docs/studio_phase2.md`, and `docs/studio_assets.md` outline the current state.
 - Studio coordination API (`/api/studio/*`) added with logging; new `comfyvn/gui/studio_window.py` prototype uses these endpoints. Docs: `docs/api_studio.md`.
 - Roleplay importer hardened: `POST /roleplay/import` + status endpoint emit structured logs, persist raw transcripts, create scenes/characters, and index assets. Docs: `docs/import_roleplay.md`.
+- Studio main window now saves/restores UI layout (`QSettings`) and the File menu exposes New/Close/Recent project entries alongside folder shortcuts.
+- Added dockable Scenes, Characters, Imports, Audio, and Advisory panels wired to registry and API endpoints to mirror architecture Phase 4 design.
 
 
 

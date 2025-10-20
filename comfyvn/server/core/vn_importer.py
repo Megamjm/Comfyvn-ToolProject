@@ -58,6 +58,7 @@ class ImportSummary:
     licenses: List[Dict[str, object]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     data_root: str = field(default="")
+    summary_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -71,6 +72,7 @@ class ImportSummary:
             "licenses": self.licenses,
             "warnings": self.warnings,
             "data_root": self.data_root,
+            "summary_path": self.summary_path,
         }
 
 
@@ -279,6 +281,7 @@ def import_vn_package(
             logger.debug("Unhandled archive member %s", member.filename)
 
     summary_path = import_root / "summary.json"
+    summary.summary_path = summary_path.as_posix()
     _write_json(summary_path, summary.to_dict())
     logger.info(
         "VN import '%s' complete (%d scenes, %d characters, %d assets)",

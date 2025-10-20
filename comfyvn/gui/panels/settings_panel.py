@@ -33,10 +33,11 @@ class SettingsPanel(QDockWidget):
 
     def _save(self):
         self.bridge.set_host(self.api.text().strip())
-        ok = self.bridge.save_settings({
+        result = self.bridge.save_settings({
             "API_BASE": self.api.text().strip(),
             "REMOTE_GPU_LIST": self.remote_list.text().strip()
         })
+        ok = isinstance(result, dict) and result.get("ok")
         cfg = self.settings_manager.load()
         ui_cfg = cfg.get("ui", {})
         ui_cfg["menu_sort_mode"] = self.menu_sort.currentData()

@@ -16,8 +16,8 @@
   - Added `TemplateRegistry` and `VariableRegistry` alongside existing Scene/Character/Asset/World registries.
   - Exposed via `comfyvn.studio.core.__all__`.
 
-### Pending for Part B (Asset Registry & Sidecars)
+### Part B (Asset Registry & Sidecars) — 2025-10-21 Update
 
-- Implement thumbnail worker and asset sidecar generation.
-- Wire provenance hooks to the registry entries.
-- Document asset ingestion workflow once implemented.
+- Thumbnail generation runs inline during `register_file`; optional Pillow dependency still governs actual image output.
+- Provenance hooks now write to the `provenance` table and stamp PNG metadata with a `comfyvn_provenance` marker when Pillow is available.
+- Asset ingestion workflow documented in `docs/studio_assets.md` with CLI/SQLite debugging steps.

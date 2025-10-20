@@ -6,9 +6,9 @@ import logging
 import sys, subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, QSettings
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QMessageBox, QDockWidget, QWidget, QVBoxLayout, QLabel, QStatusBar
+    QApplication, QMainWindow, QMessageBox, QDockWidget, QWidget, QVBoxLayout, QLabel, QStatusBar, QFileDialog
 )
 from PySide6.QtGui import QAction, QDesktopServices
 
@@ -33,6 +33,11 @@ from comfyvn.gui.panels.playground_panel import PlaygroundPanel
 from comfyvn.gui.panels.timeline_panel import TimelinePanel
 from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
 from comfyvn.gui.panels.settings_panel import SettingsPanel
+from comfyvn.gui.panels.scenes_panel import ScenesPanel
+from comfyvn.gui.panels.characters_panel import CharactersPanel
+from comfyvn.gui.panels.imports_panel import ImportsPanel
+from comfyvn.gui.panels.audio_panel import AudioPanel
+from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
 from comfyvn.gui.widgets.log_hub import LogHub
 
 # Central space
@@ -41,6 +46,8 @@ from comfyvn.gui.panels.central_space import CentralSpace
 # Menus
 from comfyvn.gui.main_window.menu_bar import ensure_menu_bar, update_window_menu_state, rebuild_menus_from_registry
 from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
+from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
+from comfyvn.studio.core import SceneRegistry, CharacterRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +73,14 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self.resize(1280, 800)
 
         # Services & controllers
-        self.bridge = ServerBridge(base="http://127.0.0.1:8001")
+        self.bridge = ServerBridge()
         self.dockman = DockManager(self)
         workspace_store = Path("data/workspaces")
         self.workspace = WorkspaceController(self, workspace_store)
+        self._recent_projects = load_recent()
+        self._current_project_path: Path | None = None
+        self._scene_registry = SceneRegistry()
+        self._character_registry = CharacterRegistry()
 
         # Central canvas (assets & editors dock around it)
         self.central = CentralSpace(
@@ -87,6 +98,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
         # Toolbars (Quick Access) are dynamic via shortcut registry
         self._rebuild_shortcuts_toolbar()
+        self._restore_layout()
 
         # Menus are dynamic via extension folder
         ensure_menu_bar(self)
@@ -144,6 +156,62 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock.setVisible(True)
         dock.raise_()
 
+    def open_scenes_panel(self):
+        dock = getattr(self, "_scenes_panel", None)
+        if dock is None:
+            panel = ScenesPanel(self._scene_registry, self)
+            dock = self.dockman.dock(panel, "Scenes")
+            self._scenes_panel = dock
+            logger.debug("Scenes panel created")
+        dock.setVisible(True)
+        dock.raise_()
+        widget = dock.widget()
+        if isinstance(widget, ScenesPanel):
+            widget.set_registry(self._scene_registry)
+
+    def open_characters_panel(self):
+        dock = getattr(self, "_characters_panel", None)
+        if dock is None:
+            panel = CharactersPanel(self._character_registry, self)
+            dock = self.dockman.dock(panel, "Characters")
+            self._characters_panel = dock
+            logger.debug("Characters panel created")
+        dock.setVisible(True)
+        dock.raise_()
+        widget = dock.widget()
+        if isinstance(widget, CharactersPanel):
+            widget.set_registry(self._character_registry)
+
+    def open_imports_panel(self):
+        dock = getattr(self, "_imports_panel", None)
+        if dock is None:
+            panel = ImportsPanel(self.bridge.base)
+            dock = self.dockman.dock(panel, "Imports", area=Qt.BottomDockWidgetArea)
+            self._imports_panel = dock
+            logger.debug("Imports panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
+    def open_audio_panel(self):
+        dock = getattr(self, "_audio_panel", None)
+        if dock is None:
+            panel = AudioPanel(self.bridge.base)
+            dock = self.dockman.dock(panel, "Audio", area=Qt.BottomDockWidgetArea)
+            self._audio_panel = dock
+            logger.debug("Audio panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
+    def open_advisory_panel(self):
+        dock = getattr(self, "_advisory_panel", None)
+        if dock is None:
+            panel = AdvisoryPanel(self.bridge.base)
+            dock = self.dockman.dock(panel, "Advisory")
+            self._advisory_panel = dock
+            logger.debug("Advisory panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
     def open_playground(self):
         dock = getattr(self, "_playground", None)
         if dock is None:
@@ -194,6 +262,21 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock.setVisible(True)
         dock.raise_()
 
+    def _restore_layout(self) -> None:
+        settings = QSettings("ComfyVN", "StudioWindow")
+        geometry = settings.value("geometry")
+        state = settings.value("windowState")
+        if geometry:
+            self.restoreGeometry(geometry)
+        if state:
+            self.restoreState(state)
+
+    def closeEvent(self, event):  # type: ignore[override]
+        settings = QSettings("ComfyVN", "StudioWindow")
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("windowState", self.saveState())
+        super().closeEvent(event)
+
     # --------------------
     # Utility helpers
     # --------------------
@@ -218,24 +301,98 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     # --------------------
+    # Project workflows
+    # --------------------
+    def new_project(self) -> None:
+        logger.info("New project workflow started")
+        project_dir = QFileDialog.getExistingDirectory(self, "Select Project Directory", str(Path.cwd()))
+        if not project_dir:
+            logger.info("New project cancelled by user")
+            return
+        project_path = Path(project_dir).resolve()
+        project_path.mkdir(parents=True, exist_ok=True)
+        (project_path / "scenes").mkdir(exist_ok=True)
+        (project_path / "characters").mkdir(exist_ok=True)
+        metadata = project_path / "project.json"
+        if not metadata.exists():
+            metadata.write_text('{"name": "New Project"}', encoding="utf-8")
+        self._open_project(project_path)
+
+    def close_project(self) -> None:
+        if not self._current_project_path:
+            logger.info("No project currently open")
+            return
+        logger.info("Closing project %s", self._current_project_path)
+        self._current_project_path = None
+        self._initialize_registries("default")
+        self._info_label.setText("Project closed. Use File → New or Recent to open another project.")
+
+    def open_recent_projects(self) -> None:
+        logger.info("Opening recent project list")
+        if not self._recent_projects:
+            QMessageBox.information(self, "Recent Projects", "No recent projects recorded yet.")
+            return
+        project_dir = QFileDialog.getExistingDirectory(self, "Open Recent Project", self._recent_projects[0])
+        if project_dir:
+            self._open_project(Path(project_dir))
+
+    def _open_project(self, project_path: Path) -> None:
+        project_path = project_path.resolve()
+        if not project_path.exists():
+            QMessageBox.warning(self, "Open Project", "Selected project path does not exist.")
+            return
+        project_id = project_path.name
+        logger.info("Opening project %s at %s", project_id, project_path)
+        self._current_project_path = project_path
+        self._initialize_registries(project_id)
+
+        scenes_dir = project_path / "scenes"
+        if scenes_dir.exists():
+            for payload_file in scenes_dir.glob("*.json"):
+                try:
+                    payload = payload_file.read_text(encoding="utf-8")
+                    self._scene_registry.upsert_scene(payload_file.stem, payload, {})
+                except Exception as exc:
+                    logger.warning("Failed to load scene %s: %s", payload_file, exc)
+
+        touch_recent(str(project_path))
+        self._recent_projects = load_recent()
+        self._info_label.setText(f"Opened project: {project_id}")
+        self._refresh_project_panels()
+
+    def _initialize_registries(self, project_id: str) -> None:
+        logger.info("Initializing registries for project %s", project_id)
+        self._scene_registry = SceneRegistry(project_id=project_id)
+        self._character_registry = CharacterRegistry(project_id=project_id)
+        self._refresh_project_panels()
+
+    def _refresh_project_panels(self) -> None:
+        dock = getattr(self, "_scenes_panel", None)
+        if dock is not None and isinstance(dock.widget(), ScenesPanel):
+            dock.widget().set_registry(self._scene_registry)
+        dock = getattr(self, "_characters_panel", None)
+        if dock is not None and isinstance(dock.widget(), CharactersPanel):
+            dock.widget().set_registry(self._character_registry)
+
+    # --------------------
     # Server monitoring
     # --------------------
     def _ensure_server_online(self):
-        try:
-            ok = self.bridge.ping()
-            if not ok:
-                _detached_server()
-        except Exception:
-            _detached_server()
+        ok = self.bridge.ensure_online(autostart=True)
+        if not ok:
+            logger.warning("Server auto-start attempted but did not report healthy status.")
 
     def _poll_server_status(self):
-        try:
-            # Expect system_api prefix "/system"
-            s = self.bridge.get_json("/system/status") or {}
-            healthy = bool(s.get("ok") or s.get("healthy"))
-            self._status_label.setText(("🟢" if healthy else "🟠") + " Server: " + ("OK" if healthy else "Degraded"))
-        except Exception:
+        result = self.bridge.get_json("/system/status", default=None)
+        if not isinstance(result, dict):
             self._status_label.setText("🔴 Server: Offline")
+            return
+        data = result.get("data")
+        if isinstance(data, dict):
+            healthy = bool(data.get("ok") or data.get("healthy"))
+        else:
+            healthy = bool(result.get("ok"))
+        self._status_label.setText(("🟢" if healthy else "🟠") + " Server: " + ("OK" if healthy else "Degraded"))
 
     # --------------------
     # Setup utilities
@@ -294,3 +451,56 @@ def main():
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+    def new_project(self):
+        logger.info("New project workflow started")
+        project_dir = QFileDialog.getExistingDirectory(self, "Select Project Directory", str(Path.cwd()))
+        if not project_dir:
+            logger.info("New project cancelled by user")
+            return
+        project_path = Path(project_dir).resolve()
+        project_path.mkdir(parents=True, exist_ok=True)
+        (project_path / "scenes").mkdir(exist_ok=True)
+        (project_path / "characters").mkdir(exist_ok=True)
+        metadata = project_path / "project.json"
+        if not metadata.exists():
+            metadata.write_text("{\"name\": \"New Project\"}", encoding="utf-8")
+        logger.info("Project directory prepared at %s", project_path)
+        self._open_project(project_path)
+
+    def close_project(self):
+        if not self._current_project_path:
+            logger.info("No project currently open")
+            return
+        logger.info("Closing project %s", self._current_project_path)
+        self._current_project_path = None
+        self._info_label.setText("Project closed. Use File → New or Recent to open another project.")
+
+    def open_recent_projects(self):
+        logger.info("Opening recent project list")
+        if not self._recent_projects:
+            QMessageBox.information(self, "Recent Projects", "No recent projects recorded yet.")
+            return
+        project_dir = QFileDialog.getExistingDirectory(self, "Open Recent Project", self._recent_projects[0])
+        if project_dir:
+            self._open_project(Path(project_dir))
+
+    def _open_project(self, project_path: Path) -> None:
+        project_path = project_path.resolve()
+        if not project_path.exists():
+            QMessageBox.warning(self, "Open Project", "Selected project path does not exist.")
+            return
+        logger.info("Opening project at %s", project_path)
+
+        scenes_dir = project_path / "scenes"
+        if scenes_dir.exists():
+            for payload_file in scenes_dir.glob("*.json"):
+                try:
+                    payload = payload_file.read_text(encoding="utf-8")
+                    self._scene_registry.upsert_scene(payload_file.stem, payload, {})
+                except Exception as exc:
+                    logger.warning("Failed to load scene %s: %s", payload_file, exc)
+
+        touch_recent(str(project_path))
+        self._recent_projects = load_recent()
+        self._current_project_path = project_path
+        self._info_label.setText(f"Opened project: {project_path}")
