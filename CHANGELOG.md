@@ -1,3 +1,8 @@
+### 2025-10-23 — Assets Upload Dependency Guard (chat: Platform Health)
+- Added explicit `python-multipart` runtime dependency so the `/assets/upload` FastAPI route loads in headless environments.
+- Hardened `comfyvn.server.modules.assets_api` to log a warning + return HTTP 503 when multipart parsing is unavailable, instead of failing router registration silently.
+- Extended upload logging with debug-level provenance payload emission to aid troubleshooting in `logs/server.log`.
+
 ### 2025-10-22 — Launcher & Server Bridge Alignment (chat: Studio Ops)
 - `run_comfyvn.py` now exposes unified CLI flags (`--server-only`, `--server-url`, `--server-reload`, `--uvicorn-app`, etc.) so the same entrypoint drives GUI launches, headless server runs, and remote-attach workflows.
 - Launcher propagates `COMFYVN_SERVER_BASE`, `COMFYVN_SERVER_AUTOSTART`, host/port, and uvicorn defaults to the GUI and re-exec bootstrap, enabling reproducible headless test runs.

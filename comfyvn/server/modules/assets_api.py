@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from importlib.util import find_spec
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -19,6 +21,12 @@ router = APIRouter(prefix="/assets", tags=["Assets"])
 LOGGER = logging.getLogger(__name__)
 
 _asset_registry = AssetRegistry()
+
+MULTIPART_AVAILABLE = find_spec("multipart") is not None
+if not MULTIPART_AVAILABLE:  # pragma: no cover - runtime branch
+    LOGGER.warning(
+        "python-multipart package is not installed; /assets/upload endpoint will return 503 until it is available.",
+    )
 
 
 def _parse_metadata(meta: Any) -> Dict[str, Any]:
@@ -86,54 +94,71 @@ def download_asset(uid: str):
     return FileResponse(path, filename=path.name)
 
 
-@router.post("/upload")
-async def upload_asset(
-    file: UploadFile = File(...),
-    asset_type: str = Form("generic", description="Logical asset type bucket."),
-    dest_path: Optional[str] = Form(None, description="Optional relative destination path inside assets."),
-    metadata: Optional[str] = Form(None, description="JSON metadata to attach to the asset."),
-    _: bool = Depends(require_scope(["assets.write"])),
-):
-    """Upload a new asset and register it with sidecar + thumbnail support."""
-    meta = _parse_metadata(metadata)
-    dest_relative = _sanitize_relative_path(dest_path)
+if MULTIPART_AVAILABLE:
 
-    suffix = Path(file.filename or "asset.bin").suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        data = await file.read()
-        tmp.write(data)
-        tmp_path = Path(tmp.name)
+    @router.post("/upload")
+    async def upload_asset(
+        file: UploadFile = File(...),
+        asset_type: str = Form("generic", description="Logical asset type bucket."),
+        dest_path: Optional[str] = Form(None, description="Optional relative destination path inside assets."),
+        metadata: Optional[str] = Form(None, description="JSON metadata to attach to the asset."),
+        _: bool = Depends(require_scope(["assets.write"])),
+    ):
+        """Upload a new asset and register it with sidecar + thumbnail support."""
+        meta = _parse_metadata(metadata)
+        dest_relative = _sanitize_relative_path(dest_path)
 
-    if dest_relative and dest_relative.suffix:
-        dest = dest_relative
-    elif dest_relative:
-        dest = dest_relative / (file.filename or tmp_path.name)
-    else:
-        dest = Path(asset_type) / (file.filename or tmp_path.name)
-    try:
-        provenance_payload = {
-            "source": meta.get("source") or "api.upload",
-            "inputs": {
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "size_bytes": len(data),
-            },
-            "user_id": meta.get("user_id"),
-        }
-        asset_info = _asset_registry.register_file(
-            tmp_path,
-            asset_type=asset_type,
-            dest_relative=dest,
-            metadata=meta,
-            copy=True,
-            provenance=provenance_payload,
-            license_tag=meta.get("license"),
+        suffix = Path(file.filename or "asset.bin").suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            data = await file.read()
+            tmp.write(data)
+            tmp_path = Path(tmp.name)
+
+        if dest_relative and dest_relative.suffix:
+            dest = dest_relative
+        elif dest_relative:
+            dest = dest_relative / (file.filename or tmp_path.name)
+        else:
+            dest = Path(asset_type) / (file.filename or tmp_path.name)
+        try:
+            provenance_payload = {
+                "source": meta.get("source") or "api.upload",
+                "inputs": {
+                    "filename": file.filename,
+                    "content_type": file.content_type,
+                    "size_bytes": len(data),
+                },
+                "user_id": meta.get("user_id"),
+            }
+            LOGGER.debug("Asset upload provenance payload: %s", provenance_payload)
+            asset_info = _asset_registry.register_file(
+                tmp_path,
+                asset_type=asset_type,
+                dest_relative=dest,
+                metadata=meta,
+                copy=True,
+                provenance=provenance_payload,
+                license_tag=meta.get("license"),
+            )
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+        LOGGER.info("Asset uploaded uid=%s type=%s", asset_info["uid"], asset_type)
+        return {"ok": True, "asset": asset_info}
+
+else:
+
+    @router.post("/upload")
+    async def upload_asset_unavailable():
+        LOGGER.error(
+            "Asset upload attempted but python-multipart is missing."
         )
-    finally:
-        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Asset uploads require the python-multipart package to be installed on the server.",
+        )
 
-    LOGGER.info("Asset uploaded uid=%s type=%s", asset_info["uid"], asset_type)
-    return {"ok": True, "asset": asset_info}
+    upload_asset = upload_asset_unavailable
 
 
 class RegisterAssetRequest(BaseModel):
