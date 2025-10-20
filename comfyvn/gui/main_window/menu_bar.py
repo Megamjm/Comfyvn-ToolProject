@@ -33,3 +33,14 @@ def ensure_menu_bar(window):
         window._build_menus_from_registry()
     except Exception:
         pass
+
+
+def update_window_menu_state(window):
+    """Placeholder for dynamic menu state refresh; ensures menus exist even if no runtime bridge."""
+    if not hasattr(window, "menuBar"):
+        return
+    menu_bar = window.menuBar()
+    if menu_bar is None:
+        return
+    # No-op for now; hook for future enable/disable logic
+    _ = menu_bar.actions()
