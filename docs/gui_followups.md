@@ -8,6 +8,7 @@ Needed Updates
 - Add affordances for retry/cancel once backend exposes controls—stub buttons with TODO notes so UX can design placement.
 - Hook into importer log artefacts (e.g., `logs/imports/vn_<id>.log` once available) so power users can open the raw log from the GUI.
 - Wire the new “Import Tools → Installers” menu entry so it opens `docs/tool_installers.md`, and add a configuration panel for registering extractor binaries (arc_unpacker, custom tools) with legal warnings.
+- Add “Install” buttons in the importer settings to call `POST /vn/tools/install` with `accept_terms=true`; show progress + license confirmation, and update the registered tool list on success.
 
 Status
 - Backend support for job polling + summary retrieval is live (2025-10-21).

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core.external_extractors import extractor_manager
+from comfyvn.server.core.extractor_installer import KNOWN_EXTRACTORS, install_extractor
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
 from comfyvn.server.modules.auth import require_scope
 
@@ -238,3 +239,59 @@ async def remove_tool(name: str, _: bool = Depends(require_scope(["content.write
     if not extractor_manager.unregister(name):
         raise HTTPException(status_code=404, detail="tool not found")
     return {"ok": True}
+
+
+@router.post("/tools/install")
+async def install_tool(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))):
+    name = (payload.get("name") or "").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not payload.get("accept_terms"):
+        raise HTTPException(status_code=400, detail="accept_terms must be true")
+    meta = KNOWN_EXTRACTORS.get(name)
+    if not meta:
+        raise HTTPException(status_code=404, detail="unknown extractor")
+
+    target = payload.get("target_dir")
+    try:
+        result = install_extractor(name, target_dir=target)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    registered = extractor_manager.register(
+        name,
+        result["path"],
+        extensions=meta.extensions,
+        notes=meta.notes,
+        warning=meta.warning,
+    )
+    tool_info = {
+        "name": getattr(registered, "name", name),
+        "path": getattr(registered, "path", result["path"]),
+        "extensions": meta.extensions,
+        "warning": meta.warning,
+        "license": meta.license,
+    }
+    return {"ok": True, "tool": tool_info, "notes": meta.notes}
+
+
+@router.get("/tools/catalog")
+async def tool_catalog() -> Dict[str, Any]:
+    catalog = []
+    for key, meta in KNOWN_EXTRACTORS.items():
+        catalog.append(
+            {
+                "id": key,
+                "name": meta.name,
+                "url": meta.url,
+                "filename": meta.filename,
+                "extensions": meta.extensions,
+                "warning": meta.warning,
+                "license": meta.license,
+                "notes": meta.notes,
+            }
+        )
+    catalog.sort(key=lambda entry: entry["name"].lower())
+    return {"ok": True, "tools": catalog}

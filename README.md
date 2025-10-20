@@ -146,6 +146,7 @@ Environment variables honour the same knobs:
 - `COMFYVN_SERVER_AUTOSTART=0` – disable GUI auto-start of a local server.
 - `COMFYVN_SERVER_HOST`, `COMFYVN_SERVER_PORT`, `COMFYVN_SERVER_APP`, `COMFYVN_SERVER_LOG_LEVEL` – default values consumed by the launcher when flags are omitted.
 - GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
+- The Settings panel also exposes a local backend port selector with a “Find Open Port” helper so you can avoid clashes with other services; the value is persisted for the next launch and mirrored to the current process environment.
 - The launcher performs a basic hardware probe before auto-starting the embedded backend. When no suitable compute path is found it skips the local server, logs the reason, and guides you to connect to a remote node instead of crashing outright.
 
 The GUI’s “Start Server” helper still delegates to `python comfyvn/app.py`, logging output to `logs/server_detached.log`, so manual invocations remain in sync with UI behaviour.

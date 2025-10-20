@@ -328,13 +328,13 @@ def test_tool_endpoints(tmp_path: Path, monkeypatch):
 
     resp = asyncio.run(
         vn_import_api.register_tool(
-        {
-            "name": "arc_unpacker",
-            "path": str(binary_path),
-            "extensions": [".arc"],
-            "warning": "Check regional restrictions.",
-        },
-        True,
+            {
+                "name": "arc_unpacker",
+                "path": str(binary_path),
+                "extensions": [".arc"],
+                "warning": "Check regional restrictions.",
+            },
+            True,
         )
     )
     assert resp["tool"]["name"] == "arc_unpacker"
@@ -349,3 +349,54 @@ def test_tool_endpoints(tmp_path: Path, monkeypatch):
     tools_after = asyncio.run(vn_import_api.list_tools(True))
     names_after = [tool["name"] for tool in tools_after["tools"]]
     assert "arc_unpacker" not in names_after
+
+
+def test_tool_install(monkeypatch, tmp_path: Path):
+    data_root = tmp_path / "tools_install"
+    monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
+
+    from comfyvn.server.core import extractor_installer as installer
+    from comfyvn.server.core import external_extractors as registry
+
+    def fake_download(url: str, dest: Path):
+        dest.write_text("binary", encoding="utf-8")
+
+    registry.extractor_manager.register(
+        "arc_unpacker",
+        str(tmp_path / "existing"),
+        extensions=[".arc"],
+        notes="",
+        warning="",
+    )
+    def fake_install(name: str, target_dir=None):
+        fake_path = tmp_path / "fake" / "arc_unpacker.exe"
+        fake_path.parent.mkdir(parents=True, exist_ok=True)
+        fake_path.write_text("binary", encoding="utf-8")
+        meta = installer.KNOWN_EXTRACTORS[name]
+        return {
+            "name": name,
+            "path": str(fake_path),
+            "warning": meta.warning,
+            "license": meta.license,
+            "notes": meta.notes,
+            "extensions": meta.extensions,
+        }
+
+    monkeypatch.setattr(installer, "install_extractor", fake_install, raising=False)
+    monkeypatch.setattr(installer, "_download_to_file", fake_download, raising=False)
+
+    result = asyncio.run(
+        vn_import_api.install_tool({"name": "arc_unpacker", "accept_terms": True}, True)
+    )
+    assert result["ok"] is True
+    assert result["tool"]["name"] == "arc_unpacker"
+
+
+def test_tool_catalog_contains_known_entries():
+    catalog = asyncio.run(vn_import_api.tool_catalog())
+    assert catalog["ok"] is True
+    tools = catalog["tools"]
+    ids = {tool["id"] for tool in tools}
+    assert len(tools) >= 20
+    assert "arc_unpacker" in ids
+    assert "lightvntools_github" in ids

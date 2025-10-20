@@ -222,6 +222,7 @@ Status:
 - ✅ 2025-10-20 — TaskRegistry-backed job flow enqueues imports (`jobs/status/:id`), GUI VN importer polls completion, and per-job metadata captures importer summary + warnings for traceability.
 - ✅ 2025-10-21 — `/vn/import/{job_id}` exposes job meta + cached summary JSON; backend writes `summary_path` + log artifacts for downstream UI.
 - ✅ 2025-10-21 — External extractor manager (`/vn/tools/*`) lets users register binaries like arc_unpacker with regional warnings; importer auto-detects `.arc`/`.xp3` via adapters and records extractor provenance.
+- ✅ 2025-10-21 — `/vn/tools/install` downloads curated extractors from GitHub with explicit license warnings and auto-registers them; `tool_installer` extension exposes installer docs.
 - 🚧 Engine adapters pending — Build per-engine importers (Ren’Py, KiriKiri/KAG, NScripter family, Yu-RIS, CatSystem2, BGI/Ethornell, RealLive/Siglus, Unity VN, TyranoScript, LiveMaker) using detection heuristics documented in `docs/importer_engine_matrix.md`. Preserve voice/text mapping, convert proprietary formats via user-supplied hooks, and emit `comfyvn-pack@1` manifests.
 - 🚧 Normalizer/manifest writer — Implement `core/normalizer.py` to create deterministic asset IDs, manage thumbnails, and store large binaries on disk with JSON sidecars; persist provenance metadata for audits.
 - 🚧 Translation + remix pipeline — Integrate segmenters, TM/glossary, ComfyUI remix workflows (sprite recolor, CG upscale, UI theme), and export targets (Ren’Py loose/RPA via hook, KiriKiri overlay patch, Tyrano data/). See Section 6 design notes.
@@ -339,6 +340,7 @@ Next wave (Importer alignment):
 - Populate curated provider profiles (RunPod, Vast.ai, Lambda Labs, AWS EC2, Azure NV, Paperspace, unRAID, on-prem SSH/NFS) including authentication fields, cost/V RAM metadata, and policy hints for importer workloads (e.g., voice synthesis vs. large CG batch).
 - Extend `/compute/advise` to consider importer asset sizes, translation pipeline demands, and cached ComfyUI workflow requirements. Surface recommended provider + cost estimate back into importer job summary.
 - Document remote GPU onboarding flows in `docs/remote_gpu_services.md`, including legal caveats around content processing and data residency.
+- ✅ 2025-10-21 — `/api/gpu/advise` exposes compute advisor recommendations (local vs remote choice, cost hints, rationale) to importer pipelines and GUI scheduling.
 
 Phase 6 — Audio & music
 

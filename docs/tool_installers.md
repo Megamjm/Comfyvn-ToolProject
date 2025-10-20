@@ -22,6 +22,13 @@ optional helpers when you own the content you are importing._
 - Legal reminder: Some regions restrict reverse engineering of game assets.  Only extract archives you
   are authorised to access (e.g., personal backups or permitted modding kits).
 
+### API quick start
+
+- `POST /vn/tools/install` with payload `{"name":"arc_unpacker","accept_terms":true}` downloads the
+  latest release into `tools/extractors/arc_unpacker/` and registers it automatically.
+- All installers require `accept_terms=true` to acknowledge the licensing warning above. The response will
+  include the tool path and any follow-up notes.
+
 ## Custom extractors
 - You can register any command line tool that accepts the pattern:
   ```
@@ -30,6 +37,32 @@ optional helpers when you own the content you are importing._
 - Examples: game-specific unpackers, translation community tools, archive converters.
 - Use `/vn/tools/register` to declare new tools and `/vn/tools` to audit what is installed.
 - Definitions are stored locally in `config/import_tools.json`; edit with care if you prefer manual configuration control.
+- The installer endpoint (`/vn/tools/install`) supports the predefined entries listed in
+  `comfyvn/server/core/extractor_installer.py::KNOWN_EXTRACTORS`.
+
+## Curated extractor catalog (top 20)
+
+The installer catalog exposes the following community tools. Invoke `GET /vn/tools/catalog` to retrieve
+the live list (IDs shown below). All downloads require `accept_terms=true` when calling `/vn/tools/install`.
+
+| ID | Purpose | Notes |
+|----|---------|-------|
+| arc_unpacker | Multi-engine archives (.arc/.xp3/.dat) | MIT-licensed Windows binary; primary recommendation. |
+| rpatool | Ren'Py .rpa | Python script; run with local Python interpreter. |
+| unrpa | Ren'Py .rpa | Alternative Python implementation. |
+| lightvntools_github / lightvntools_gitlab | General VN archives | GPL utilities covering multiple formats (build from source). |
+| garbro_cli | GUI/CLI archive explorer | Extracts many commercial engines (.arc/.xp3/.dat). |
+| krkrextract, xp3tools | Kirikiri/KAG archives | Range of XP3/TLG unpackers. |
+| nsadec | NScripter archives | Decompresses .nsa/.ns2/.sar packages. |
+| siglusextract | SiglusEngine | Handles Scene.pck, .ss scripts. |
+| ypf_unpacker | Yu-RIS | Extracts .ypf archives. |
+| catsystem2_tools, hg2_converter | CatSystem2 | Decrypts .int/.dat and converts .hg2/.hg3 images. |
+| bgi_tools | Buriko General Interpreter | Works with data*.arc / _bp/*.org. |
+| unity_asset_ripper, assetstudio_cli | Unity AssetBundles | GUI/CLI for Unity-based VN ports. |
+| livemaker_unpacker | LiveMaker archives | Extracts .paz/.lmd. |
+| tyrano_parser | TyranoScript data | Parses scenario files. |
+| krgem_unpacker | Kirikiri Z / EM variants | Supports modern XP3 overlays. |
+| reallive_tools | RealLive/Siglus scripts | RLDev toolchain fork. |
 
 ## GUI follow-up tasks
 - The Tool Installer extension surfaces this doc via the Modular Loader.

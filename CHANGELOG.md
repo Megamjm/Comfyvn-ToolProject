@@ -12,6 +12,7 @@
 - Each bundled extension now ships an `extension.json` manifest; the Studio reads these files (or falls back to single-file modules) to surface metadata.
 - The Extensions menu auto-discovers packages, grouping official items separately from imported/community add‑ons and exposing an info dialog with hooks and file locations.
 - Documentation (`docs/v1_extension_api.md`, `docs/extensions.md`) updated to describe the new manifest workflow for developers.
+- Settings panel gained local-backend port controls with an integrated port scanner to help avoid clashes before relaunching the embedded server.
 
 ### 2025-10-23 — Assets Upload Dependency Guard (chat: Platform Health)
 - Added explicit `python-multipart` runtime dependency so the `/assets/upload` FastAPI route loads in headless environments.
@@ -43,6 +44,9 @@
 - `/vn/tools/*` endpoints register external extractors (e.g., arc_unpacker) with regional legality warnings; importer adapts to `.arc/.xp3` packages and records extractor provenance.
 - Extension: `tool_installer` surfaces installer documentation through the modular loader; GUI hook pending via `docs/tool_installers.md`.
 - Documentation: Added `docs/importer_engine_matrix.md` and `docs/remote_gpu_services.md` to share engine signatures and remote GPU onboarding guidance with other chats.
+- Introduced importer scaffolding (`comfyvn/importers/*`, `core/normalizer.py`, `bin/comfyvn_import.py`) with detection heuristics for major VN engines and comfyvn-pack normalization.
+- `/vn/tools/install` now ships a catalog of 20 popular extractors (Light.vnTools mirrors, GARbro, KrkrExtract, XP3 tools, CatSystem2/BGI/RealLive utilities, Unity asset rippers) with explicit license warnings and auto-registration.
+- Compute advisor now emits recommendations via `/api/gpu/advise`, weighing local VRAM against curated remote providers (RunPod, Vast.ai, Lambda, AWS, Azure, Paperspace, unRAID).
 - Import summary persisted per job (`data/imports/vn/<id>/summary.json`) to assist debugging and provenance checks.
 - Tests cover importer + API workflows (`tests/test_vn_importer.py`).
 

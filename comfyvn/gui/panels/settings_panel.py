@@ -23,6 +23,8 @@ from PySide6.QtCore import Qt
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.core.compute_registry import ComputeProviderRegistry
+import os
+import socket
 
 
 class SettingsPanel(QDockWidget):
@@ -39,19 +41,40 @@ class SettingsPanel(QDockWidget):
         root = QVBoxLayout(w)
 
         form = QFormLayout()
+        cfg_snapshot = self.settings_manager.load()
+        server_cfg = cfg_snapshot.get("server", {})
         self.api = QLineEdit(self.bridge.base)
         self.remote_list = QLineEdit(self.bridge.get("REMOTE_GPU_LIST", default="http://127.0.0.1:8001"))
         self.menu_sort = QComboBox()
         self.menu_sort.addItem("Load order (default)", "load_order")
         self.menu_sort.addItem("Best practice structure", "best_practice")
         self.menu_sort.addItem("Alphabetical", "alphabetical")
-        current_mode = self.settings_manager.load().get("ui", {}).get("menu_sort_mode", "load_order")
+        current_mode = cfg_snapshot.get("ui", {}).get("menu_sort_mode", "load_order")
         index = self.menu_sort.findData(current_mode)
         if index != -1:
             self.menu_sort.setCurrentIndex(index)
+        default_port = 8001
+        env_port = os.environ.get("COMFYVN_SERVER_PORT")
+        try:
+            if env_port:
+                default_port = int(env_port)
+        except ValueError:
+            default_port = 8001
+        default_port = int(server_cfg.get("local_port", default_port))
+        self.local_port = QSpinBox()
+        self.local_port.setRange(1024, 65535)
+        self.local_port.setValue(default_port)
+        self.btn_port_scan = QPushButton("Find Open Port")
+        self.btn_port_scan.clicked.connect(self._scan_local_port)
+        port_row_widget = QWidget()
+        port_row_layout = QHBoxLayout(port_row_widget)
+        port_row_layout.setContentsMargins(0, 0, 0, 0)
+        port_row_layout.addWidget(self.local_port)
+        port_row_layout.addWidget(self.btn_port_scan)
         btn_save = QPushButton("Save UI Settings")
         btn_save.clicked.connect(self._save_settings)
         form.addRow("API Base URL:", self.api)
+        form.addRow("Local Backend Port:", port_row_widget)
         form.addRow("Legacy Remote GPU Endpoints:", self.remote_list)
         form.addRow("Menu Sort Order:", self.menu_sort)
         form.addRow(btn_save)
@@ -140,8 +163,9 @@ class SettingsPanel(QDockWidget):
     # --------------------
     def _save_settings(self) -> None:
         self.bridge.set_host(self.api.text().strip())
+        api_base = self.api.text().strip()
         result = self.bridge.save_settings({
-            "API_BASE": self.api.text().strip(),
+            "API_BASE": api_base,
             "REMOTE_GPU_LIST": self.remote_list.text().strip()
         })
         ok = isinstance(result, dict) and result.get("ok")
@@ -149,7 +173,13 @@ class SettingsPanel(QDockWidget):
         ui_cfg = cfg.get("ui", {})
         ui_cfg["menu_sort_mode"] = self.menu_sort.currentData()
         cfg["ui"] = ui_cfg
+        server_cfg = cfg.get("server", {})
+        server_cfg["local_port"] = self.local_port.value()
+        cfg["server"] = server_cfg
         self.settings_manager.save(cfg)
+        os.environ["COMFYVN_SERVER_PORT"] = str(self.local_port.value())
+        if api_base:
+            self.bridge.set_host(api_base)
 
         parent = self.parent()
         while parent is not None and not hasattr(parent, "reload_menus"):
@@ -159,7 +189,11 @@ class SettingsPanel(QDockWidget):
                 parent.reload_menus()
             except Exception:
                 pass
-        QMessageBox.information(self, "Settings", "Saved" if ok else "Failed")
+        message = "Settings saved."
+        if not ok:
+            message += "\nWarning: failed to persist settings via API."
+        message += "\nLocal backend port changes take effect next launch."
+        QMessageBox.information(self, "Settings", message)
 
     def _start_add_server(self) -> None:
         self._editing_provider_id = None
@@ -320,6 +354,42 @@ class SettingsPanel(QDockWidget):
             self._refresh_servers()
         else:
             QMessageBox.information(self, "Server Discovery", "No new local servers detected.")
+
+    def _scan_local_port(self) -> None:
+        start_port = self.local_port.value()
+        candidate = self._find_available_port(start_port)
+        if candidate == start_port:
+            QMessageBox.information(self, "Port Scanner", f"Port {start_port} appears to be available.")
+        else:
+            self.local_port.setValue(candidate)
+            QMessageBox.information(
+                self,
+                "Port Scanner",
+                f"Port {start_port} is in use. Suggested open port: {candidate}",
+            )
+
+    def _find_available_port(self, start: int) -> int:
+        port = max(1024, start)
+        while port <= 65535:
+            if self._is_port_free(port):
+                return port
+            port += 1
+        return start
+
+    @staticmethod
+    def _is_port_free(port: int) -> bool:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        return True
 
     # --------------------
     # Data helpers

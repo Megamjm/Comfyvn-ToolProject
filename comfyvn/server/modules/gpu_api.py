@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Body, HTTPException
 
 from comfyvn.core.gpu_manager import get_gpu_manager
+from comfyvn.core.compute_advisor import advise as compute_advise
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,3 +41,18 @@ async def select_device(body: Optional[Dict[str, Any]] = Body(None)) -> Dict[str
     requirements = body.get("requirements")
     choice = GPU_MANAGER.select_device(prefer=prefer, requirements=requirements)
     return {"ok": True, "choice": choice, "policy": GPU_MANAGER.get_policy()}
+
+
+@router.post("/advise")
+async def gpu_advise(body: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
+    body = body or {}
+    prefer_remote = bool(body.get("prefer_remote"))
+    workload = body.get("workload") or {}
+    hardware_override = bool(body.get("hardware_override"))
+    recommendation = compute_advise(
+        GPU_MANAGER,
+        workload=workload,
+        prefer_remote=prefer_remote,
+        hardware_override=hardware_override,
+    )
+    return {"ok": True, "advice": recommendation}
