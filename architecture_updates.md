@@ -3,7 +3,8 @@ ComfyVN — Architecture Update Notes (2025-10-21)
 
 Scope: Snapshot of recent local changes and alignment tasks against `ARCHITECTURE.md`.
 
-- Added audio/advisory API scaffolding with logging (`tts_api.py`, `voice_api.py`, `advisory_api.py`), recorded curl/debug steps in `architecture.md`, and published subsystem playbooks (`docs/studio_phase6_audio.md`, `docs/studio_phase7_advisory.md`).
+- Phase 6 progression: audio cache manager (`comfyvn/core/audio_cache.py`), `/api/music/remix` stub, and expanded TTS metadata/logging captured in the docs + architecture notes.
+- Phase 7 progression: policy gate + filter endpoints (`policy_api.py`), settings-backed acknowledgements, and advisory-friendly filter previews documented for debugging.
 
 Recent Changes Observed
 ----------------------
@@ -21,6 +22,7 @@ Recent Changes Observed
 - Studio API stubs (`comfyvn/server/modules/studio_api.py`) provide `/api/studio/open_project`, `/switch_view`, `/export_bundle`; `comfyvn/gui/studio_window.py` prototype consumes them via `ServerBridge.post`.
 - Roleplay importer endpoints (`POST /roleplay/import`, `GET /roleplay/imports/{job_id}`) hardened: jobs/import rows now created via studio registries, scenes/characters persisted, transcripts registered as assets, and debug logs stored in `logs/imports/`.
 - Import observability expanded with `/roleplay/imports` listing and `/roleplay/imports/{job_id}/log` streaming so Studio panels can surface queues + logs without touching disk.
+- Studio `RoleplayImportView` now binds to the importer endpoints, auto-refreshing every 10s and offering inline log viewing for rapid debugging.
 - Studio main window now persists geometry/layout via `QSettings`, and File menu includes New/Close/Recent project actions above the folder shortcuts.
 - Scenes/Characters/Imports/Audio/Advisory panels dockable via Modules menu, backed by registry/table endpoints for Phase 4 readiness.
 - Assets router rebuilt: `/assets/*` delegates to `AssetRegistry` for list/detail/upload/register/delete, enforces metadata validation, and reuses thumbnail/sidecar helpers.
@@ -38,7 +40,7 @@ Immediate Repair / Follow-up Tasks
 ----------------------------------
 1. **Studio shell decision** — Promote `StudioWindow` to primary launcher (or document why not), migrate views into `gui/views/`, and align with architecture navigation specs.
 2. **Provenance follow-ups** — Introduce background thumbnail worker and extend provenance stamping to audio/voice assets.
-3. **Importer/compute regression suite** — Add pytest flows covering `/vn/import`, `/roleplay/import`, and GPU advisor endpoints to catch regressions.
+3. **Importer/compute regression suite** — Add pytest flows covering `/vn/import`, `/roleplay/import` (list/log/GUI), and GPU advisor endpoints to catch regressions.
 4. **Docs alignment** — Update `ARCHITECTURE.md` and Studio docs once shell + asset tasks land, ensuring run scripts and logging guidance stay consistent.
 
 Use this document as a working checklist while bringing the repo back in sync with the architectural intent.

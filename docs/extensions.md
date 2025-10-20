@@ -1,5 +1,20 @@
 # ComfyVN Studio Extension API (v0.9+)
 
+## Manifest + Hook Overview
+Each folder inside `extensions/` can include an `extension.json` describing the package:
+
+```json
+{
+  "id": "my.cool.extension",
+  "name": "Cool Extension",
+  "official": false,
+  "version": "0.1.0",
+  "description": "Adds a dock with the latest telemetry."
+}
+```
+
+If present, the Studio lists the extension under **Extensions** with an “Official”/“Imported” separator and exposes the metadata via an info dialog. To add interactive items use the legacy `manifest.json` or a `register(menu_registry)` function as shown below.
+
 ## Hook Events
 | Event | Args | Purpose |
 |-------|------|----------|

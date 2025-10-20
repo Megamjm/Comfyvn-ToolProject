@@ -1,0 +1,8 @@
+{
+  "id": "demo_importer",
+  "name": "Demo Importer",
+  "version": "0.1.0",
+  "official": true,
+  "author": "ComfyVN Team",
+  "description": "Demonstrates a minimal importer workflow and menu integration."
+}

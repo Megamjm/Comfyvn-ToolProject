@@ -1,0 +1,8 @@
+{
+  "id": "import_manager",
+  "name": "Import Manager",
+  "version": "0.1.0",
+  "official": true,
+  "author": "ComfyVN Team",
+  "description": "Provides bulk asset import helpers for the Studio."
+}

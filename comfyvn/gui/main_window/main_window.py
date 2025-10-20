@@ -21,6 +21,7 @@ from comfyvn.gui.core.workspace_controller import WorkspaceController
 # Dynamic systems
 from comfyvn.core.menu_runtime_bridge import menu_registry, reload_from_extensions
 from comfyvn.core.shortcut_registry import shortcut_registry, load_shortcuts_from_folder
+from comfyvn.core.extensions_discovery import ExtensionMetadata, load_extension_metadata
 
 # Services
 from comfyvn.gui.services.server_bridge import ServerBridge
@@ -81,6 +82,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._current_project_path: Path | None = None
         self._scene_registry = SceneRegistry()
         self._character_registry = CharacterRegistry()
+        self._extension_metadata: list[ExtensionMetadata] = []
 
         # Central canvas (assets & editors dock around it)
         self.central = CentralSpace(
@@ -121,11 +123,13 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         try:
             menu_registry.clear()
             register_core_menu_items(menu_registry)
+            self._extension_metadata = load_extension_metadata(Path("extensions"))
             reload_from_extensions(menu_registry, base_folder=Path("extensions"), clear=False)
         except Exception as e:
             print("[Menu] reload error:", e)
             logger.exception("Menu reload failed: %s", e)
         rebuild_menus_from_registry(self, menu_registry)
+        self._populate_extensions_menu()
         logger.debug("Menus rebuilt with %d items", len(menu_registry.items))
 
     def _rebuild_shortcuts_toolbar(self):
@@ -406,6 +410,82 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             logger.info("Script sequence completed: %s", message)
         else:
             logger.warning("Script sequence failed: %s", message)
+
+    def _populate_extensions_menu(self) -> None:
+        menubar = self.menuBar()
+        target_menu = None
+        for action in menubar.actions():
+            menu = action.menu()
+            if menu and action.text().replace("&", "") == "Extensions":
+                target_menu = menu
+                break
+        if not target_menu:
+            return
+
+        # Remove previously injected entries
+        for act in list(target_menu.actions()):
+            if act.property("extensionEntry"):
+                target_menu.removeAction(act)
+
+        if not self._extension_metadata:
+            return
+
+        official = sorted((m for m in self._extension_metadata if m.official), key=lambda m: m.name.lower())
+        community = sorted((m for m in self._extension_metadata if not m.official), key=lambda m: m.name.lower())
+
+        def add_group(title: str, items: list[ExtensionMetadata]) -> None:
+            if not items:
+                return
+            target_menu.addSeparator()
+            header = QAction(title, self)
+            header.setEnabled(False)
+            header.setProperty("extensionEntry", True)
+            target_menu.addAction(header)
+            for meta in items:
+                action = QAction(meta.name, self)
+                action.setProperty("extensionEntry", True)
+                tooltip_parts = []
+                if meta.description:
+                    tooltip_parts.append(meta.description)
+                tooltip_parts.append(str(meta.path))
+                action.setToolTip("\n".join(tooltip_parts))
+                action.triggered.connect(lambda _, info=meta: self._show_extension_info(info))
+                target_menu.addAction(action)
+
+        add_group("Official Extensions", official)
+        add_group("Imported Extensions", community)
+
+    def _show_extension_info(self, meta: ExtensionMetadata) -> None:
+        lines = [
+            f"ID: {meta.id}",
+            f"Version: {meta.version or 'n/a'}",
+            f"Origin: {'Official' if meta.official else 'Imported'}",
+            f"Location: {meta.path}",
+        ]
+        if meta.author:
+            lines.append(f"Author: {meta.author}")
+        if meta.homepage:
+            lines.append(f"Homepage: {meta.homepage}")
+        if meta.description:
+            lines.append("")
+            lines.append(meta.description)
+        if meta.hooks:
+            lines.append("")
+            lines.append("Menu Hooks:")
+            for hook in meta.hooks:
+                label = hook.get("label") or "Unnamed action"
+                menu = hook.get("menu") or "Extensions"
+                lines.append(f"  • {label} (menu: {menu})")
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(meta.name)
+        msg.setText("\n".join(lines))
+        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Ok)
+        msg.exec()
+        if msg.clickedButton() == open_btn:
+            target = meta.path if meta.path.is_dir() else meta.path.parent
+            self._open_folder(target)
 
     # --------------------
     # Setup utilities

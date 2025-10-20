@@ -34,7 +34,7 @@ import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 _ALLOWED_ROOTS = {"scenes", "characters", "assets", "timelines", "licenses"}
@@ -51,6 +51,7 @@ class ImportSummary:
     import_id: str
     package_path: str
     manifest: Dict[str, object] | None = None
+    adapter: str = "generic"
     scenes: List[str] = field(default_factory=list)
     characters: List[str] = field(default_factory=list)
     timelines: List[str] = field(default_factory=list)
@@ -65,6 +66,7 @@ class ImportSummary:
             "import_id": self.import_id,
             "package_path": self.package_path,
             "manifest": self.manifest or {},
+            "adapter": self.adapter,
             "scenes": self.scenes,
             "characters": self.characters,
             "timelines": self.timelines,
@@ -106,6 +108,20 @@ def _normalise_member(path: str) -> Optional[Path]:
         return None
     trimmed[0] = trimmed[0].lower()
     return Path(*trimmed)
+
+
+def _infer_adapter(manifest: Optional[Dict[str, object]], members: Iterable[str]) -> str:
+    manifest_engine = str(manifest.get("engine") or "").lower() if manifest else ""
+    if "renpy" in manifest_engine:
+        return "renpy"
+    if manifest and any(k.lower().startswith("renpy") for k in manifest.keys()):
+        return "renpy"
+
+    for name in members:
+        lower = name.lower()
+        if lower.endswith(".rpy") or "/game/" in lower or lower.startswith("game/"):
+            return "renpy"
+    return "generic"
 
 
 def _ensure_parent(path: Path) -> None:
@@ -191,6 +207,8 @@ def import_vn_package(
 
     manifest_path = import_root / "manifest.json"
 
+    seen_member_names: List[str] = []
+
     with zipfile.ZipFile(package_path, "r") as archive:
         for member in archive.infolist():
             if member.is_dir():
@@ -202,6 +220,7 @@ def import_vn_package(
                 continue
 
             head = normalised.parts[0]
+            seen_member_names.append(member.filename)
             payload = archive.read(member)
 
             if head == "manifest.json":
@@ -282,6 +301,7 @@ def import_vn_package(
 
     summary_path = import_root / "summary.json"
     summary.summary_path = summary_path.as_posix()
+    summary.adapter = _infer_adapter(summary.manifest, seen_member_names)
     _write_json(summary_path, summary.to_dict())
     logger.info(
         "VN import '%s' complete (%d scenes, %d characters, %d assets)",

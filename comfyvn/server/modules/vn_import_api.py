@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
+from comfyvn.server.modules.auth import require_scope
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ def _execute_import(task_id: str, package_path: str, overwrite: bool) -> Dict[st
     meta["result"] = summary
     meta["summary_path"] = summary.get("summary_path")
     stats = (
+        f"adapter={summary.get('adapter', 'generic')} "
         f"scenes={len(summary.get('scenes', []))} "
         f"characters={len(summary.get('characters', []))} "
         f"assets={len(summary.get('assets', []))}"
@@ -114,12 +117,14 @@ async def import_vn(payload: Dict[str, Any]):
 
 
 @router.get("/import/{job_id}")
-async def import_status(job_id: str):
+async def import_status(job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))):
     task = task_registry.get(job_id)
     if not task:
         raise HTTPException(status_code=404, detail="job not found")
     summary = _load_summary_from_meta(task.meta or {})
     return {"ok": True, "job": _serialize_task(task), "summary": summary}
+
+
 def _load_summary_from_meta(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     summary = meta.get("result") if isinstance(meta, dict) else None
     if summary:
@@ -144,3 +149,33 @@ def _serialize_task(task) -> Dict[str, Any]:
         "message": task.message,
         "meta": task.meta,
     }
+
+
+def _data_root() -> Path:
+    env = os.getenv("COMFYVN_DATA_ROOT")
+    base = Path(env).expanduser() if env else Path("./data")
+    return base.resolve()
+
+
+def _load_history(limit: int = 20) -> List[Dict[str, Any]]:
+    root = _data_root() / "imports" / "vn"
+    if not root.exists():
+        return []
+    summaries: List[Dict[str, Any]] = []
+    files = sorted(root.glob("*/summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for summary_path in files[:limit]:
+        try:
+            data = json.loads(summary_path.read_text(encoding="utf-8"))
+            data.setdefault("summary_path", summary_path.as_posix())
+            summaries.append(data)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to read import summary %s: %s", summary_path, exc)
+            continue
+    return summaries
+
+
+@router.get("/imports/history")
+async def import_history(limit: int = 20, _: bool = Depends(require_scope(["content.read"], cost=1))):
+    limit = max(1, min(int(limit), 200))
+    history = _load_history(limit)
+    return {"ok": True, "imports": history}

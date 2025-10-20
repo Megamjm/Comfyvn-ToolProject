@@ -1,0 +1,8 @@
+{
+  "id": "demo_tool",
+  "name": "Demo Tool",
+  "version": "0.1.0",
+  "official": true,
+  "author": "ComfyVN Team",
+  "description": "Sample utility extension that adds a demo action to the Tools menu."
+}

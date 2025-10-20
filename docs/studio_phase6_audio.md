@@ -16,7 +16,7 @@ API Hooks
 ---------
 `POST /api/tts/synthesize`
   - Request: `{text, voice?, scene_id?, character_id?, lang?, metadata?}`
-  - Response: `{ok, artifact, sidecar, cached, voice, lang, info.metadata}`
+  - Response: `{ok, artifact, sidecar, cached, voice, lang, style, info.metadata}`
   - Emits sidecar JSON for provenance hand-off to the asset registry.
 
 `GET /voice/list`
@@ -28,13 +28,19 @@ API Hooks
 `POST /voice/speak`
   - Mirrors `synthesize` but keeps backwards compatibility with the GUI voice panel.
 
+`POST /api/music/remix`
+  - Request: `{scene_id, target_style, source_track?, seed?, mood_tags?[]}`
+  - Response: `{ok, artifact, sidecar, info{scene_id,target_style,source_track,seed,mood_tags}}`
+  - Stub writes deterministic remix artifacts under `exports/music/`.
+
 Data & Cache Flow
 -----------------
 1. Incoming synth requests funnel through `comfyvn/server/modules/tts_api.py`.
-2. `synth_voice()` hashes `{voice|text|scene|character|lang}` to produce a deterministic filename.
-3. If the artifact already exists, the stub returns `cached=True` and leaves the file untouched.
-4. A JSON sidecar is written alongside each artifact describing inputs (`scene_id`, `character_id`, language).
-5. Downstream asset registration can read both artifact and sidecar paths to populate `assets_registry`.
+2. `synth_voice()` hashes `{voice|text|scene|character|lang|style|model_hash}` to produce a deterministic filename.
+3. The audio cache manager (`comfyvn/core/audio_cache.py`) checks `cache/audio_cache.json` to reuse prior renders.
+4. On cache hit, responses set `cached=true` without touching the artifact; cache miss writes the artifact + updates the registry.
+5. JSON sidecars describe inputs (`scene_id`, `character_id`, language, style). Asset registration consumes artifact + sidecar.
+6. Music remix requests follow the same artifact + sidecar pattern under `exports/music/`.
 
 Logging & Debugging
 -------------------
@@ -44,6 +50,8 @@ Logging & Debugging
   1. `curl -X POST http://localhost:8000/api/tts/synthesize -d '{"text":"Line","voice":"neutral"}' -H 'Content-Type: application/json'`
   2. Inspect `exports/tts/<voice>_<hash>.txt` and `<voice>_<hash>.json` for matching metadata.
   3. Tail `logs/server.log` and confirm INFO lines show `cached=True` on the second request.
+  4. For cache inspection, view `cache/audio_cache.json` and confirm the `key` matches `{voice|text_hash|lang|character|style|model_hash}`.
+  5. Test music remix with `curl -X POST http://localhost:8000/api/music/remix -H 'Content-Type: application/json' -d '{"scene_id":"scene.demo","target_style":"lofi","mood_tags":["calm"]}'` and check `exports/music/`.
 - Errors raise HTTP 400 for empty text and HTTP 500 for unexpected synthesis failures; both cases record WARN/ERROR entries in the log.
 
 Future Hooks

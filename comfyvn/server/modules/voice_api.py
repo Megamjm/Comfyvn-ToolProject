@@ -37,6 +37,9 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
 
     voice = payload.get("voice", "default")
     lang = payload.get("lang")
+    style = payload.get("style")
+    model = payload.get("model")
+    model_hash = payload.get("model_hash") or model
     scene_id = payload.get("scene_id")
     character_id = payload.get("character_id")
 
@@ -47,6 +50,8 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
             scene_id=scene_id,
             character_id=character_id,
             lang=lang,
+            style=style,
+            model_hash=model_hash,
         )
     except ValueError as exc:
         LOGGER.warning("Voice speak rejected: %s", exc)
@@ -61,13 +66,16 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
             "voice": voice,
             "scene_id": scene_id,
             "character_id": character_id,
+            "style": style,
+            "model_hash": model_hash,
             "artifact": artifact,
             "cached": cached,
         },
     )
     LOGGER.info(
-        "Voice synth voice=%s cached=%s artifact=%s",
+        "Voice synth voice=%s style=%s cached=%s artifact=%s",
         voice,
+        style or "default",
         cached,
         artifact,
     )
@@ -78,4 +86,6 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
         "artifact": artifact,
         "sidecar": sidecar,
         "cached": cached,
+        "style": style,
+        "model_hash": model_hash,
     }

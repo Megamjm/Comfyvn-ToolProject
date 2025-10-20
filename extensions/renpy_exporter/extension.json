@@ -1,0 +1,8 @@
+{
+  "id": "renpy_exporter",
+  "name": "Ren'Py Exporter",
+  "version": "0.1.0",
+  "official": true,
+  "author": "ComfyVN Team",
+  "description": "Example exporter showing how to push Studio content to Ren'Py."
+}

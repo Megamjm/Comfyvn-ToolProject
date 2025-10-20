@@ -200,6 +200,7 @@ Progress:
 - ✅ 2025-10-21 — `/roleplay/import` persists scenes + characters via registries, writes importer logs to `logs/imports/`, and registers source transcripts as assets.
 - ✅ 2025-10-21 — `/roleplay/imports/{job_id}` aggregates job + import metadata for GUI status polling.
 - ✅ 2025-10-21 — `/roleplay/imports` list + `/roleplay/imports/{job_id}/log` enable Studio shell dashboards and log viewers; docs outline curl + sqlite inspection steps.
+- ✅ 2025-10-21 — Studio `RoleplayImportView` upgraded to live job dashboard with auto-refresh and inline log viewer, consuming the new API hooks.
 - ⚠ Background job offload + multi-scene splitting still pending; current implementation runs synchronously per request.
 
 Part B — VN “pak/zip” importer
@@ -356,6 +357,8 @@ API: /api/music/remix (scene_id, target_style)
 Looping/intro/outro helpers; asset linkage
 
 Acceptance: Scene playback swaps to remixed track without glitch; asset registered.
+Debugging: POST `/api/music/remix` with scene/style, inspect `exports/music/<scene>_<style>_*.txt/.json`, confirm INFO log in `logs/server.log`.
+Notes: Stub implementation in `comfyvn/core/music_remix.py`; replace with real pipeline while preserving `(artifact, sidecar)` contract.
 
 Part C — Audio cache manager
 
@@ -366,6 +369,8 @@ Outputs:
 Cache policy and dedupe by (character, text, style, model hash)
 
 Acceptance: Repeated synth of identical inputs hits cache.
+Debugging: Compare successive `/api/tts/synthesize` calls; verify `cached=true` and cache entry appears in `cache/audio_cache.json`.
+Notes: Cache manager lives in `comfyvn/core/audio_cache.py` with key format `{voice|text_hash|lang|character|style|model_hash}`.
 
 Phase 7 — Advisory, policy, SFW/NSFW
 
@@ -378,6 +383,8 @@ Outputs:
 First-run & risky-flow gates; setting ack_legal_vN stored
 
 Acceptance: Exports/imports blocked until acknowledged; recorded in settings.
+Debugging: `GET /api/policy/status`, `POST /api/policy/ack`, then `POST /api/policy/evaluate` (ensure warnings surface but allow remains true).
+Notes: Gate state persisted via `comfyvn/core/policy_gate.py`; honour user choice by warning without hard blocks.
 
 Part B — Advisory scans
 
@@ -404,6 +411,8 @@ Server-side filtering on content queries by meta flags
 UI toggle & per-export mode
 
 Acceptance: Toggling filters affects queries/preview/export as expected.
+Debugging: `POST /api/policy/filter-preview` with sample metadata, confirm warnings surface and `content_mode` matches `GET /api/policy/filters`.
+Notes: Filter modes (`sfw|warn|unrestricted`) stored in `data/settings/config.json`; overrides keep items accessible while logging advisory warnings.
 
 Phase 8 — Runtime & playthrough
 

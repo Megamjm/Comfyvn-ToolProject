@@ -27,11 +27,45 @@ API Hooks
   - Request: `{issue_id, notes?}`
   - Returns `{ok, issue_id}` or HTTP 404 if the issue is unknown.
 
+`GET /api/policy/status`
+  - Provides liability-gate status: `{ok, status{ack_legal_v1,requires_ack,ack_timestamp}, message, allow_override}`.
+  - If `requires_ack` is true, the user is reminded but still permitted to proceed (user choice retained).
+
+`POST /api/policy/ack`
+  - Stores the legal acknowledgement and optional notes. Response mirrors `status`.
+
+`POST /api/policy/evaluate`
+  - Returns `{ok, action, requires_ack, warnings[], allow, override_requested}` to surface warnings before exports/imports.
+
+`GET /api/policy/filters`
+  - Returns the active content mode (`sfw`, `warn`, or `unrestricted`).
+
+`POST /api/policy/filters`
+  - Request `{mode}` to change behaviour. Invalid values return HTTP 400.
+
+`POST /api/policy/filter-preview`
+  - Preview the filtered vs flagged items; response includes `allowed`, `flagged`, and `warnings` arrays for GUI display.
+
 Scanner Behaviour
 -----------------
 - Keyword heuristics currently check for NSFW phrases and license red flags.
 - Each finding receives a deterministic `issue_id`, timestamp, and optional detail payload for provenance linking.
 - Resolutions flip the `resolved` flag and append notes for audit trails.
+
+Liability Gate & User Choice
+---------------------------
+- Gate status is stored in `data/settings/config.json` via `comfyvn/core/policy_gate.py`.
+- Users retain full control—actions are always `allow=true`—but warnings must be surfaced when `requires_ack` is true.
+- Override requests should capture the user’s identity and notes for auditing.
+
+SFW/NSFW Filters
+----------------
+- Filter logic lives in `comfyvn/core/content_filter.py` with modes:
+  * `sfw`: hides flagged items, logs WARN entries via advisory.
+  * `warn`: returns items but marks them with warnings.
+  * `unrestricted`: returns everything, still logging INFO/WARN for awareness.
+- Flags rely on metadata (`meta.nsfw`, `meta.rating`) and tags containing NSFW keywords.
+- GUI flows should pull `warnings` from `filter-preview` to display inline notices while still allowing overrides.
 
 Logging & Debugging
 -------------------
@@ -41,6 +75,13 @@ Logging & Debugging
   2. Call `GET /api/advisory/logs` and verify the issue appears with severity `warn`.
   3. Resolve with `curl -X POST .../resolve -d '{"issue_id":"<id>","notes":"Reviewed and cleared"}'` and confirm the item shows `resolved:true`.
 - WARN entries highlight new issues; INFO entries capture scan counts and resolution actions.
+- Policy gate smoke test:
+  1. `curl http://localhost:8000/api/policy/status`
+  2. `curl -X POST http://localhost:8000/api/policy/ack -H 'Content-Type: application/json' -d '{"user":"tester","notes":"Reviewed"}'`
+  3. `curl -X POST http://localhost:8000/api/policy/evaluate -H 'Content-Type: application/json' -d '{"action":"export.bundle","override":true}'`
+- Content filter test:
+  1. `curl -X POST http://localhost:8000/api/policy/filter-preview -H 'Content-Type: application/json' -d '{"items":[{"id":"asset:1","meta":{"nsfw":true}},{"id":"asset:2","meta":{"tags":["safe"]}}],"mode":"sfw"}'`
+  2. Inspect `logs/server.log` for WARN entries referencing `filter_mode`.
 
 Integration Notes
 -----------------

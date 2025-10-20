@@ -1,3 +1,15 @@
+### 2025-10-23 — Audio Remix & Policy Gate (chat: Audio & Policy)
+- Introduced `comfyvn/core/audio_cache.py` and expanded TTS stub to incorporate style/model hashes, returning deterministic cache hits and writing metadata to `cache/audio_cache.json`.
+- Added `/api/music/remix` FastAPI endpoint backed by `comfyvn/core/music_remix.py`, enabling stubbed scene/style remix artifacts with sidecars under `exports/music/`.
+- Delivered liability gate + filter controls via `/api/policy/{status,ack,evaluate,filters,filter-preview}`, ensuring legal warnings surface while preserving user choice.
+- Content filter modes (`sfw|warn|unrestricted`) route through `comfyvn/core/content_filter.py`, log advisory warnings, and expose preview responses for GUI panels.
+- Documentation updates: refreshed `docs/studio_phase6_audio.md`, `docs/studio_phase7_advisory.md`, and `architecture.md` with new API hooks and debugging steps.
+
+### 2025-10-23 — Extension Manifest Refresh (chat: Studio Ops)
+- Each bundled extension now ships an `extension.json` manifest; the Studio reads these files (or falls back to single-file modules) to surface metadata.
+- The Extensions menu auto-discovers packages, grouping official items separately from imported/community add‑ons and exposing an info dialog with hooks and file locations.
+- Documentation (`docs/v1_extension_api.md`, `docs/extensions.md`) updated to describe the new manifest workflow for developers.
+
 ### 2025-10-23 — Assets Upload Dependency Guard (chat: Platform Health)
 - Added explicit `python-multipart` runtime dependency so the `/assets/upload` FastAPI route loads in headless environments.
 - Hardened `comfyvn.server.modules.assets_api` to log a warning + return HTTP 503 when multipart parsing is unavailable, instead of failing router registration silently.
@@ -43,6 +55,7 @@
 - `/roleplay/import` now persists scenes and characters via the studio registries, records jobs/import rows, and archives raw transcripts to `logs/imports/roleplay_*` for debugging.
 - `GET /roleplay/imports/{job_id}` aggregates job + import metadata (including log paths) so the GUI can surface importer status.
 - `GET /roleplay/imports` + `GET /roleplay/imports/{job_id}/log` expose importer dashboards and inline log streaming for the Studio shell.
+- Studio `RoleplayImportView` upgraded into a live job dashboard with auto-refresh + log viewer, wired to the new endpoints.
 - `/assets/*` router delegates to `AssetRegistry` for list/detail/upload/register/delete, validates metadata, and resolves file downloads while keeping sidecars/thumbnails consistent.
 - Studio core gains `JobRegistry`, `ImportRegistry`, and character link helpers that underpin the importer pipeline.
 

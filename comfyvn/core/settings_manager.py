@@ -8,6 +8,14 @@ from pathlib import Path
 DEFAULTS = {
     "developer": {"verbose": True, "toasts": True, "file_only": False},
     "ui": {"menu_sort_mode": "load_order"},
+    "policy": {
+        "ack_legal_v1": False,
+        "ack_timestamp": None,
+        "warn_override_enabled": True,
+    },
+    "filters": {
+        "content_mode": "sfw",  # sfw | warn | unrestricted
+    },
 }
 
 class SettingsManager:

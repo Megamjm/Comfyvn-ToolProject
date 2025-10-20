@@ -1,0 +1,8 @@
+{
+  "id": "render_manager",
+  "name": "Render Manager",
+  "version": "0.1.0",
+  "official": true,
+  "author": "ComfyVN Team",
+  "description": "Controls example render workflows and menu entries for queued jobs."
+}

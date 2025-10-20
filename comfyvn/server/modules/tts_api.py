@@ -18,6 +18,9 @@ class TTSRequest(BaseModel):
     scene_id: Optional[str] = Field(None, description="Optional scene context ID")
     character_id: Optional[str] = Field(None, description="Character voice owner")
     lang: Optional[str] = Field(None, description="Language or locale code")
+    style: Optional[str] = Field(None, description="Optional vocal styling or preset")
+    model: Optional[str] = Field(None, description="Engine or pipeline identifier")
+    model_hash: Optional[str] = Field(None, description="Hash of the synthesis model/preset")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional client metadata (ignored by stub)",
@@ -31,17 +34,19 @@ class TTSResponse(BaseModel):
     cached: bool
     voice: str
     lang: str
+    style: Optional[str]
     info: dict[str, Any] = Field(default_factory=dict)
 
 
 @router.post("/synthesize", response_model=TTSResponse, summary="Synthesize speech")
 def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
     LOGGER.debug(
-        "TTS request scene=%s character=%s voice=%s lang=%s",
+        "TTS request scene=%s character=%s voice=%s lang=%s style=%s",
         payload.scene_id,
         payload.character_id,
         payload.voice,
         payload.lang,
+        payload.style,
     )
 
     try:
@@ -51,6 +56,8 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
             scene_id=payload.scene_id,
             character_id=payload.character_id,
             lang=payload.lang,
+            style=payload.style,
+            model_hash=payload.model_hash or payload.model,
         )
     except ValueError as exc:
         LOGGER.warning("Rejected TTS request: %s", exc)
@@ -60,11 +67,18 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
         raise HTTPException(status_code=500, detail="tts synthesis failed") from exc
 
     LOGGER.info(
-        "TTS artifact=%s cached=%s voice=%s",
+        "TTS artifact=%s cached=%s voice=%s style=%s",
         artifact,
         cached,
         payload.voice,
+        payload.style or "default",
     )
+
+    info_meta = dict(payload.metadata)
+    if payload.model:
+        info_meta.setdefault("model", payload.model)
+    if payload.model_hash:
+        info_meta.setdefault("model_hash", payload.model_hash)
 
     return TTSResponse(
         artifact=artifact,
@@ -72,5 +86,6 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
         cached=cached,
         voice=payload.voice,
         lang=payload.lang or "default",
-        info={"metadata": payload.metadata},
+        style=payload.style,
+        info={"metadata": info_meta},
     )

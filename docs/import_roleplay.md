@@ -19,3 +19,4 @@ Debugging tips:
 - Inspect database rows with `sqlite3 comfyvn/data/comfyvn.db "SELECT * FROM jobs ORDER BY id DESC LIMIT 5;"`.
 - Use `tests/test_studio_api.py` and future importer-specific tests for automation.
 - Retrieve importer log text via `curl http://localhost:8001/roleplay/imports/<job_id>/log` to surface in Studio consoles.
+- The Studio `RoleplayImportView` panel now displays the job queue and streams logs via the endpoints above; use the Refresh button or let it auto-sync every 10s.
