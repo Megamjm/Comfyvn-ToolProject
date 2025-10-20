@@ -1,4 +1,3 @@
-from PySide6.QtGui import QAction
 # [ComfyVN AutoPatch | Final Stage Sweep v0.4-pre | 2025-10-13]
 import os
 import logging
