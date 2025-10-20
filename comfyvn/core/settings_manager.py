@@ -1,13 +1,19 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
 # comfyvn/core/settings_manager.py
 # [COMFYVN Architect | v0.8.3s2 | this chat]
+import copy
 import json
 from pathlib import Path
+
+try:
+    from PySide6.QtGui import QAction  # type: ignore  # pragma: no cover
+except Exception:  # pragma: no cover - optional dependency
+    QAction = None  # type: ignore
 
 DEFAULTS = {
     "developer": {"verbose": True, "toasts": True, "file_only": False},
     "ui": {"menu_sort_mode": "load_order"},
+    "server": {"local_port": 8001},
     "policy": {
         "ack_legal_v1": False,
         "ack_timestamp": None,
@@ -32,7 +38,8 @@ class SettingsManager:
             data = {}
         # backfill defaults
         for k, v in DEFAULTS.items():
-            if k not in data: data[k] = v
+            if k not in data:
+                data[k] = copy.deepcopy(v)
         return data
 
     def save(self, data: dict):

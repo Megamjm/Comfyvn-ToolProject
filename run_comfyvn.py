@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -15,22 +16,70 @@ REPO_ROOT = Path(__file__).resolve().parent
 VENV_DIR = REPO_ROOT / ".venv"
 REQUIREMENTS_FILE = REPO_ROOT / "requirements.txt"
 REQUIREMENTS_HASH_FILE = VENV_DIR / ".requirements_hash"
+SETTINGS_PRIMARY_FILE = REPO_ROOT / "data" / "settings" / "config.json"
+SETTINGS_LEGACY_FILE = REPO_ROOT / "data" / "config.json"
 BOOTSTRAP_FLAG = "COMFYVN_BOOTSTRAPPED"
 LOGGER = logging.getLogger("comfyvn.launcher")
 
 
-def _env_int(key: str, fallback: int) -> int:
-    try:
-        value = os.environ.get(key)
-        return int(value) if value is not None else fallback
-    except (TypeError, ValueError):
-        return fallback
-
-
 DEFAULT_SERVER_HOST = os.environ.get("COMFYVN_SERVER_HOST", "127.0.0.1")
-DEFAULT_SERVER_PORT = _env_int("COMFYVN_SERVER_PORT", 8001)
 DEFAULT_SERVER_APP = os.environ.get("COMFYVN_SERVER_APP", "comfyvn.server.app:app")
 DEFAULT_SERVER_LOG_LEVEL = os.environ.get("COMFYVN_SERVER_LOG_LEVEL", "info")
+
+
+def _load_port_from_settings_file(path: Path) -> Optional[int]:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    candidates: list[int] = []
+
+    if isinstance(data, dict):
+        server_section = data.get("server")
+        if isinstance(server_section, dict):
+            for key in ("local_port", "port"):
+                value = server_section.get(key)
+                if value is not None:
+                    try:
+                        candidates.append(int(value))
+                    except (TypeError, ValueError):
+                        continue
+        for key in ("server_port", "port"):
+            value = data.get(key)
+            if value is not None:
+                try:
+                    candidates.append(int(value))
+                except (TypeError, ValueError):
+                    continue
+
+    for port in candidates:
+        if 0 < port < 65536:
+            return port
+    return None
+
+
+def _resolve_default_server_port() -> int:
+    env_port = os.environ.get("COMFYVN_SERVER_PORT")
+    if env_port is not None:
+        try:
+            port = int(env_port)
+            if 0 < port < 65536:
+                return port
+        except (TypeError, ValueError):
+            pass
+
+    for candidate in (SETTINGS_PRIMARY_FILE, SETTINGS_LEGACY_FILE):
+        port = _load_port_from_settings_file(candidate)
+        if port is not None:
+            return port
+
+    return 8001
+
+
+DEFAULT_SERVER_PORT = _resolve_default_server_port()
 
 
 def log(message: str) -> None:

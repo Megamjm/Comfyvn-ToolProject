@@ -57,5 +57,6 @@ def create_app() -> FastAPI:
         return PlainTextResponse("Not Found", status_code=404)
 
     dump_startup_report()
-    print(f"[ComfyVN] ✅ Server started on port 8001")
+    port = os.environ.get("COMFYVN_SERVER_PORT", "8001")
+    print(f"[ComfyVN] ✅ Server started on port {port}")
     return app
