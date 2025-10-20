@@ -2,7 +2,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QHBoxLayout
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
-from comfyvn.gui.server_bridge import ServerBridge
+from comfyvn.gui.services.server_bridge import ServerBridge
 
 class ArtifactsBrowser(QWidget):
     def __init__(self, parent=None):

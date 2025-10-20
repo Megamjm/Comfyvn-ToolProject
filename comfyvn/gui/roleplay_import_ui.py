@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 from PySide6.QtCore import Qt
-from comfyvn.gui.server_bridge import ServerBridge
+from comfyvn.gui.services.server_bridge import ServerBridge
 
 
 class RoleplayImportUI(QWidget):

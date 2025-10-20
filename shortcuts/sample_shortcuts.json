@@ -1,0 +1,7 @@
+[
+  {"id":"assets","label":"Assets","handler":"open_asset_browser","hotkey":"Ctrl+1"},
+  {"id":"play","label":"Playground","handler":"open_playground","hotkey":"Ctrl+2"},
+  {"id":"timeline","label":"Timeline","handler":"open_timeline","hotkey":"Ctrl+3"},
+  {"id":"status","label":"System Status","handler":"open_telemetry","hotkey":"Ctrl+4"},
+  {"id":"logs","label":"Log Hub","handler":"open_log_hub","hotkey":"Ctrl+L"}
+]

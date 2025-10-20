@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from comfyvn.modules.lora_manager import LoRAManager
+from comfyvn.assets.lora_manager import LoRAManager
 from comfyvn.comfyui.scripts.train_lora import LoRATrainerWithSignals
 
 

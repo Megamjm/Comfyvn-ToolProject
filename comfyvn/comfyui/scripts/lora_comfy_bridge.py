@@ -10,7 +10,7 @@ import json
 import requests
 from typing import List, Dict, Optional
 
-from comfyvn.modules.lora_manager import LoRAManager
+from comfyvn.assets.lora_manager import LoRAManager
 
 
 class LoRAComfyBridge:

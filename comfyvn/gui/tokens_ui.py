@@ -1,6 +1,6 @@
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QHBoxLayout, QLineEdit, QMessageBox
-from comfyvn.gui.server_bridge import ServerBridge
+from comfyvn.gui.services.server_bridge import ServerBridge
 
 SCOPES = ["jobs.write","artifacts.write","assets.write","content.write","scheduler.write","plugins.write","tokens.admin","projects.write"]
 
