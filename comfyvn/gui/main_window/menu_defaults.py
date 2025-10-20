@@ -13,13 +13,13 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
     registry.add("Open Logs Folder", "open_logs_folder", section="File", order=30)
     registry.add("Exit", "close", section="File", separator_before=True, order=100)
 
-    # View-centric entries reflect the primary dock panels.
-    registry.add("Studio Center", "open_studio_center", section="View", order=10)
-    registry.add("Assets", "open_asset_browser", section="View", order=20)
-    registry.add("Playground", "open_playground", section="View", order=30)
-    registry.add("Timeline", "open_timeline", section="View", order=40)
-    registry.add("System Status", "open_telemetry", section="View", separator_before=True, order=50)
-    registry.add("Log Hub", "open_log_hub", section="View", order=60)
+    # Module-centric entries reflect the primary dock panels.
+    registry.add("Studio Center", "open_studio_center", section="Modules", order=10)
+    registry.add("Assets", "open_asset_browser", section="Modules", order=20)
+    registry.add("Playground", "open_playground", section="Modules", order=30)
+    registry.add("Timeline", "open_timeline", section="Modules", order=40)
+    registry.add("System Status", "open_telemetry", section="Modules", separator_before=True, order=50)
+    registry.add("Log Hub", "open_log_hub", section="Modules", order=60)
 
     # Tools and Extensions utility entries.
     registry.add("Reload Menus", "reload_menus", section="Tools", order=5)

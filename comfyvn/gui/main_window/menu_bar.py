@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QMenu
 
 from comfyvn.core.settings_manager import SettingsManager
 
-SECTION_ORDER = ["File", "View", "Spaces", "Tools", "Extensions", "Settings", "GPU", "Window", "Help"]
+SECTION_ORDER = ["File", "Modules", "Spaces", "Tools", "Extensions", "Settings", "GPU", "Window", "Help"]
 
 BEST_PRACTICE_SECTION_ITEMS = {
     "File": [
@@ -15,7 +15,7 @@ BEST_PRACTICE_SECTION_ITEMS = {
         "Open Logs Folder",
         "Exit",
     ],
-    "View": [
+    "Modules": [
         "Studio Center",
         "Assets",
         "Playground",
@@ -80,8 +80,7 @@ def _sort_items(items, section: str):
 
 def rebuild_menus_from_registry(window, registry):
     menubar = window.menuBar()
-    for menu in list(menubar.findChildren(QMenu)):
-        menubar.removeAction(menu.menuAction())
+    menubar.clear()
 
     sections = registry.by_section() if hasattr(registry, "by_section") else {}
 

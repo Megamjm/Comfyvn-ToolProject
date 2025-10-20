@@ -1,8 +1,14 @@
 from __future__ import annotations
 import os
+from pathlib import Path
 from fastapi import FastAPI
 
+from comfyvn.server.core.logging_ex import setup_logging
+
 # Logging Setup
+LOG_PATH = Path(__file__).resolve().parents[2] / "logs" / "server.log"
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("COMFYVN_LOG_FILE", str(LOG_PATH))
 setup_logging()
 
 try:

@@ -2,6 +2,7 @@
 # 🎛️ ComfyVN Studio Main Window — modular, dynamic, efficient
 # -------------------------------------------------------------
 from __future__ import annotations
+import logging
 import sys, subprocess
 from pathlib import Path
 
@@ -40,6 +41,8 @@ from comfyvn.gui.panels.central_space import CentralSpace
 # Menus
 from comfyvn.gui.main_window.menu_bar import ensure_menu_bar, update_window_menu_state, rebuild_menus_from_registry
 from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
+
+logger = logging.getLogger(__name__)
 
 def _detached_server():
     """Launch the backend as a detached process; return Popen or None."""
@@ -105,7 +108,9 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             reload_from_extensions(menu_registry, base_folder=Path("extensions"), clear=False)
         except Exception as e:
             print("[Menu] reload error:", e)
+            logger.exception("Menu reload failed: %s", e)
         rebuild_menus_from_registry(self, menu_registry)
+        logger.debug("Menus rebuilt with %d items", len(menu_registry.items))
 
     def _rebuild_shortcuts_toolbar(self):
         """Rebuild Quick Access toolbar from shortcuts folder."""
@@ -125,6 +130,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             panel = StudioCenter(self.bridge, self)
             dock = self.dockman.dock(panel, "Studio Center")
             self._studio_center_dock = dock
+            logger.debug("Studio Center module created")
         dock.setVisible(True)
         dock.raise_()
 
@@ -134,6 +140,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             dock = AssetBrowser("data/assets")
             self.dockman.dock(dock, "Assets")
             self._asset_browser = dock
+            logger.debug("Asset Browser module created")
         dock.setVisible(True)
         dock.raise_()
 
@@ -143,6 +150,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             dock = PlaygroundPanel(self.bridge.base)
             self.dockman.dock(dock, "Playground")
             self._playground = dock
+            logger.debug("Playground module created")
         dock.setVisible(True)
         dock.raise_()
 
@@ -152,6 +160,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             dock = TimelinePanel()
             self.dockman.dock(dock, "Timeline")
             self._timeline = dock
+            logger.debug("Timeline module created")
         dock.setVisible(True)
         dock.raise_()
 
@@ -161,6 +170,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             panel = TelemetryPanel(self.bridge.base)
             dock = self.dockman.dock(panel, "System Status")
             self._telemetry_dock = dock
+            logger.debug("Telemetry module created")
         dock.setVisible(True)
         dock.raise_()
 
@@ -170,6 +180,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             panel = LogHub()
             dock = self.dockman.dock(panel, "Log Hub")
             self._loghub_dock = dock
+            logger.debug("Log Hub module created")
         dock.setVisible(True)
         dock.raise_()
 
@@ -179,6 +190,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             dock = SettingsPanel(self.bridge)
             self.dockman.dock(dock, "Settings")
             self._settings_panel = dock
+            logger.debug("Settings module created")
         dock.setVisible(True)
         dock.raise_()
 

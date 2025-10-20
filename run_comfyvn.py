@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import shutil
 import subprocess
@@ -7,15 +8,31 @@ import venv
 from pathlib import Path
 from typing import Optional, Tuple
 
+from comfyvn.logging_config import init_logging as init_gui_logging
+
 REPO_ROOT = Path(__file__).resolve().parent
 VENV_DIR = REPO_ROOT / ".venv"
 REQUIREMENTS_FILE = REPO_ROOT / "requirements.txt"
 REQUIREMENTS_HASH_FILE = VENV_DIR / ".requirements_hash"
 BOOTSTRAP_FLAG = "COMFYVN_BOOTSTRAPPED"
+LOGGER = logging.getLogger("comfyvn.launcher")
 
 
 def log(message: str) -> None:
+    LOGGER.info(message)
     print(f"[ComfyVN] {message}")
+
+
+def configure_launcher_logging() -> None:
+    logs_dir = REPO_ROOT / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / "launcher.log"
+    if not LOGGER.handlers:
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        handler.setFormatter(formatter)
+        LOGGER.addHandler(handler)
+        LOGGER.setLevel(logging.INFO)
 
 
 def running_inside_venv(venv_dir: Path) -> bool:
@@ -192,6 +209,9 @@ def bootstrap_environment() -> None:
 
 
 def launch_app() -> None:
+    gui_log_dir = REPO_ROOT / "logs"
+    gui_log_dir.mkdir(parents=True, exist_ok=True)
+    init_gui_logging(str(gui_log_dir), filename="gui.log")
     from PySide6.QtGui import QAction  # noqa: F401
     from comfyvn.gui.main_window import main
 
@@ -200,6 +220,7 @@ def launch_app() -> None:
 
 
 def main() -> None:
+    configure_launcher_logging()
     bootstrap_environment()
     launch_app()
 
