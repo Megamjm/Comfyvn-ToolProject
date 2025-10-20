@@ -38,6 +38,7 @@ from comfyvn.gui.panels.central_space import CentralSpace
 
 # Menus
 from comfyvn.gui.main_window.menu_bar import ensure_menu_bar, update_window_menu_state, rebuild_menus_from_registry
+from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
 
 def _detached_server():
     """Launch the backend as a detached process; return Popen or None."""
@@ -98,7 +99,9 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     def reload_menus(self):
         """Reload menus from the on-disk extensions folder -> menu registry -> menubar."""
         try:
-            reload_from_extensions(menu_registry, base_folder=Path("extensions"))
+            menu_registry.clear()
+            register_core_menu_items(menu_registry)
+            reload_from_extensions(menu_registry, base_folder=Path("extensions"), clear=False)
         except Exception as e:
             print("[Menu] reload error:", e)
         rebuild_menus_from_registry(self, menu_registry)

@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 DEFAULTS = {
-    "developer": {"verbose": True, "toasts": True, "file_only": False}
+    "developer": {"verbose": True, "toasts": True, "file_only": False},
+    "ui": {"menu_sort_mode": "load_order"},
 }
 
 class SettingsManager:

@@ -4,4 +4,5 @@ def register(menu_registry):
         "install_base_scripts",
         section="Settings",
         separator_before=False,
+        order=10,
     )

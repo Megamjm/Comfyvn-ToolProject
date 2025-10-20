@@ -1,33 +1,96 @@
 
+from __future__ import annotations
+
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 
-SECTION_ORDER = ["File","View","Spaces","Tools","Settings","GPU","Window","Help"]
+from comfyvn.core.settings_manager import SettingsManager
 
-def rebuild_menus_from_registry(w, registry):
-    mb = w.menuBar()
-    # clear existing top-level menus (non-destructive for QMainWindow)
-    for m in list(mb.findChildren(QMenu)):
-        mb.removeAction(m.menuAction())
-    # build by section
-    by = registry.by_section() if hasattr(registry,"by_section") else {}
-    for sec in SECTION_ORDER:
-        items = by.get(sec, [])
-        if not items: continue
-        m = mb.addMenu(sec)
+SECTION_ORDER = ["File", "View", "Spaces", "Tools", "Settings", "GPU", "Window", "Help"]
+
+BEST_PRACTICE_SECTION_ITEMS = {
+    "View": [
+        "Studio Center",
+        "Assets",
+        "Playground",
+        "Timeline",
+        "System Status",
+        "Log Hub",
+    ],
+    "Tools": [
+        "Server Console",
+    ],
+    "Settings": [
+        "Install Base Scripts",
+    ],
+}
+
+_settings_manager = SettingsManager()
+
+
+def _get_menu_sort_mode() -> str:
+    cfg = _settings_manager.load()
+    ui_cfg = cfg.get("ui", {})
+    return ui_cfg.get("menu_sort_mode", "load_order")
+
+
+def _sort_items(items, section: str):
+    mode = _get_menu_sort_mode()
+    enumerated = list(enumerate(items))
+
+    if mode == "alphabetical":
+        enumerated.sort(key=lambda pair: pair[1].label.lower())
+    elif mode == "best_practice":
+        order_map = {
+            label: idx
+            for idx, label in enumerate(BEST_PRACTICE_SECTION_ITEMS.get(section, []))
+        }
+
+        def key(pair):
+            idx, item = pair
+            if item.order is not None:
+                return (0, item.order, idx)
+            if item.label in order_map:
+                return (1, order_map[item.label], idx)
+            return (2, idx)
+
+        enumerated.sort(key=key)
+    else:  # load_order (default)
+        def key(pair):
+            idx, item = pair
+            priority = item.order if item.order is not None else 1_000_000
+            return (priority, idx)
+
+        enumerated.sort(key=key)
+
+    return [item for _, item in enumerated]
+
+
+def rebuild_menus_from_registry(window, registry):
+    menubar = window.menuBar()
+    for menu in list(menubar.findChildren(QMenu)):
+        menubar.removeAction(menu.menuAction())
+
+    sections = registry.by_section() if hasattr(registry, "by_section") else {}
+
+    for section in SECTION_ORDER:
+        items = sections.get(section, [])
+        if not items:
+            continue
+        sorted_items = _sort_items(items, section)
+        menu = menubar.addMenu(section)
         last_sep = False
-        for it in items:
-            if getattr(it, "separator_before", False) and not last_sep:
-                m.addSeparator()
-            a = QAction(it.label, w)
-            # hook action to method on window if present
-            handler = getattr(w, it.handler, None)
+        for item in sorted_items:
+            if getattr(item, "separator_before", False) and not last_sep:
+                menu.addSeparator()
+            action = QAction(item.label, window)
+            handler = getattr(window, item.handler, None)
             if callable(handler):
-                a.triggered.connect(handler)
-            m.addAction(a)
-            last_sep = getattr(it, "separator_before", False)
+                action.triggered.connect(handler)
+            menu.addAction(action)
+            last_sep = getattr(item, "separator_before", False)
 
-# Dynamic menus are handled by comfyvn.core.menu_runtime_bridge
+
 def ensure_menu_bar(window):
     try:
         window._build_menus_from_registry()
@@ -36,11 +99,10 @@ def ensure_menu_bar(window):
 
 
 def update_window_menu_state(window):
-    """Placeholder for dynamic menu state refresh; ensures menus exist even if no runtime bridge."""
+    """Placeholder hook for dynamic menu state updates."""
     if not hasattr(window, "menuBar"):
         return
     menu_bar = window.menuBar()
     if menu_bar is None:
         return
-    # No-op for now; hook for future enable/disable logic
     _ = menu_bar.actions()

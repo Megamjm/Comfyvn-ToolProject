@@ -39,6 +39,7 @@ ESSENTIAL_DIRS = [
     "data/workspaces/presets",
     "config",
     "logs",
+    "scripts",
 ]
 
 

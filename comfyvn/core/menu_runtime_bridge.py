@@ -2,7 +2,7 @@ from __future__ import annotations
 import importlib.util, sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 from PySide6.QtGui import QAction
 
 @dataclass
@@ -11,12 +11,20 @@ class MenuItem:
     handler: str
     section: str = "View"
     separator_before: bool = False
+    order: Optional[int] = None
 
 class MenuRegistry:
     def __init__(self):
         self.items: List[MenuItem] = []
-    def add(self, label: str, handler: str, section: str="View", separator_before: bool=False):
-        self.items.append(MenuItem(label, handler, section, separator_before))
+    def add(
+        self,
+        label: str,
+        handler: str,
+        section: str = "View",
+        separator_before: bool = False,
+        order: Optional[int] = None,
+    ):
+        self.items.append(MenuItem(label, handler, section, separator_before, order))
     def by_section(self) -> Dict[str, List[MenuItem]]:
         out: Dict[str, List[MenuItem]] = {}
         for it in self.items:
@@ -35,9 +43,15 @@ def _load_py_module(mod_path: Path):
     spec.loader.exec_module(mod)  # type: ignore
     return mod
 
-def reload_from_extensions(registry: MenuRegistry, base_folder: Path = Path("extensions")):
+def reload_from_extensions(
+    registry: MenuRegistry,
+    base_folder: Path = Path("extensions"),
+    *,
+    clear: bool = True,
+):
     """Load python files under base_folder that define `register(menu_registry)`."""
-    registry.clear()
+    if clear:
+        registry.clear()
     if not base_folder.exists():
         return
     for py in sorted(base_folder.rglob("*.py")):
