@@ -391,11 +391,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         if not isinstance(result, dict):
             self._status_label.setText("🔴 Server: Offline")
             return
+        healthy = bool(result.get("ok"))
         data = result.get("data")
         if isinstance(data, dict):
             healthy = bool(data.get("ok") or data.get("healthy"))
-        else:
-            healthy = bool(result.get("ok"))
         self._status_label.setText(("🟢" if healthy else "🟠") + " Server: " + ("OK" if healthy else "Degraded"))
 
     def _set_script_status(self, ok: bool, message: str) -> None:
