@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>ComfyVN Studio</title>
+  <link rel="icon" href="/studio/favicon.ico">
+  <link rel="stylesheet" href="/studio/theme.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+</head>
+<body>
+  <header class="header">
+    <nav>
+      <a class="link" href="/studio/">Studio</a>
+      <a class="link" href="/studio/assets.html">Assets</a>
+      <a class="link" href="/studio/roleplay.html">Roleplay</a>
+      <a class="link" href="/studio/scheduler.html">Scheduler</a>
+      <a class="link" href="/studio/env.html">Env</a>
+    </nav>
+    <div class="spacer"></div>
+    <span class="badge">Modern UI</span>
+    <input id="args" class="inp" placeholder="name=intro_scene&title=Intro"/>
+    <button id="btnValidate" class="btn neutral">Validate</button>
+    <button id="btnSave" class="btn neutral">Save</button>
+    <button id="btnRun" class="btn">Instantiate</button>
+    <button id="btnBundle" class="btn neutral">Bundle Zip</button>
+    <button id="btnPop" class="btn neutral">Pop-out Preview</button>
+  </header>
+
+  <div class="grid">
+    <!-- Scene Form -->
+    <section class="card">
+      <h3>Scene</h3>
+      <div class="body">
+        <div class="row"><label>Name</label><input id="sceneName" class="inp" placeholder="intro_scene"/></div>
+        <div class="row"><label>Title</label><input id="sceneTitle" class="inp" placeholder="Intro"/></div>
+        <div class="row"><label>Background</label><input id="sceneBg" class="inp" placeholder="/asset-store/static/bg.jpg"/></div>
+        <div class="row"><label>Music</label><input id="sceneMusic" class="inp" placeholder="theme.ogg or URL"/></div>
+        <div class="row"><label>Sprites</label><input id="sceneSprites" class="inp" placeholder="alice.png,bob.png"/></div>
+        <div class="row small">Lines</div>
+        <div class="row">
+          <input id="lineSpeaker" class="inp" style="width:160px" placeholder="Speaker"/>
+          <input id="lineText" class="inp" style="flex:1" placeholder="Text"/>
+          <button id="btnAddLine" class="btn neutral">Add</button>
+          <button id="btnClearLines" class="btn danger">Clear</button>
+        </div>
+        <table class="table" id="linesTable">
+          <thead><tr><th style="width:160px">Speaker</th><th>Text</th><th style="width:84px"></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="row small">State persists locally and updates JSON + Preview live.</div>
+      </div>
+    </section>
+
+    <!-- JSON -->
+    <section class="card">
+      <h3>Workflow JSON</h3>
+      <div class="body" style="padding:0">
+        <textarea id="wf" class="code" spellcheck="false"></textarea>
+      </div>
+      <div class="popbar">
+        <button id="btnJsonPop" class="btn neutral">Open JSON in new tab</button>
+        <button id="btnJsonCopy" class="btn neutral">Copy JSON</button>
+      </div>
+    </section>
+
+    <!-- Preview -->
+    <section class="card">
+      <h3>Preview</h3>
+      <div class="body" style="padding:0;min-height:0">
+        <div id="stage" class="stage">
+          <img id="bgImg" alt="background"/>
+          <div id="sprites"></div>
+          <div id="hud" class="hud">Preview</div>
+          <audio id="audio" controls style="position:absolute;left:10px;bottom:10px;width:260px"></audio>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/studio/app.js" defer></script>
+</body>
+</html>

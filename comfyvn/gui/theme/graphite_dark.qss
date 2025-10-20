@@ -1,0 +1,5 @@
+QMainWindow, QWidget { background-color: #0f1216; color: #e6e6e6; }
+QMenuBar, QMenu { background-color: #151a20; }
+QStatusBar { background-color: #12161b; }
+QPushButton { background-color: #1a2129; border: 1px solid #2b3440; padding: 5px; }
+QPushButton:hover { background-color: #202834; }

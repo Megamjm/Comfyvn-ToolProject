@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/asset_index.py
 # Asset Index system (persistent registry of exports)
 # ComfyVN_Architect (Asset Sprite Research Branch)

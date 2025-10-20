@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/server/core/ws_handlers.py
 # 🔌 Shared WebSocket & SSE handler registration for Playground & Jobs
 

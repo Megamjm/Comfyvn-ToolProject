@@ -1,0 +1,10 @@
+from PySide6.QtGui import QAction
+# extensions/render_manager/entry.py
+from comfyvn.core.task_registry import task_registry
+
+def on_load(ctx=None):
+    # future: hook render queue, subscribe, etc.
+    task_registry.create("system", "Render Manager loaded")
+
+def on_unload(ctx=None):
+    pass

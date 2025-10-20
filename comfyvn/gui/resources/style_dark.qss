@@ -1,0 +1,12 @@
+
+/* Studio-090 dark theme */
+QMainWindow { background:#12161b; }
+QMenuBar, QMenu, QToolBar { background:#1a2028; color:#dbe6f6; }
+QStatusBar { background:#161b22; color:#b8c4d6; }
+QDockWidget { background:#141920; titlebar-close-icon: url(none); }
+QTreeView, QListView, QTextEdit, QLineEdit, QTableWidget {
+  background:#0f141a; color:#eaf2ff; selection-background-color:#2c3646;
+}
+QPushButton { background:#2c3440; color:#eaf2ff; border:1px solid #3b4656; padding:6px 10px; border-radius:6px; }
+QPushButton:hover { background:#36404f; }
+QHeaderView::section { background:#1b222c; color:#dbe6f6; padding:4px; border:0; }

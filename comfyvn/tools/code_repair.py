@@ -1,3 +1,6 @@
+from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 """
 code_repair.py — v2.0 (Smart Mode)
 -----------------------------------
@@ -17,7 +20,6 @@ Usage:
   python -m comfyvn.tools.code_repair --rules fix_threading,fix_qaction
 """
 
-from __future__ import annotations
 import re, sys, pathlib, difflib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]

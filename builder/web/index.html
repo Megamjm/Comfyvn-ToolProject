@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>ComfyVN Builder</title>
+<style>body{font-family:ui-sans-serif;background:#0b0d10;color:#e5e7eb;margin:0}header{padding:10px;border-bottom:1px solid #222}main{padding:12px}.card{background:#111318;border:1px solid #222;border-radius:12px;padding:12px;margin-bottom:12px}.mono{font-family:ui-monospace,monospace;font-size:12px}</style>
+</head><body>
+<header><strong>ComfyVN Builder</strong></header>
+<main>
+  <div class="card">
+    <button id="load">Load phases</button>
+    <div id="phases"></div>
+    <button id="merge">Merge selected</button>
+    <div class="mono" id="out"></div>
+  </div>
+</main>
+<script>
+const $=s=>document.querySelector(s); const $$=s=>[...document.querySelectorAll(s)];
+$('#load').onclick = async ()=> { const j = await fetch('/phases').then(r=>r.json()); const div=$('#phases'); div.innerHTML=''; (j.items||[]).forEach(it=>{ const id='p_'+it.name; const el=document.createElement('div'); el.innerHTML = \`<label><input type="checkbox" id="\${id}" value="\${it.name}" checked> \${it.name}</label>\`; div.appendChild(el); }); };
+$('#merge').onclick = async ()=> { const phases=$$('#phases input:checked').map(x=>x.value); const j = await fetch('/merge', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phases})}).then(r=>r.json()); $('#out').textContent = JSON.stringify(j, null, 2); };
+</script>
+</body></html>

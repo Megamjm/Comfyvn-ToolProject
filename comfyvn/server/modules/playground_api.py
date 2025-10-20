@@ -1,31 +1,20 @@
+from PySide6.QtGui import QAction
+
 # comfyvn/server/modules/playground_api.py
-# 🧪 Playground API — REST endpoints for PlaygroundWindow
-from fastapi import APIRouter, HTTPException, Request
-import os, json
-from comfyvn.assets.playground_manager import PlaygroundManager
+from fastapi import APIRouter
+from pathlib import Path
 
-router = APIRouter(prefix="/playground", tags=["Playground"])
+router = APIRouter()
+PRJ = Path("data/playground")
 
+@router.get("/health")
+def health():
+    ok = PRJ.exists()
+    return {"ok": True, "engine": "godot", "project_dir": str(PRJ), "present": ok}
 
-@router.get("/checkpoints")
-async def list_checkpoints():
-    return {"models": ["checkpoint_A.safetensors", "checkpoint_B.safetensors"]}
-
-
-@router.get("/loras")
-async def list_loras():
-    return {"models": ["lora_A", "lora_B"]}
-
-
-@router.get("/controlnets")
-async def list_controlnets():
-    return {"models": ["canny", "depth", "openpose"]}
-
-
-@router.post("/apply/{scene_id}")
-async def apply_scene(scene_id: str, request: Request):
-    data = await request.json()
-    prompt = data.get("prompt", "")
-    pm = PlaygroundManager()
-    result = pm.apply_prompt(scene_id, prompt)
-    return result
+@router.get("/recommend")
+def recommend():
+    return {"ok": True, "engines": [
+        {"name": "Godot", "why": "Open-source, lightweight 3D/2D, good for preview"},
+        {"name": "Blend4Web/Three.js", "why": "Web preview alternative"}
+    ]}

@@ -1,8 +1,11 @@
+from __future__ import annotations
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/server/modules/snapshot_api.py
 # 💾 Snapshot API — list, create, and restore project snapshots
 # [Server Core Production Chat | ComfyVN Phase 3.3 Integration Sync]
 
-from __future__ import annotations
 import os, time, shutil, zipfile
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body

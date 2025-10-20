@@ -1,0 +1,39 @@
+{
+  "default_dark": {
+    "bg": "#0E1116",
+    "panel": "#151A22",
+    "accent": "#1AB6B6",
+    "highlight": "#29D7D7",
+    "text": "#E9EEF1",
+    "text2": "#94A1B2",
+    "border": "#1E242F"
+  },
+  "light_mode": {
+    "bg": "#F3F6F9",
+    "panel": "#FFFFFF",
+    "accent": "#0078D7",
+    "highlight": "#4AA3FF",
+    "text": "#101418",
+    "text2": "#5E6B78",
+    "border": "#D9E0E7"
+  },
+  "midnight_blue": {
+    "bg": "#0B0E1A",
+    "panel": "#0E1324",
+    "accent": "#4AD3FF",
+    "highlight": "#74E8FF",
+    "text": "#E5ECF3",
+    "text2": "#9AA9C0",
+    "border": "#1B2238"
+  },
+  "forest_green": {
+    "bg": "#0F1E16",
+    "panel": "#14261D",
+    "accent": "#3FBF7F",
+    "highlight": "#56D69A",
+    "text": "#EAF5F0",
+    "text2": "#9AC3B2",
+    "border": "#1C3A2C"
+  },
+  "custom": {}
+}

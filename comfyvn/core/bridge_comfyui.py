@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/comfy_bridge.py
 # ⚙️ 3. Server Core Production Chat — Async Job Polling Integrated [ComfyVN Architect]
 

@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/server/core/bootstrap.py
 # 🧱 ComfyVN Server Bootstrap — builds FastAPI app, managers, and routers (v4.0)
 # [ComfyVN Architect | Modular Server Core]

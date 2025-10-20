@@ -1,0 +1,14 @@
+{
+  "id": "live_dungeon",
+  "mode": "live",
+  "description": "Node graph routing and encounters with real-time updates",
+  "pipeline": [
+    "INIT_SCENE",
+    "MOVE",
+    "ENCOUNTER",
+    "RENDER_BG",
+    "ASSET_READY",
+    "SAY",
+    "CHOICE_SET"
+  ]
+}

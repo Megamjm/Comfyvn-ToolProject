@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/lora_manager_ui.py
 # 🧬 LoRA Manager UI — v1.0 (Phase 3)
 # Chat Source: 🧬 9. LoRA System Production Chat

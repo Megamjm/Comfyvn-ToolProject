@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 # tools/refactor_imports.py
 # 🔧 ComfyVN Import Refactor Utility – v1.2.0
 # Updates old import paths to match new folder structure.

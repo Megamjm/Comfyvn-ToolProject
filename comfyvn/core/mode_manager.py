@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/mode_manager.py
 # ⚙️ Mode Manager – Persistent Runtime Mode Handler (Patch M)
 # ComfyVN Architect | Server Core Integration Sync

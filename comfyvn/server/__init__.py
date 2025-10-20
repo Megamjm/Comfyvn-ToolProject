@@ -1,1 +1,1 @@
-# Package initializer for ComfyVN
+from PySide6.QtGui import QAction

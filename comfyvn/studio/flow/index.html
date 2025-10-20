@@ -1,0 +1,221 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Flow — ComfyVN</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    :root { --bg:#0b0d10; --fg:#e5e7eb; --muted:#9ca3af; --card:#111318; --grid:#1f2937; --accent:#60a5fa; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui}
+    header{display:flex;gap:8px;align-items:center;padding:10px;border-bottom:1px solid var(--grid)}
+    header input, header select, header button{background:#0f1318;border:1px solid var(--grid);color:var(--fg);padding:6px 8px;border-radius:8px}
+    header button.primary{background:var(--accent);color:#001;border:none}
+    main{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 54px)}
+    aside{border-right:1px solid var(--grid);padding:10px;display:flex;flex-direction:column;gap:10px}
+    .palette .item{padding:8px;border:1px dashed var(--grid);border-radius:8px;cursor:grab}
+    .panel{padding:10px}
+    .grid{position:relative;background:repeating-linear-gradient(0deg, #0e141a, #0e141a 22px, #0d1319 22px, #0d1319 44px);}
+    .canvas{position:relative;height:calc(100vh - 54px);overflow:auto}
+    .node{position:absolute;background:var(--card);border:1px solid var(--grid);border-radius:12px;padding:10px;min-width:160px;cursor:move}
+    .node .title{font-weight:600;margin-bottom:6px}
+    .node .ports{display:flex;gap:8px;justify-content:space-between}
+    .node .ports .col{min-width:60px}
+    .node input, .node select{width:100%;background:#0f1318;border:1px solid var(--grid);color:var(--fg);border-radius:6px;padding:4px 6px;font-size:12px}
+    svg.links{position:absolute;inset:0;pointer-events:none}
+    .pill{padding:2px 8px;border:1px solid var(--grid);border-radius:999px;color:var(--muted);font-size:12px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  </style>
+</head>
+<body>
+<header>
+  <strong>Flow Editor</strong>
+  <input id="wfName" placeholder="workflow name" style="width:220px">
+  <button id="new" title="New">New</button>
+  <button id="validate">Validate</button>
+  <button id="save" class="primary">Save</button>
+  <button id="run">Run</button>
+  <span class="pill">API base</span>
+  <input id="apiBase" placeholder="http://127.0.0.1:8001" style="width:220px">
+  <span class="pill">Auth</span>
+  <input id="auth" placeholder="admintoken or Bearer ... " style="width:240px">
+</header>
+<main>
+  <aside>
+    <div class="palette">
+      <div class="item" draggable="true" data-type="echo">echo</div>
+      <div class="item" draggable="true" data-type="concat">concat</div>
+      <div class="item" draggable="true" data-type="webhook">webhook</div>
+    </div>
+    <div class="panel">
+      <div><strong>Edges</strong></div>
+      <div class="row">
+        <select id="edgeFrom"></select>
+        <select id="edgeTo"></select>
+        <button id="addEdge">Add</button>
+      </div>
+      <div class="mono" id="edgesList" style="white-space:pre-wrap"></div>
+    </div>
+    <div class="panel">
+      <div><strong>IO</strong></div>
+      <textarea id="io" class="mono" placeholder='{"inputs":{"message":{"type":"string"}},"outputs":{"result":"echo.out"}}' style="width:100%;height:160px;background:#0f1318;border:1px solid var(--grid);color:var(--fg);border-radius:8px;padding:8px"></textarea>
+    </div>
+    <div class="panel">
+      <div><strong>Import/Export</strong></div>
+      <button id="export">Export JSON</button>
+      <input id="importFile" type="file">
+    </div>
+  </aside>
+  <section class="canvas">
+    <div id="grid" class="grid" style="width:2000px;height:2000px">
+      <svg class="links"></svg>
+      <div id="nodes"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+const ls = localStorage;
+const base = ()=> ($('#apiBase').value || location.origin).replace(/\/$/, '');
+const hdr = ()=> { const h={}; const a=$('#auth').value.trim(); if(a) h['Authorization']=a; return h; };
+
+$('#apiBase').value = ls.getItem('flow.api') || location.origin;
+$('#auth').value = ls.getItem('flow.auth') || '';
+$('#apiBase').onchange = ()=> ls.setItem('flow.api', $('#apiBase').value);
+$('#auth').onchange = ()=> ls.setItem('flow.auth', $('#auth').value);
+
+let WF = { name: 'flow1', version: 1, inputs: {}, outputs: {}, nodes: [], edges: [] };
+$('#wfName').value = WF.name;
+
+function uid(p='n'){ return p + Math.random().toString(36).slice(2,7) }
+function addNode(type, x=100, y=100){
+  const id = uid(type+'_');
+  const n = { id, type, label: type, params: {}, inputs:{}, outputs:{} , _ui:{x,y} };
+  WF.nodes.push(n); render();
+}
+function rmNode(id){
+  WF.nodes = WF.nodes.filter(n=>n.id!==id);
+  WF.edges = WF.edges.filter(e => e.from_node!==id && e.to_node!==id);
+  render();
+}
+function addEdge(from, fport, to, tport){
+  WF.edges.push({from_node: from, from_port: fport, to_node: to, to_port: tport});
+  render();
+}
+function render(){
+  const container = $('#nodes'); container.innerHTML='';
+  WF.nodes.forEach(n => {
+    const el = document.createElement('div'); el.className='node'; el.style.left=(n._ui?.x||100)+'px'; el.style.top=(n._ui?.y||100)+'px'; el.dataset.id = n.id;
+    el.innerHTML = `
+      <div class="title">${n.label||n.type} <span class="mono">${n.id}</span> <a href="#" data-del="${n.id}" style="float:right">✖</a></div>
+      <div class="ports">
+        <div class="col">
+          <div class="mono">params</div>
+          <textarea data-params style="width:100%;height:80px;background:#0f1318;border:1px solid #1f2937;color:#e5e7eb;border-radius:8px"></textarea>
+        </div>
+        <div class="col">
+          <div class="mono">inputs</div>
+          <textarea data-inputs style="width:100%;height:80px;background:#0f1318;border:1px solid #1f2937;color:#e5e7eb;border-radius:8px"></textarea>
+        </div>
+        <div class="col">
+          <div class="mono">outputs</div>
+          <textarea data-outputs style="width:100%;height:80px;background:#0f1318;border:1px solid #1f2937;color:#e5e7eb;border-radius:8px"></textarea>
+        </div>
+      </div>`;
+    // fill
+    el.querySelector('[data-params]').value = JSON.stringify(n.params||{}, null, 2);
+    el.querySelector('[data-inputs]').value = JSON.stringify(n.inputs||{}, null, 2);
+    el.querySelector('[data-outputs]').value = JSON.stringify(n.outputs||{}, null, 2);
+    // drag
+    let drag=false, dx=0, dy=0;
+    el.onmousedown = e => { if(e.target.tagName==='TEXTAREA' || e.target.tagName==='A') return; drag=true; dx=e.offsetX; dy=e.offsetY; };
+    window.onmouseup = ()=> drag=false;
+    window.onmousemove = e => { if(!drag) return; const grid=$('#grid').getBoundingClientRect(); n._ui={x:e.clientX-grid.left-dx, y:e.clientY-grid.top-dy}; el.style.left=n._ui.x+'px'; el.style.top=n._ui.y+'px'; drawLinks(); };
+    // change handlers
+    el.querySelector('[data-params]').onchange = ev => { try{ n.params = JSON.parse(ev.target.value||'{}'); }catch(e){ alert('bad params JSON'); } };
+    el.querySelector('[data-inputs]').onchange = ev => { try{ n.inputs = JSON.parse(ev.target.value||'{}'); }catch(e){ alert('bad inputs JSON'); } };
+    el.querySelector('[data-outputs]').onchange = ev => { try{ n.outputs = JSON.parse(ev.target.value||'{}'); }catch(e){ alert('bad outputs JSON'); } };
+    // delete
+    el.querySelector('a[data-del]').onclick = (ev)=>{ ev.preventDefault(); rmNode(n.id); };
+    container.appendChild(el);
+  });
+  refreshEdgeSelectors();
+  drawLinks();
+  $('#io').value = JSON.stringify({ inputs: WF.inputs||{}, outputs: WF.outputs||{} }, null, 2);
+  $('#wfName').value = WF.name || '';
+  $('#edgesList').textContent = JSON.stringify(WF.edges, null, 2);
+}
+function refreshEdgeSelectors(){
+  const s1=$('#edgeFrom'); const s2=$('#edgeTo'); s1.innerHTML=''; s2.innerHTML='';
+  WF.nodes.forEach(n => {
+    const o=document.createElement('option'); o.value=n.id; o.textContent=n.id+' (out)'; s1.appendChild(o);
+    const i=document.createElement('option'); i.value=n.id; i.textContent=n.id+' (in)'; s2.appendChild(i);
+  });
+}
+function drawLinks(){
+  const svg = $('svg.links'); svg.innerHTML='';
+  const gridRect = $('#grid').getBoundingClientRect();
+  function center(id){
+    const el = $(`.node[data-id="${id}"]`); if(!el) return {x:0,y:0};
+    const r = el.getBoundingClientRect(); return { x: r.left - gridRect.left + r.width/2, y: r.top - gridRect.top + r.height/2 };
+  }
+  WF.edges.forEach(e => {
+    const a=center(e.from_node), b=center(e.to_node);
+    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const d = `M ${a.x},${a.y} C ${a.x+80},${a.y} ${b.x-80},${b.y} ${b.x},${b.y}`;
+    p.setAttribute('d', d); p.setAttribute('fill','none'); p.setAttribute('stroke','#94a3b8'); p.setAttribute('stroke-width','2');
+    svg.appendChild(p);
+  });
+}
+
+// Palette drag
+$$('.palette .item').forEach(it => {
+  it.ondragstart = ev => { ev.dataTransfer.setData('text/plain', it.dataset.type); };
+});
+$('#grid').ondragover = ev => ev.preventDefault();
+$('#grid').ondrop = ev => {
+  ev.preventDefault(); const type = ev.dataTransfer.getData('text/plain'); const rect = $('#grid').getBoundingClientRect();
+  addNode(type, ev.clientX-rect.left, ev.clientY-rect.top);
+};
+
+$('#addEdge').onclick = () => {
+  const f=$('#edgeFrom').value, t=$('#edgeTo').value;
+  const fport = prompt('from port (e.g. out)') || 'out';
+  const tport = prompt('to port (e.g. in)') || 'in';
+  addEdge(f, fport, t, tport);
+};
+
+$('#new').onclick = () => { WF = { name: 'flow'+Math.random().toString(36).slice(2,6), version:1, inputs:{}, outputs:{}, nodes:[], edges:[] }; render(); };
+$('#validate').onclick = async () => {
+  try{ const io = JSON.parse($('#io').value||'{}'); WF.inputs = io.inputs||{}; WF.outputs = io.outputs||{}; }catch(e){ alert('bad IO json'); return; }
+  const r = await fetch(base()+'/workflows/validate', { method:'POST', headers:{'Content-Type':'application/json', ...hdr()}, body: JSON.stringify(WF) });
+  const j = await r.json(); alert(JSON.stringify(j));
+};
+$('#save').onclick = async () => {
+  try{ const io = JSON.parse($('#io').value||'{}'); WF.inputs = io.inputs||{}; WF.outputs = io.outputs||{}; }catch(e){ alert('bad IO json'); return; }
+  WF.name = $('#wfName').value || WF.name;
+  const r = await fetch(base()+'/workflows/put/'+encodeURIComponent(WF.name), { method:'POST', headers:{'Content-Type':'application/json', ...hdr()}, body: JSON.stringify(WF) });
+  const j = await r.json(); alert(JSON.stringify(j));
+};
+$('#run').onclick = async () => {
+  const name = $('#wfName').value.trim(); if(!name){ alert('save and set a name first'); return; }
+  const r = await fetch(base()+'/wf-runtime/run', { method:'POST', headers:{'Content-Type':'application/json', ...hdr()}, body: JSON.stringify({ name, inputs:{} }) });
+  const j = await r.json(); alert(JSON.stringify(j));
+};
+
+$('#export').onclick = () => {
+  const blob = new Blob([JSON.stringify(WF, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (WF.name||'workflow')+'.json'; a.click();
+};
+$('#importFile').onchange = ev => {
+  const f=ev.target.files[0]; if(!f) return;
+  const fr = new FileReader(); fr.onload = () => { try { WF = JSON.parse(fr.result); render(); } catch(e){ alert('bad JSON'); } };
+  fr.readAsText(f);
+};
+
+render();
+</script>
+</body>
+</html>

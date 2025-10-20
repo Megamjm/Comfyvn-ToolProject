@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/roleplay_preview_ui.py
 # 🎭 Roleplay Scene Preview Player — Phase 3.7
 # [ComfyVN_Architect | Roleplay Import & Collaboration Chat]

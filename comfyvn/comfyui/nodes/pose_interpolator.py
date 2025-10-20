@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/comfyui/nodes/pose_interpolator.py
 # Pose Interpolator Node for ComfyUI (ComfyVN_Architect)
 

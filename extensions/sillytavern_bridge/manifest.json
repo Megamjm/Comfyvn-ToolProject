@@ -1,0 +1,7 @@
+{
+  "name": "SillyTavern Bridge",
+  "id": "sillytavern_bridge",
+  "version": "0.1.0",
+  "entry": "extensions/sillytavern_bridge/entry.py",
+  "menus": [{"menu":"View","label":"Extensions","action":"open_extensions"}]
+}

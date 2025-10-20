@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/npc_manager.py
 # 🧍 Asset & Sprite System Production Chat Implementation
 

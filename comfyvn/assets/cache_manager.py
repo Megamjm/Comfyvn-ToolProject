@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/cache_manager.py
 # 🧩 Cache Manager – Persistent Asset Caching + TTL Cleanup (Patch P)
 # ComfyVN Architect | Server Core Integration Sync

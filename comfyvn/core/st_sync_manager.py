@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/st_sync_manager.py
 # ⚙️ 3. Server Core Production Chat — SillyTavern Generic Sync Manager
 

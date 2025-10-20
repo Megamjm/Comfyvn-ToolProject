@@ -1,0 +1,14 @@
+{
+  "id": "adaptive_vn",
+  "mode": "adaptive",
+  "description": "Branching VN with dynamic state and conditional assets",
+  "pipeline": [
+    "STATE_SYNC",
+    "SAY",
+    "CHOICE_SET",
+    "MOVE",
+    "RENDER_BG",
+    "RENDER_SPRITE",
+    "ASSET_READY"
+  ]
+}

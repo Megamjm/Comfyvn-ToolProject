@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/roleplay_import_ui.py
 # 🤝 Roleplay Import Panel — Phase 3.5 LLM Sampler
 # [ComfyVN_Architect | Roleplay Import & Collaboration Chat]

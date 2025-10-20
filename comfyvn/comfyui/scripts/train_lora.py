@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/scripts/train_lora.py
 # 🧬 LoRA Training Automation (v1.0)
 # Chat Source: 🧬 9. LoRA System Production Chat

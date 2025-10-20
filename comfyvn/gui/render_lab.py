@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # [replace test_render() body] // ComfyVN_Architect (Asset Sprite Research Branch)
 def test_render(self):
     style = self.styles.get(self.cbo_style.currentText(), {})

@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/world_loader.py
 # 🌍 World Loader – Clean-State Sync + SillyTavern Integration (Synced v2.3)
 # ComfyVN Architect — Production Standard (2025-10)

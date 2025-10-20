@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/sillytavern_bridge.py
 # 🌐 SillyTavern Bridge – Async World Lore Sync (Patch L)
 # ComfyVN Architect | Server Core Integration Sync

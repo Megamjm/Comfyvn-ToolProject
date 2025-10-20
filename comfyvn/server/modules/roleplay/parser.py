@@ -1,25 +1,10 @@
-# comfyvn/server/modules/roleplay/parser.py
-# 🤝 ComfyVN Roleplay Importer — Phase 3.2 Scaffold
-# [Roleplay Import & Collaboration Chat | ComfyVN_Architect]
-
+from PySide6.QtGui import QAction
 import re
 from typing import List, Dict
-
-
 class RoleplayParser:
-    """Extracts speaker lines and timestamps from raw chat logs."""
-
-    def __init__(self):
-        self.speaker_pattern = re.compile(
-            r"^(\[?[\d: ]*\]?\s*)([A-Za-z0-9_\- ]+):\s*(.+)$"
-        )
-
-    def parse_text(self, raw_text: str) -> List[Dict]:
-        lines = []
-        for i, line in enumerate(raw_text.splitlines()):
-            match = self.speaker_pattern.match(line.strip())
-            if match:
-                speaker = match.group(2).strip()
-                text = match.group(3).strip()
-                lines.append({"line_id": i, "speaker": speaker, "text": text})
+    def parse_text(self, text: str) -> List[Dict]:
+        lines=[]
+        for raw in filter(None,[t.strip() for t in text.splitlines()]):
+            m=re.match(r"^(\w+):\s*(.+)$", raw)
+            lines.append({"speaker":m.group(1),"text":m.group(2)}) if m else lines.append({"speaker":"Narrator","text":raw})
         return lines

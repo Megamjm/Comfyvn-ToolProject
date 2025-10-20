@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/help_menu.py
 import webbrowser, os
 from PySide6.QtWidgets import QMessageBox

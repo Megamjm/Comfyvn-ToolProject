@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/components/status_bar.py
 # 🧩 ComfyVN StatusBar Component
 # Provides unified, color-coded feedback across all GUI systems.

@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/core/job_manager.py
 # ⚙️ Job Manager — Async + EventBus Integration (v3.3)
 # [Server Core Production Chat | ComfyVN Architect Sync]

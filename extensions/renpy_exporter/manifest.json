@@ -1,0 +1,7 @@
+{
+  "name": "Ren'Py Exporter",
+  "id": "renpy_exporter",
+  "version": "0.1.0",
+  "entry": "extensions/renpy_exporter/entry.py",
+  "menus": [{"menu":"Tools","label":"Export → Ren'Py (WIP)","action":"open_render"}]
+}

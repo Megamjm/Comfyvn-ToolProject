@@ -1,0 +1,1 @@
+GUI v0.8 — standalone studio. Launch: python -m comfyvn.gui.main_window_v08

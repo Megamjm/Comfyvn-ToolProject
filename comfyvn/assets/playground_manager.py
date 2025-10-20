@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/playground_manager.py
 # 🧪 Playground Manager – Unified Scene & Pose Sandbox (v0.4.3)
 # [ComfyVN Architect | Server Core + GUI Integration Sync]

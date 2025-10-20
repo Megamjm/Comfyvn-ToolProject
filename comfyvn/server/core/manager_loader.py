@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/server/core/manager_loader.py
 # 🧩 Central Manager Loader — audio, lora, playground, persona, etc.
 

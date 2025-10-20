@@ -1,0 +1,9 @@
+{
+  "name": "Import Manager",
+  "id": "import_manager",
+  "version": "0.1.0",
+  "entry": "extensions/import_manager/manager.py",
+  "menus": [
+    {"menu": "Tools", "label": "Import Assets…", "action": "open_import_window"}
+  ]
+}

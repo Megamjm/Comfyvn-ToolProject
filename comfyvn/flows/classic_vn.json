@@ -1,0 +1,12 @@
+{
+  "id": "classic_vn",
+  "mode": "static",
+  "description": "Text-forward VN with static backgrounds and sprite swaps",
+  "pipeline": [
+    "SAY",
+    "CHOICE_SET",
+    "SHOW_BG",
+    "SHOW_SPRITE",
+    "JUMP"
+  ]
+}

@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/scene_preprocessor.py
 # 🧩 Scene Preprocessor – Mode-Aware Prompt Normalizer (Patch N)
 # ComfyVN Architect | Server Core Integration Sync

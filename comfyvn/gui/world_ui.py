@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/world_ui.py
 # 🌍 World Manager GUI with integrated StatusBar feedback
 

@@ -1,0 +1,8 @@
+{
+  "name": "Demo Importer",
+  "type": "menu_hook",
+  "menu": "File/Import",
+  "label": "Demo Import (Hello)",
+  "module": "comfyvn.extensions.demo_importer.entry",
+  "callable": "open_dialog"
+}

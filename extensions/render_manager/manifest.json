@@ -1,0 +1,10 @@
+{
+  "name": "Render Manager",
+  "id": "render_manager",
+  "version": "0.2.0",
+  "entry": "extensions/render_manager/manager.py",
+  "menus": [
+    {"menu": "View", "label": "Render Queue", "action": "open_render"},
+    {"menu": "Tools", "label": "Submit Dummy Render", "action": "submit_dummy_render"}
+  ]
+}

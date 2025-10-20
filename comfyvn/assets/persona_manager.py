@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/persona_manager.py
 # 🫂 Persona & Group Production Chat — Phase 3.2
 # [Persona_ComfyUI_Bridge]

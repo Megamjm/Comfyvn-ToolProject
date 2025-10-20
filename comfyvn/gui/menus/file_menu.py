@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/file_menu.py
 from PySide6.QtWidgets import QMenu
 from comfyvn.gui.menus.menu_utils import make_action

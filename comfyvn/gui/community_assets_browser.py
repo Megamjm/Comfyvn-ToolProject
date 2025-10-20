@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/gui/community_assets_browser.py
 # Community Assets Browser Dock (Safe Mode + Legal + Update Check)
 # ComfyVN_Architect (Asset Sprite Research Branch)

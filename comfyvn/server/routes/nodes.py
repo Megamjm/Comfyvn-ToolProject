@@ -1,8 +1,11 @@
+from __future__ import annotations
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/server/routes/nodes.py
 # ⚙️ Node Management API — REST endpoints for distributed compute nodes
 # [ComfyVN Architect | Server Core Production Chat]
 
-from __future__ import annotations
 from fastapi import APIRouter, Request, HTTPException
 from comfyvn.core.node_manager import NodeManager
 

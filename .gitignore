@@ -54,6 +54,9 @@ assets/sprites/
 .env
 *.env
 .env.*
+.venv
+venv/
+.venv/
 
 # --- Local configs that shouldn’t ship ---
 comfyvn/*.local.json
@@ -68,3 +71,7 @@ data/**
 !data/.gitkeep
 renpy_project/
 .venv
+.bak
+config/
+models/
+tools/

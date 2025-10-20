@@ -1,0 +1,5 @@
+name: ComfyVN
+version: 1.0.0
+date: 2025-10-15
+maintainer: Megamjm
+description: Unified Visual Novel generation suite integrating ComfyUI, SillyTavern, and Ren'Py.

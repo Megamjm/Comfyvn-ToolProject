@@ -1,10 +1,13 @@
+from __future__ import annotations
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/audio_manager.py
 # 🔊 Audio & Effects Production Chat — Harmonized Full Version
 # [ComfyVN Chat 6 Integration Build | Phase 3.8]
 # Compatible with: SceneManager, UIManager, SystemCore, ScriptParser
 # Last sync: 2025-10-12
 
-from __future__ import annotations
 import os, json
 from pathlib import Path
 from typing import Optional, Dict, Literal, Tuple

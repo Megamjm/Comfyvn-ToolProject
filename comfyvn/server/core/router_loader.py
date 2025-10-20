@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/server/core/router_loader.py
 # 🌐 Router Loader — discovers & registers all API modules
 

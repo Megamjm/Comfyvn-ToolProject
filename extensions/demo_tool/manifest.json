@@ -1,0 +1,8 @@
+{
+  "name": "Demo Tool",
+  "type": "menu_hook",
+  "menu": "Tools",
+  "label": "Demo Tool Action",
+  "module": "comfyvn.extensions.demo_tool.entry",
+  "callable": "run_tool"
+}

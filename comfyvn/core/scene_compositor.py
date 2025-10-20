@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/scene_compositor.py
 # Alpha-aware stacking of PNG layers for scene composition
 # ComfyVN_Architect (Asset Sprite Research Branch)

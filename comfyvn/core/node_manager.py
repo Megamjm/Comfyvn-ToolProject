@@ -1,3 +1,7 @@
+from __future__ import annotations
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/core/node_manager.py
 # ⚙️ ComfyVN Node Manager (v3.0)
 # Lightweight registry + heartbeat for distributed compute nodes
@@ -5,7 +9,6 @@
 # Roles: ["lm", "render", "renpy", "sync", ...]
 # [ComfyVN Architect | Server Core Production Chat]
 
-from __future__ import annotations
 import os, json, time, secrets, hashlib
 from typing import Dict, Any, List, Optional
 

@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/tools/check_imports.py
 # 🧠 ComfyVN Import Checker & Auto-Fixer (v0.4)
 # Detects outdated imports, rewrites to new structure, verifies, and cleans backups.

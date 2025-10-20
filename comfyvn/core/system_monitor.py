@@ -1,3 +1,6 @@
+from PySide6.QtGui import QAction
+import logging
+logger = logging.getLogger(__name__)
 # comfyvn/modules/system_monitor.py
 # 🧠 ComfyVN System Monitor — v2.0 (Phase 3.4-A)
 # Unified telemetry collector for ServerCore, LM Studio, SillyTavern, WorldUI, and local hardware

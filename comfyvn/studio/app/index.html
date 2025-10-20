@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>ComfyVN Studio</title>
+  <link rel="icon" href="/studio/favicon.ico">
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;margin:0}
+    header{display:flex;gap:.5rem;align-items:center;border-bottom:1px solid #ddd;padding:.5rem 1rem}
+    nav a{margin-right:.75rem}
+    main{display:grid;grid-template-columns:1fr 1fr;gap:0;height:calc(100vh - 54px)}
+    textarea{width:100%;height:100%;border:none;outline:none;padding:.75rem;font-family:ui-monospace,Consolas,monospace;font-size:14px;box-sizing:border-box}
+    pre{margin:0;padding:.75rem;height:100%;overflow:auto;background:#111;color:#eee;font-size:13px}
+    .grow{flex:1}.pill{padding:.35rem .6rem;border:1px solid #bbb;border-radius:.4rem;background:#f7f7f7;cursor:pointer}
+    .inp{padding:.35rem .5rem;border:1px solid #bbb;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/studio/">Studio</a>
+      <a href="/studio/assets.html">Assets</a>
+      <a href="/studio/roleplay.html">Roleplay</a>
+      <a href="/studio/scheduler.html">Scheduler</a>
+      <a href="/studio/env.html">Env</a>
+    </nav>
+    <strong class="grow">ComfyVN Studio</strong>
+    <button id="btnValidate" class="pill">Validate</button>
+    <button id="btnSave" class="pill">Save</button>
+    <input id="args" class="inp" style="width:220px" value="message=hello"/>
+    <button id="btnRun" class="pill">Instantiate</button>
+  </header>
+  <main>
+    <section><textarea id="wf"></textarea></section>
+    <section><pre id="log">ready</pre></section>
+  </main>
+  <script src="/studio/app.js" defer></script>
+</body>
+</html>
