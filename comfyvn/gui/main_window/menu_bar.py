@@ -6,9 +6,15 @@ from PySide6.QtWidgets import QMenu
 
 from comfyvn.core.settings_manager import SettingsManager
 
-SECTION_ORDER = ["File", "View", "Spaces", "Tools", "Settings", "GPU", "Window", "Help"]
+SECTION_ORDER = ["File", "View", "Spaces", "Tools", "Extensions", "Settings", "GPU", "Window", "Help"]
 
 BEST_PRACTICE_SECTION_ITEMS = {
+    "File": [
+        "Open Projects Folder",
+        "Open Data Folder",
+        "Open Logs Folder",
+        "Exit",
+    ],
     "View": [
         "Studio Center",
         "Assets",
@@ -18,10 +24,16 @@ BEST_PRACTICE_SECTION_ITEMS = {
         "Log Hub",
     ],
     "Tools": [
-        "Server Console",
+        "Reload Menus",
+        "Launch Detached Server",
+        "Install Base Scripts",
+    ],
+    "Extensions": [
+        "Reload Extensions",
+        "Open Extensions Folder",
     ],
     "Settings": [
-        "Install Base Scripts",
+        "Settings Panel",
     ],
 }
 

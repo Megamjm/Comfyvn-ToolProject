@@ -1,5 +1,5 @@
 from __future__ import annotations
-import importlib.util, sys
+import importlib.util, sys, inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -60,6 +60,13 @@ def reload_from_extensions(
             if not mod: continue
             fn = getattr(mod, "register", None)
             if callable(fn):
-                fn(registry)
+                try:
+                    sig = inspect.signature(fn)
+                    if len(sig.parameters) == 0:
+                        fn()
+                    else:
+                        fn(registry)
+                except (ValueError, TypeError):
+                    fn(registry)
         except Exception as e:
             print("[Extensions] Failed to load", py, ":", e)

@@ -42,8 +42,11 @@ class SettingsPanel(QDockWidget):
         ui_cfg["menu_sort_mode"] = self.menu_sort.currentData()
         cfg["ui"] = ui_cfg
         self.settings_manager.save(cfg)
+
         parent = self.parent()
-        if hasattr(parent, "reload_menus"):
+        while parent is not None and not hasattr(parent, "reload_menus"):
+            parent = parent.parent()
+        if parent is not None and hasattr(parent, "reload_menus"):
             try:
                 parent.reload_menus()
             except Exception:

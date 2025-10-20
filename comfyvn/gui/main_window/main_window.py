@@ -5,11 +5,11 @@ from __future__ import annotations
 import sys, subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QDockWidget, QWidget, QVBoxLayout, QLabel, QStatusBar
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QDesktopServices
 
 # Core studio shell & mixins
 from .shell_studio import ShellStudio
@@ -31,6 +31,7 @@ from comfyvn.gui.panels.asset_browser import AssetBrowser
 from comfyvn.gui.panels.playground_panel import PlaygroundPanel
 from comfyvn.gui.panels.timeline_panel import TimelinePanel
 from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
+from comfyvn.gui.panels.settings_panel import SettingsPanel
 from comfyvn.gui.widgets.log_hub import LogHub
 
 # Central space
@@ -119,40 +120,90 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     # Panel openers (lazy)
     # --------------------
     def open_studio_center(self):
-        if not hasattr(self, "_studio_center"):
-            self._studio_center = StudioCenter(self.bridge, self)
-            self.dockman.dock(self._studio_center, "Studio Center")
-        self._studio_center.setVisible(True)
+        dock = getattr(self, "_studio_center_dock", None)
+        if dock is None:
+            panel = StudioCenter(self.bridge, self)
+            dock = self.dockman.dock(panel, "Studio Center")
+            self._studio_center_dock = dock
+        dock.setVisible(True)
+        dock.raise_()
 
     def open_asset_browser(self):
-        if not hasattr(self, "_asset_browser"):
-            self._asset_browser = AssetBrowser(self.bridge, self)
-            self.dockman.dock(self._asset_browser, "Assets")
-        self._asset_browser.setVisible(True)
+        dock = getattr(self, "_asset_browser", None)
+        if dock is None:
+            dock = AssetBrowser("data/assets")
+            self.dockman.dock(dock, "Assets")
+            self._asset_browser = dock
+        dock.setVisible(True)
+        dock.raise_()
 
     def open_playground(self):
-        if not hasattr(self, "_playground"):
-            self._playground = PlaygroundPanel(self.bridge, self)
-            self.dockman.dock(self._playground, "Playground")
-        self._playground.setVisible(True)
+        dock = getattr(self, "_playground", None)
+        if dock is None:
+            dock = PlaygroundPanel(self.bridge.base)
+            self.dockman.dock(dock, "Playground")
+            self._playground = dock
+        dock.setVisible(True)
+        dock.raise_()
 
     def open_timeline(self):
-        if not hasattr(self, "_timeline"):
-            self._timeline = TimelinePanel(self.bridge, self)
-            self.dockman.dock(self._timeline, "Timeline")
-        self._timeline.setVisible(True)
+        dock = getattr(self, "_timeline", None)
+        if dock is None:
+            dock = TimelinePanel()
+            self.dockman.dock(dock, "Timeline")
+            self._timeline = dock
+        dock.setVisible(True)
+        dock.raise_()
 
     def open_telemetry(self):
-        if not hasattr(self, "_telemetry"):
-            self._telemetry = TelemetryPanel(self.bridge, self)
-            self.dockman.dock(self._telemetry, "System Status")
-        self._telemetry.setVisible(True)
+        dock = getattr(self, "_telemetry_dock", None)
+        if dock is None:
+            panel = TelemetryPanel(self.bridge.base)
+            dock = self.dockman.dock(panel, "System Status")
+            self._telemetry_dock = dock
+        dock.setVisible(True)
+        dock.raise_()
 
     def open_log_hub(self):
-        if not hasattr(self, "_loghub"):
-            self._loghub = LogHub()
-            self.dockman.dock(self._loghub, "Log Hub")
-        self._loghub.setVisible(True)
+        dock = getattr(self, "_loghub_dock", None)
+        if dock is None:
+            panel = LogHub()
+            dock = self.dockman.dock(panel, "Log Hub")
+            self._loghub_dock = dock
+        dock.setVisible(True)
+        dock.raise_()
+
+    def open_settings_panel(self):
+        dock = getattr(self, "_settings_panel", None)
+        if dock is None:
+            dock = SettingsPanel(self.bridge)
+            self.dockman.dock(dock, "Settings")
+            self._settings_panel = dock
+        dock.setVisible(True)
+        dock.raise_()
+
+    # --------------------
+    # Utility helpers
+    # --------------------
+    def launch_detached_server(self):
+        _detached_server()
+
+    def open_projects_folder(self):
+        self._open_folder(Path("data/projects"))
+
+    def open_data_folder(self):
+        self._open_folder(Path("data"))
+
+    def open_logs_folder(self):
+        self._open_folder(Path("logs"))
+
+    def open_extensions_folder(self):
+        self._open_folder(Path("extensions"))
+
+    def _open_folder(self, folder: Path):
+        path = Path(folder).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     # --------------------
     # Server monitoring
