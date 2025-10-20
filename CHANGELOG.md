@@ -9,6 +9,10 @@
 - `ServerBridge` adds synchronous helpers (`ping`, `ensure_online`, `projects*`) plus optional async callbacks, ensuring GUI menus/panels can connect to remote or local servers without requiring Qt to be installed server-side.
 - Main window status polling now consumes the new bridge contract, and settings/gpu panels surface success/error states from REST calls.
 - Documentation refreshed (`README.md`, `architecture.md`) with a startup command list and environment variable guide for the new launcher.
+- Settings panel exposes a *Compute / Server Endpoints* manager driven by the compute provider registry and provider APIs, including local discovery, manual add/remove, and health probes that keep GPU tooling in sync with remote nodes.
+- Reduced GUI log noise by downgrading transient HTTP failures to warnings within `ServerBridge`.
+- Launcher now performs a lightweight hardware probe before auto-starting the embedded backend and logs a warning (without crashing) when no suitable compute path is available, defaulting to remote attach flows.
+- Studio status bar gained a separate script indicator; script utilities update it with green/amber/red icons while logging failures for post-mortem analysis.
 
 ### 2025-10-21 — Asset Provenance Ledger (chat: Core Updates)
 - `AssetRegistry.register_file` now records provenance rows, preserves license metadata, and writes sidecars containing provenance ids/source/hash.

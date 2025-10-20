@@ -78,3 +78,15 @@ async def provider_health_check(payload: Optional[Dict[str, Any]] = Body(None)) 
         REGISTRY.record_health(pid, status)
         results.append(status)
     return {"ok": True, "results": results}
+
+
+@router.delete("/remove/{provider_id}")
+async def remove_provider(provider_id: str) -> Dict[str, Any]:
+    try:
+        removed = REGISTRY.remove(provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not removed:
+        raise HTTPException(status_code=404, detail="provider not found")
+    LOGGER.info("Provider removed -> %s", provider_id)
+    return {"ok": True, "removed": provider_id}

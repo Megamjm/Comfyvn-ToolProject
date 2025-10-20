@@ -339,7 +339,33 @@ def bootstrap_environment() -> None:
         result = subprocess.call(command, env=env)
         sys.exit(result)
 
-    os.environ[BOOTSTRAP_FLAG] = "1"
+os.environ[BOOTSTRAP_FLAG] = "1"
+
+
+def detect_render_support() -> tuple[bool, str]:
+    """
+    Determine whether the host appears capable of running the embedded backend.
+    CPU-only operation is acceptable; we primarily guard catastrophic detection failures.
+    """
+    try:
+        from comfyvn.core.gpu_manager import GPUManager  # type: ignore
+    except Exception as exc:  # pragma: no cover - lazy import
+        return False, f"gpu_manager import failed: {exc}"
+
+    try:
+        manager = GPUManager()
+        devices = manager.list_all(refresh=True)
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"hardware detection failed: {exc}"
+
+    if not devices:
+        return False, "no compute devices detected"
+
+    available = [dev for dev in devices if dev.get("available") is not False]
+    if not available:
+        return False, "detected devices are unavailable"
+
+    return True, ""
 
 
 def launch_app() -> None:
@@ -355,7 +381,12 @@ def launch_app() -> None:
     from comfyvn.gui.main_window import main
 
     log("🎨 Launching GUI and embedded backend …")
-    main()
+    try:
+        main()
+    except Exception as exc:  # pragma: no cover - GUI bootstrap guard
+        log(f"GUI encountered a fatal error: {exc}")
+        LOGGER.exception("GUI launch failed")
+        sys.exit(1)
 
 
 def main(argv: Optional[list[str]] = None) -> None:
@@ -363,6 +394,13 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = parse_arguments(argv)
     apply_launcher_environment(args)
     bootstrap_environment()
+    supports_render = True
+    render_reason = ""
+    if not args.server_only:
+        supports_render, render_reason = detect_render_support()
+        if (not supports_render) and not args.server_url:
+            log(f"⚠️ Render hardware check failed ({render_reason}). Skipping automatic backend launch.")
+            os.environ["COMFYVN_SERVER_AUTOSTART"] = "0"
     if args.server_only:
         launch_server(
             args.uvicorn_app,
@@ -374,6 +412,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             factory=args.uvicorn_factory,
         )
         return
+    if not supports_render and render_reason:
+        log("GUI will attach without a local backend. Configure a remote server via Settings → Compute / Server Endpoints.")
     launch_app()
 
 

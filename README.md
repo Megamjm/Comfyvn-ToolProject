@@ -145,6 +145,8 @@ Environment variables honour the same knobs:
 - `COMFYVN_SERVER_BASE` – default base URL for the GUI and CLI helpers (set automatically from `--server-url` or the derived host/port).
 - `COMFYVN_SERVER_AUTOSTART=0` – disable GUI auto-start of a local server.
 - `COMFYVN_SERVER_HOST`, `COMFYVN_SERVER_PORT`, `COMFYVN_SERVER_APP`, `COMFYVN_SERVER_LOG_LEVEL` – default values consumed by the launcher when flags are omitted.
+- GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
+- The launcher performs a basic hardware probe before auto-starting the embedded backend. When no suitable compute path is found it skips the local server, logs the reason, and guides you to connect to a remote node instead of crashing outright.
 
 The GUI’s “Start Server” helper still delegates to `python comfyvn/app.py`, logging output to `logs/server_detached.log`, so manual invocations remain in sync with UI behaviour.
 
@@ -152,6 +154,7 @@ The GUI’s “Start Server” helper still delegates to `python comfyvn/app.py`
 
 - Server logs aggregate at `logs/server.log`. Override defaults with `COMFYVN_LOG_FILE`/`COMFYVN_LOG_LEVEL` before launching `uvicorn` or the CLI.
 - GUI messages write to `logs/gui.log`; launcher activity goes to `logs/launcher.log`.
+- The Studio status bar now shows a dedicated “Scripts” indicator. Installers and scripted utilities update the indicator so failed runs surface as a red icon with the last error message while keeping the application responsive.
 - CLI commands (e.g. `python -m comfyvn bundle ...`) create timestamped run directories under `logs/run-*/run.log` via `comfyvn.logging_setup`.
 - When tracking regressions, run `pytest tests/test_server_entrypoint.py` to confirm `/health`, `/healthz`, and `/status` remain reachable.
 - The quick HTTP/WS diagnostics in `smoke_checks.py` exercise `/limits/status`, `/scheduler/health`, and the collab WebSocket. Run it while the backend is online to capture network traces.

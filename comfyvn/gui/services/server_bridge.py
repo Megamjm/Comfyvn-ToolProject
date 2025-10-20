@@ -98,12 +98,13 @@ class ServerBridge(QObject):
         result: Dict[str, Any] = {"ok": False, "status": None, "data": None}
         try:
             with httpx.Client(timeout=timeout) as cli:
-                if method.upper() == "POST":
-                    response = cli.post(url, json=payload)
+                method_upper = method.upper()
+                if method_upper in {"POST", "PUT", "PATCH", "DELETE"}:
+                    response = cli.request(method_upper, url, json=payload if payload else None)
                 else:
                     response = cli.get(url, params=payload)
         except Exception as exc:
-            logger.error("%s %s failed: %s", method.upper(), url, exc, exc_info=True)
+            logger.warning("%s %s failed: %s", method.upper(), url, exc)
             result.update({"error": str(exc)})
             return result
 
@@ -180,6 +181,61 @@ class ServerBridge(QObject):
         return self.post_json("/settings/save", payload, cb=cb)
     def post(self, path: str, payload: Dict[str, Any], *, timeout: float = 5.0, cb: Optional[Callable[[Dict[str, Any]], None]] = None, default: Any = _UNSET):
         return self.post_json(path, payload, timeout=timeout, cb=cb, default=default)
+
+    def providers_list(self) -> Optional[Dict[str, Any]]:
+        result = self.get_json("/api/providers/list", default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_register(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        result = self.post_json("/api/providers/register", payload, default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_activate(self, provider_id: str, active: bool) -> Optional[Dict[str, Any]]:
+        result = self.post_json("/api/providers/activate", {"id": provider_id, "active": active}, default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_reorder(self, order: list[str]) -> Optional[Dict[str, Any]]:
+        result = self.post_json("/api/providers/order", {"order": order}, default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_remove(self, provider_id: str) -> Optional[Dict[str, Any]]:
+        result = self._request("DELETE", f"/api/providers/remove/{provider_id}", timeout=5.0)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_health(self, provider_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        payload = {"id": provider_id} if provider_id else None
+        result = self.post_json("/api/providers/health", payload or {}, default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
 
     def ping(self, timeout: float = 0.5) -> bool:
         result = self.get_json("/system/ping", timeout=timeout)

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QPushButton, QListWidget, QListWidgetItem, QTextBrowser)
 from PySide6.QtCore import Qt
 from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.core.compute_registry import ComputeProviderRegistry
 import json, os
 from pathlib import Path
 
@@ -41,6 +42,7 @@ class GPUSetupWindow(QDialog):
         self.setWindowTitle("GPU Setup")
         self.resize(760, 520)
         self.bridge = ServerBridge(base=base)
+        self.provider_registry = ComputeProviderRegistry()
         self._load_local_cfg()
 
         self.list = QListWidget()
@@ -93,6 +95,7 @@ class GPUSetupWindow(QDialog):
         except Exception:
             data = {}
         self._cfg = data
+        self._merge_registry_remotes()
 
     def _save_local_cfg(self):
         try:
@@ -123,6 +126,7 @@ class GPUSetupWindow(QDialog):
             self._cfg[keyname] = self.api_key_edit.text().strip()
         self._cfg["REMOTE_GPU_LIST"] = self.remote_list_edit.text().strip()
         ok = self._save_local_cfg()
+        self._sync_registry_with_remote_list()
         # best-effort server push if available
         _ = self.bridge.set("REMOTE_GPU_LIST", self._cfg.get("REMOTE_GPU_LIST",""))
         self.setWindowTitle("GPU Setup (saved)" if ok else "GPU Setup (save failed)")
@@ -138,3 +142,37 @@ class GPUSetupWindow(QDialog):
             result = self.bridge.get_json(f"{h}/health", default=None)
             alive = isinstance(result, dict) and result.get("ok")
             self.info.append(f"<p>{h}: {'🟢 OK' if alive else '🔴 Unreachable'}</p>")
+
+    # ---- registry helpers ----
+    def _merge_registry_remotes(self) -> None:
+        remotes = set()
+        for entry in self.provider_registry.list():
+            if entry.get("kind") == "local":
+                continue
+            url = (entry.get("base_url") or "").strip()
+            if url:
+                remotes.add(url)
+        existing = {h.strip() for h in (self._cfg.get("REMOTE_GPU_LIST", "") or "").split(",") if h.strip()}
+        combined = sorted(remotes.union(existing))
+        if combined:
+            self._cfg["REMOTE_GPU_LIST"] = ",".join(combined)
+
+    def _sync_registry_with_remote_list(self) -> None:
+        raw = self._cfg.get("REMOTE_GPU_LIST", "") or ""
+        remotes = [h.strip() for h in raw.split(",") if h.strip()]
+        current = {entry.get("base_url"): entry for entry in self.provider_registry.list() if entry.get("kind") != "local"}
+        for url in remotes:
+            if url not in current:
+                payload = {
+                    "name": url,
+                    "base_url": url,
+                    "kind": "remote",
+                    "service": "lan",
+                    "priority": 100,
+                    "active": True,
+                }
+                try:
+                    self.provider_registry.register(payload)
+                    self.bridge.providers_register(payload)
+                except Exception:
+                    pass

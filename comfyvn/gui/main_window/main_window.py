@@ -90,11 +90,15 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         )
         self.setCentralWidget(self.central)
 
-        # Status bar (bottom, best practice) with server status
+        # Status bar (bottom, best practice) with server + script status
         self._status = QStatusBar()
         self.setStatusBar(self._status)
         self._status_label = QLabel("🔴 Server: Unknown")
         self._status.addPermanentWidget(self._status_label, 1)
+        self._script_status_label = QLabel("🟢 Scripts: Idle")
+        self._script_status_label.setToolTip("Latest script execution status.")
+        self._status.addPermanentWidget(self._script_status_label, 1)
+        self._set_script_status(True, "No scripts executed yet.")
 
         # Toolbars (Quick Access) are dynamic via shortcut registry
         self._rebuild_shortcuts_toolbar()
@@ -391,8 +395,18 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         if isinstance(data, dict):
             healthy = bool(data.get("ok") or data.get("healthy"))
         else:
-            healthy = bool(result.get("ok"))
+        healthy = bool(result.get("ok"))
         self._status_label.setText(("🟢" if healthy else "🟠") + " Server: " + ("OK" if healthy else "Degraded"))
+
+    def _set_script_status(self, ok: bool, message: str) -> None:
+        icon = "🟢" if ok else "🔴"
+        label = "Scripts: Ready" if ok else "Scripts: Error"
+        self._script_status_label.setText(f"{icon} {label}")
+        self._script_status_label.setToolTip(message)
+        if ok:
+            logger.info("Script sequence completed: %s", message)
+        else:
+            logger.warning("Script sequence failed: %s", message)
 
     # --------------------
     # Setup utilities
@@ -401,6 +415,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         script_path = Path("setup/install_defaults.py").resolve()
         if not script_path.exists():
             QMessageBox.warning(self, "Install Base Scripts", "Setup script not found.")
+            self._set_script_status(False, "Install defaults: setup script missing.")
             return
 
         confirm = QMessageBox.question(
@@ -423,6 +438,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             )
         except Exception as exc:
             QMessageBox.critical(self, "Install Base Scripts", f"Failed to launch installer:\n{exc}")
+            self._set_script_status(False, f"Installer launch failed: {exc}")
             return
 
         output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
@@ -434,12 +450,14 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 "Install Base Scripts",
                 "Defaults installed successfully.\n\n" + output,
             )
+            self._set_script_status(True, "Install defaults completed successfully.")
         else:
             QMessageBox.critical(
                 self,
                 "Install Base Scripts",
                 f"Installer exited with code {proc.returncode}.\n\n{output}",
             )
+            self._set_script_status(False, f"Installer exited with code {proc.returncode}.")
 
 
 def main():
