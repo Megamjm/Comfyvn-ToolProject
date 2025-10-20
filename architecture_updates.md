@@ -14,7 +14,7 @@ Recent Changes Observed
 - Server bootstrap repaired: `comfyvn/server/app.py` now exposes `create_app()`, enables CORS, configures logging, and registers `/health` + `/status`, fulfilling Phase 1 Part A.
 - Legacy entrypoint aligned: `comfyvn/app.py` delegates to the canonical factory, preserves `/healthz` for legacy probes, and documents the logging/debug flow.
 - GUI detached-server helper updated to launch `python comfyvn/app.py`, matching the new entrypoint behaviour and writing to `logs/server_detached.log`.
-- Phase 2 migration script expanded (`tools/apply_phase06_rebuild.py`) adding project-aware columns and registry tables (variables, templates, providers, settings). Asset registry exposes `register_file` with sidecar output.
+- Phase 2 migration script expanded (`setup/apply_phase06_rebuild.py`) adding project-aware columns and registry tables (variables, templates, providers, settings). Asset registry exposes `register_file` with sidecar output.
 - Phase 5 compute span landed: `comfyvn/core/gpu_manager.py`, `/api/gpu/*`, `/api/providers/*`, and `/compute/advise` expose policy-aware device selection, provider health checks, and advisor rationale. Job metadata now includes the selected compute target, and registry/logging emits debug messages for troubleshooting.
 - Phase 5 metrics/job queue completed: `/jobs/ws` streams registry updates via FastAPI WebSocket; `JobsPanel` consumes the stream with auto-reconnect + HTTP fallback, writing state changes to `logs/gui.log` for diagnosis.
 - VN importer pipeline landed: `comfyvn/server/core/vn_importer.py`, `/vn/import` API, GUI VN importer wiring, TaskRegistry-backed jobs (`/jobs/status/:id`), `GET /vn/import/{job_id}`, and per-import summaries archived under `data/imports/vn/*` for provenance/debugging. GUI follow-ups captured in `docs/gui_followups.md`.
@@ -25,7 +25,7 @@ Recent Changes Observed
 - Scenes/Characters/Imports/Audio/Advisory panels dockable via Modules menu, backed by registry/table endpoints for Phase 4 readiness.
 - Assets router rebuilt: `/assets/*` delegates to `AssetRegistry` for list/detail/upload/register/delete, enforces metadata validation, and reuses thumbnail/sidecar helpers.
 - Asset provenance pipeline added: `AssetRegistry.register_file` records provenance rows, stamps PNG metadata, returns ledger details, and honours license metadata; tests (`tests/test_asset_provenance.py`) and docs (`docs/studio_assets.md`) describe verification steps.
-- Phase 0 scaffolding added: `tools/apply_phase06_rebuild.py`, `comfyvn/studio/core/*`, and `docs/studio_phase0.md`, moving toward Phase 2 “Data layer & registries”.
+- Phase 0 scaffolding added: `setup/apply_phase06_rebuild.py`, `comfyvn/studio/core/*`, and `docs/studio_phase0.md`, moving toward Phase 2 “Data layer & registries”.
 
 Gaps vs. Architecture Plan
 --------------------------

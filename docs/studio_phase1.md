@@ -20,7 +20,7 @@
   - Logging configuration documented in `run_comfyvn.py` and `comfyvn/server/app.py`.
 
 ### Next Steps
-- Phase 2 migration extensions (`tools/apply_phase06_rebuild.py`).  
+- Phase 2 migration extensions (`setup/apply_phase06_rebuild.py`).  
 - Studio registries expansion (`comfyvn/studio/core`).  
 - CLI consolidation for bundle/manifest workflows.
 

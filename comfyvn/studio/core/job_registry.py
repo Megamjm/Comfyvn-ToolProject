@@ -1,7 +1,7 @@
 """
 Job registry facade for tracking background jobs initiated by the Studio shell.
 
-The table schema is provisioned via ``tools/apply_phase06_rebuild.py`` and
+The table schema is provisioned via ``setup/apply_phase06_rebuild.py`` and
 contains generic fields that we reuse for import pipelines.
 """
 

@@ -11,7 +11,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
 from comfyvn.server.app import create_app
-from tools.apply_phase06_rebuild import ensure_db, ensure_dirs
+from setup.apply_phase06_rebuild import ensure_db, ensure_dirs
 
 # Ensure required folders/tables exist before exercising APIs.
 ensure_dirs()

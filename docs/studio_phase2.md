@@ -8,10 +8,10 @@
 
 ### Deliverables (2025-10-20)
 
-- `tools/apply_phase06_rebuild.py` now provisions:
+- `setup/apply_phase06_rebuild.py` now provisions:
   - `variables`, `templates`, `providers`, `settings` tables.
   - Supplemental directories (`comfyvn/data/settings`, `comfyvn/data/variables`).
-  - Idempotent creation verified via `python tools/apply_phase06_rebuild.py --recreate-all`.
+  - Idempotent creation verified via `python setup/apply_phase06_rebuild.py --recreate-all`.
 - Studio registries (`comfyvn/studio/core`):
   - Added `TemplateRegistry` and `VariableRegistry` alongside existing Scene/Character/Asset/World registries.
   - Exposed via `comfyvn.studio.core.__all__`.

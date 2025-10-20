@@ -14,7 +14,7 @@
 - Metrics polling logs transitions and ensures QTimer stop on close.
 
 ### Debugging Checklist
-1. Run `python tools/apply_phase06_rebuild.py --recreate-all` to refresh schema.
+1. Run `python setup/apply_phase06_rebuild.py --recreate-all` to refresh schema.
 2. Start server via `python -m comfyvn.server.app`. Tail `logs/server.log`.
 3. Launch GUI (`python run_comfyvn.py`) or instantiate `StudioWindow` from another PySide6 harness.
 4. Use `pytest -q` to run Studio API tests (skips if `httpx` unavailable).

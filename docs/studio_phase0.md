@@ -5,7 +5,7 @@ These scaffolding utilities prepare the repository for the incoming Studio shell
 ### 1. Rebuild database and folders
 
 ```bash
-python tools/apply_phase06_rebuild.py --recreate-all
+python setup/apply_phase06_rebuild.py --recreate-all
 ```
 
 This creates the canonical directories under `data/`, `cache/`, and `logs/`, and ensures the SQLite database at `comfyvn/data/comfyvn.db` contains the required v0.6 tables (all tagged with `project_id`).
