@@ -43,9 +43,15 @@ Gaps vs. Architecture Plan
 
 Immediate Repair / Follow-up Tasks
 ----------------------------------
-1. **Studio shell decision** — Promote `StudioWindow` to primary launcher (or document why not), migrate views into `gui/views/`, and align with architecture navigation specs.
-2. **Provenance follow-ups** — Introduce background thumbnail worker and extend provenance stamping to audio/voice assets.
-3. **Importer/compute regression suite** — Add pytest flows covering `/vn/import`, `/roleplay/import` (list/log/GUI), and GPU advisor endpoints to catch regressions.
-4. **Docs alignment** — Update `ARCHITECTURE.md` and Studio docs once shell + asset tasks land, ensuring run scripts and logging guidance stay consistent.
+1. **Studio shell decision (resolved for v0.8)**
+   - Decision: Keep `MainWindow` as the primary Studio shell for v0.8; `StudioWindow` remains a lightweight prototype targeting new `/api/studio/*` endpoints.
+   - Rationale: `MainWindow` integrates panels, menu registry, and stable polling; switching launchers now would risk regressions without clear user benefit.
+   - Next: Fold the useful Studio toolbar actions into `MainWindow` and continue evolving `/api/studio/*` without changing the launcher.
+2. **Provenance follow-ups**
+   - Introduce background thumbnail worker and extend provenance stamping to audio/voice assets.
+3. **Importer/compute regression suite**
+   - Add pytest flows covering `/vn/import`, `/roleplay/import` (list/log/GUI), and GPU advisor endpoints to catch regressions.
+4. **Docs alignment (started)**
+   - `ARCHITECTURE.md` updated to clarify primary shell; launcher remains `comfyvn.gui.main_window` via `run_comfyvn.py`.
 
 Use this document as a working checklist while bringing the repo back in sync with the architectural intent.

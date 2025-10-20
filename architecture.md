@@ -49,7 +49,11 @@ comfyvn/
       roleplay/
         roleplay_api.py
   gui/
-    studio_window.py
+    main_window/  (primary shell for v0.8)
+      main_window.py
+      menu_bar.py
+      ...
+    studio_window.py  (prototype shell; secondary)
     server_bridge.py
     views/
       home_view.py
@@ -118,7 +122,7 @@ Outputs:
 
 Acceptance: ~~Health indicator green, graphs update 2–5s, no duplicate menus.~~ ✅ Verified 2025-10-20
 
-Notes: Disable embedded server until single-instance guard is verified.
+Notes: Disable embedded server until single-instance guard is verified. For v0.8, the primary Studio shell remains `gui/main_window/*`; `gui/studio_window.py` is a prototype using `/api/studio/*` and may be merged later.
 
 Part C — Logging & config normalization
 
