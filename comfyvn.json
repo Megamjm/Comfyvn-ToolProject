@@ -2,7 +2,9 @@
   "paths": {
     "project_root": "",
     "assets_dir": "assets/",
-    "renpy_project": "renpy_project/"
+    "renpy_project": "renpy_project/",
+    "assets": "assets",
+    "logs": "logs"
   },
   "integrations": {
     "comfyui_host": "http://127.0.0.1:8188",
@@ -23,5 +25,8 @@
     "height": 1024,
     "npc_background_mode": false,
     "full_character_dump": false
+  },
+  "lmstudio": {
+    "base_url": "http://localhost:1234/v1"
   }
 }

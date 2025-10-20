@@ -1,0 +1,11 @@
+{
+  "display_name": "ComfyVN Export",
+  "loading_order": 10,
+  "dependencies": [],
+  "js": "index.js",
+  "author": "ComfyVN",
+  "version": "0.1.0",
+  "homePage": "https://github.com/Megamjm/Comfyvn-ToolProject",
+  "auto_update": true,
+  "minimum_client_version": "1.0.0"
+}

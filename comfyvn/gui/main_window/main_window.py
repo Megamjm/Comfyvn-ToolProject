@@ -171,6 +171,53 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         except Exception:
             self._status_label.setText("🔴 Server: Offline")
 
+    # --------------------
+    # Setup utilities
+    # --------------------
+    def install_base_scripts(self):
+        script_path = Path("setup/install_defaults.py").resolve()
+        if not script_path.exists():
+            QMessageBox.warning(self, "Install Base Scripts", "Setup script not found.")
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Install Base Scripts",
+            "Install default assets and configuration stubs?\n"
+            "Existing files remain untouched unless you rerun with --force.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(script_path)],
+                capture_output=True,
+                text=True,
+                cwd=Path(__file__).resolve().parents[3],
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Install Base Scripts", f"Failed to launch installer:\n{exc}")
+            return
+
+        output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        output = output.strip() or "No output."
+
+        if proc.returncode == 0:
+            QMessageBox.information(
+                self,
+                "Install Base Scripts",
+                "Defaults installed successfully.\n\n" + output,
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Install Base Scripts",
+                f"Installer exited with code {proc.returncode}.\n\n{output}",
+            )
+
 
 def main():
     app = QApplication(sys.argv)

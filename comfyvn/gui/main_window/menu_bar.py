@@ -2,7 +2,7 @@
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 
-SECTION_ORDER = ["File","View","Spaces","Tools","GPU","Window","Help"]
+SECTION_ORDER = ["File","View","Spaces","Tools","Settings","GPU","Window","Help"]
 
 def rebuild_menus_from_registry(w, registry):
     mb = w.menuBar()

@@ -1,1 +1,3 @@
-from PySide6.QtGui import QAction
+"""ComfyVN package namespace."""
+
+__all__: list[str] = []
