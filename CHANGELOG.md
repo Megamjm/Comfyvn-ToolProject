@@ -4,6 +4,9 @@
 - Delivered liability gate + filter controls via `/api/policy/{status,ack,evaluate,filters,filter-preview}`, ensuring legal warnings surface while preserving user choice.
 - Content filter modes (`sfw|warn|unrestricted`) route through `comfyvn/core/content_filter.py`, log advisory warnings, and expose preview responses for GUI panels.
 - Documentation updates: refreshed `docs/studio_phase6_audio.md`, `docs/studio_phase7_advisory.md`, and `architecture.md` with new API hooks and debugging steps.
+- GUI: Audio panel now surfaces style/lang/model inputs, cache hits, and music remix requests; Advisory panel provides policy acknowledgement, filter mode controls, and preview tooling.
+- Logging: dedicated `logs/audio.log` and `logs/advisory.log` streams capture subsystem diagnostics without overflowing `logs/server.log`.
+- Added `docs/comfyui_music_workflow.md` describing recommended ComfyUI module installs and remix workflow configuration for production pipelines.
 
 ### 2025-10-23 — Extension Manifest Refresh (chat: Studio Ops)
 - Each bundled extension now ships an `extension.json` manifest; the Studio reads these files (or falls back to single-file modules) to surface metadata.
@@ -37,6 +40,9 @@
 - New `/vn/import` FastAPI endpoint exposes the importer; GUI `VNImporterWindow` now POSTs to the route and surfaces summaries/warnings.
 - `/vn/import` runs through `TaskRegistry`, exposing job IDs (`/jobs/status/:id`) and progress updates; GUI polls job status until completion.
 - Added `GET /vn/import/{job_id}` for downstream tooling to fetch job metadata + cached summary JSON; importer now records `summary_path` for audit trails.
+- `/vn/tools/*` endpoints register external extractors (e.g., arc_unpacker) with regional legality warnings; importer adapts to `.arc/.xp3` packages and records extractor provenance.
+- Extension: `tool_installer` surfaces installer documentation through the modular loader; GUI hook pending via `docs/tool_installers.md`.
+- Documentation: Added `docs/importer_engine_matrix.md` and `docs/remote_gpu_services.md` to share engine signatures and remote GPU onboarding guidance with other chats.
 - Import summary persisted per job (`data/imports/vn/<id>/summary.json`) to assist debugging and provenance checks.
 - Tests cover importer + API workflows (`tests/test_vn_importer.py`).
 

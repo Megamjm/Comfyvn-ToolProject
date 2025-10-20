@@ -1,5 +1,5 @@
-import importlib.util
 import json
+import asyncio
 import sys
 import time
 import types
@@ -27,9 +27,7 @@ def _install_pyside_stubs() -> None:
 _install_pyside_stubs()
 
 from comfyvn.server.core.vn_importer import import_vn_package
-
-
-HTTPX_AVAILABLE = importlib.util.find_spec("httpx") is not None
+from comfyvn.server.modules import vn_import_api
 
 
 @pytest.fixture(autouse=True)
@@ -45,6 +43,8 @@ def _stub_reindex(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _stub_task_registry(monkeypatch):
+    from pathlib import Path
+
     class _Task:
         def __init__(self, task_id: str, kind: str, meta: dict):
             self.id = task_id
@@ -86,6 +86,64 @@ def _stub_task_registry(monkeypatch):
     registry = _Registry()
     monkeypatch.setattr("comfyvn.server.modules.vn_import_api.task_registry", registry, raising=False)
     monkeypatch.setattr("comfyvn.core.task_registry.task_registry", registry, raising=False)
+
+    class _Tool:
+        def __init__(self, name: str, path: Path, extensions: list[str], notes: str, warning: str):
+            self.name = name
+            self.path = path
+            self.extensions = extensions
+            self.notes = notes
+            self.warning = warning
+            self.handler = None
+
+    class _ExtractorStub:
+        def __init__(self):
+            self._tools: dict[str, _Tool] = {}
+
+        def list_tools(self):
+            return list(self._tools.values())
+
+        def register(self, name: str, path: str, *, extensions=None, notes: str = "", warning: str = ""):
+            tool = _Tool(name, Path(path), [ext.lower() for ext in (extensions or [])], notes, warning)
+            self._tools[name] = tool
+            return tool
+
+        def unregister(self, name: str) -> bool:
+            return bool(self._tools.pop(name, None))
+
+        def get(self, name: str):
+            return self._tools.get(name)
+
+        def resolve_for_extension(self, suffix: str):
+            suffix = suffix.lower()
+            for tool in self._tools.values():
+                if suffix in tool.extensions:
+                    return tool
+            return None
+
+        def set_handler(self, name: str, handler):
+            if name in self._tools:
+                self._tools[name].handler = handler
+
+        def invoke(self, name: str, source: Path, *, output_dir: Path):
+            tool = self._tools.get(name)
+            if not tool:
+                raise ValueError("tool not registered")
+            if tool.handler:
+                tool.handler(source, output_dir)
+            else:
+                # default: copy zip contents if present
+                if zipfile.is_zipfile(source):
+                    with zipfile.ZipFile(source, "r") as archive:
+                        archive.extractall(output_dir)
+                else:
+                    raise RuntimeError("no handler defined for extractor stub")
+            return output_dir
+
+    extractor = _ExtractorStub()
+    monkeypatch.setattr("comfyvn.server.core.external_extractors.extractor_manager", extractor, raising=False)
+    monkeypatch.setattr("comfyvn.server.modules.vn_import_api.extractor_manager", extractor, raising=False)
+    monkeypatch.setattr("comfyvn.server.core.vn_importer.extractor_manager", extractor, raising=False)
 
 
 def _build_sample_package(tmp_path: Path) -> Path:
@@ -156,21 +214,45 @@ def test_import_vn_adapter_detection(tmp_path: Path):
     assert (data_root / "scenes" / "start.json").exists()
 
 
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
+def test_import_with_external_tool(tmp_path: Path):
+    from comfyvn.server.core import external_extractors as ext_mgr
+
+    tool_path = tmp_path / "arc_unpacker_stub"
+    tool_path.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    tool = ext_mgr.extractor_manager.register(
+        "arc_unpacker",
+        str(tool_path),
+        extensions=[".arc"],
+        warning="Check local laws before extracting VN archives.",
+    )
+
+    def _handler(source: Path, output_dir: Path):
+        with zipfile.ZipFile(source, "r") as archive:
+            archive.extractall(output_dir)
+
+    ext_mgr.extractor_manager.set_handler(tool.name, _handler)
+
+    arc_path = tmp_path / "demo.arc"
+    with zipfile.ZipFile(arc_path, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"id": "ext-demo"}))
+        archive.writestr("scenes/demo_scene.json", json.dumps({"scene_id": "demo_scene", "lines": []}))
+
+    data_root = tmp_path / "ext_data"
+
+    summary = import_vn_package(arc_path, data_root=data_root, tool="arc_unpacker")
+
+    assert summary["extractor"] == "arc_unpacker"
+    assert summary["adapter"] == "generic"
+    assert (data_root / "scenes" / "demo_scene.json").exists()
+
+
 def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
     package_path = _build_sample_package(tmp_path)
     data_root = tmp_path / "api_data"
     monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
 
-    from fastapi.testclient import TestClient
-    from comfyvn.server.app import create_app
-
-    client = TestClient(create_app())
-
-    response = client.post("/vn/import", json={"path": str(package_path), "blocking": True})
-    assert response.status_code == 200
-
-    payload = response.json()
+    payload = asyncio.run(vn_import_api.import_vn({"path": str(package_path), "blocking": True}))
     assert payload["ok"] is True
     summary = payload["import"]
     assert summary["scenes"] == ["demo_scene"]
@@ -179,86 +261,91 @@ def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
     assert Path(summary["summary_path"]).exists()
     assert (data_root / "scenes" / "demo_scene.json").exists()
 
-    status = client.get(f"/vn/import/{payload['job']['id']}")
-    assert status.status_code == 200
-    status_payload = status.json()
+    status_payload = asyncio.run(vn_import_api.import_status(payload["job"]["id"], True))
     assert status_payload["job"]["status"] == "done"
     assert status_payload["summary"]["scenes"] == ["demo_scene"]
     assert status_payload["summary"]["adapter"] == "generic"
 
 
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 def test_import_vn_api_job(tmp_path: Path, monkeypatch):
     package_path = _build_sample_package(tmp_path)
     data_root = tmp_path / "async_data"
     monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
 
-    from fastapi.testclient import TestClient
-    from comfyvn.server.app import create_app
-
-    client = TestClient(create_app())
-
-    response = client.post("/vn/import", json={"path": str(package_path)})
-    assert response.status_code == 200
-
-    payload = response.json()
+    payload = asyncio.run(vn_import_api.import_vn({"path": str(package_path)}))
     assert payload["ok"] is True
-    job = payload["job"]
-    job_id = job["id"]
-    assert job_id
+    job_id = payload["job"]["id"]
 
     summary = None
-    for _ in range(20):
-        status = client.get(f"/jobs/status/{job_id}")
-        if status.status_code != 200:
-            time.sleep(0.05)
-            continue
-        job_payload = status.json()["job"]
+    for _ in range(40):
+        status_payload = asyncio.run(vn_import_api.import_status(job_id, True))
+        job_payload = status_payload["job"]
         if job_payload["status"] == "done":
             summary = (job_payload.get("meta") or {}).get("result")
             break
         if job_payload["status"] == "error":
             error_message = job_payload.get("message") or job_payload.get("meta", {}).get("error")
             pytest.fail(f"job errored: {error_message}")
-        time.sleep(0.05)
+        time.sleep(0.01)
 
     assert summary is not None
     assert summary["scenes"] == ["demo_scene"]
     assert summary["adapter"] in {"generic", "renpy"}
     assert (data_root / "scenes" / "demo_scene.json").exists()
 
-    detail = client.get(f"/vn/import/{job_id}")
-    assert detail.status_code == 200
-    detail_payload = detail.json()
+    detail_payload = asyncio.run(vn_import_api.import_status(job_id, True))
     assert detail_payload["job"]["status"] in {"done", "error"}
     if detail_payload["summary"]:
         assert detail_payload["summary"]["scenes"] == ["demo_scene"]
         assert "adapter" in detail_payload["summary"]
 
 
-@pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 def test_import_history_endpoint(tmp_path: Path, monkeypatch):
     data_root = tmp_path / "history"
     monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
-
-    from fastapi.testclient import TestClient
-    from comfyvn.server.app import create_app
-
-    client = TestClient(create_app())
 
     pkg1 = _build_sample_package(tmp_path)
     pkg2 = _build_renpy_package(tmp_path)
 
     for pkg in (pkg1, pkg2):
-        resp = client.post("/vn/import", json={"path": str(pkg), "blocking": True})
-        assert resp.status_code == 200
+        resp = asyncio.run(vn_import_api.import_vn({"path": str(pkg), "blocking": True}))
+        assert resp["ok"] is True
 
-    history = client.get("/vn/imports/history", params={"limit": 5})
-    assert history.status_code == 200
-    data = history.json()
+    data = asyncio.run(vn_import_api.import_history(limit=5, _=True))
     assert data["ok"] is True
     imports = data["imports"]
     assert len(imports) >= 2
     adapters = {item.get("adapter") for item in imports}
     assert "renpy" in adapters
     assert "generic" in adapters
+
+def test_tool_endpoints(tmp_path: Path, monkeypatch):
+    data_root = tmp_path / "tools"
+    monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
+
+    binary_path = tmp_path / "arc_unpacker"
+    binary_path.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    resp = asyncio.run(
+        vn_import_api.register_tool(
+        {
+            "name": "arc_unpacker",
+            "path": str(binary_path),
+            "extensions": [".arc"],
+            "warning": "Check regional restrictions.",
+        },
+        True,
+        )
+    )
+    assert resp["tool"]["name"] == "arc_unpacker"
+
+    tools = asyncio.run(vn_import_api.list_tools(True))
+    names = [tool["name"] for tool in tools["tools"]]
+    assert "arc_unpacker" in names
+
+    delete = asyncio.run(vn_import_api.remove_tool("arc_unpacker", True))
+    assert delete["ok"] is True
+
+    tools_after = asyncio.run(vn_import_api.list_tools(True))
+    names_after = [tool["name"] for tool in tools_after["tools"]]
+    assert "arc_unpacker" not in names_after

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from comfyvn.core.task_registry import task_registry
+from comfyvn.server.core.external_extractors import extractor_manager
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
 from comfyvn.server.modules.auth import require_scope
 
@@ -26,11 +27,17 @@ def _task_meta(task_id: str) -> Dict[str, Any]:
     return {}
 
 
-def _execute_import(task_id: str, package_path: str, overwrite: bool) -> Dict[str, Any]:
-    logger.info("[VN Import] job=%s starting (overwrite=%s) -> %s", task_id, overwrite, package_path)
+def _execute_import(task_id: str, package_path: str, overwrite: bool, tool: Optional[str]) -> Dict[str, Any]:
+    logger.info(
+        "[VN Import] job=%s starting (overwrite=%s, tool=%s) -> %s",
+        task_id,
+        overwrite,
+        tool,
+        package_path,
+    )
     task_registry.update(task_id, status="running", progress=0.05, message="Preparing import")
     try:
-        summary = import_vn_package(package_path, overwrite=overwrite)
+        summary = import_vn_package(package_path, overwrite=overwrite, tool=tool)
     except Exception as exc:  # let caller convert to HTTP error, but make sure registry updated first
         meta = _task_meta(task_id)
         meta["error"] = str(exc)
@@ -41,8 +48,12 @@ def _execute_import(task_id: str, package_path: str, overwrite: bool) -> Dict[st
     meta = _task_meta(task_id)
     meta["result"] = summary
     meta["summary_path"] = summary.get("summary_path")
+    meta["extractor"] = summary.get("extractor")
+    if summary.get("extractor_warning"):
+        meta.setdefault("warnings", []).append(summary["extractor_warning"])
     stats = (
         f"adapter={summary.get('adapter', 'generic')} "
+        f"extractor={summary.get('extractor') or 'builtin'} "
         f"scenes={len(summary.get('scenes', []))} "
         f"characters={len(summary.get('characters', []))} "
         f"assets={len(summary.get('assets', []))}"
@@ -58,10 +69,10 @@ def _execute_import(task_id: str, package_path: str, overwrite: bool) -> Dict[st
     return summary
 
 
-def _spawn_import_job(task_id: str, package_path: str, overwrite: bool) -> None:
+def _spawn_import_job(task_id: str, package_path: str, overwrite: bool, tool: Optional[str]) -> None:
     def _runner() -> None:
         try:
-            _execute_import(task_id, package_path, overwrite)
+            _execute_import(task_id, package_path, overwrite, tool)
         except VNImportError:
             # already logged in _execute_import; nothing else to do
             return
@@ -81,24 +92,28 @@ async def import_vn(payload: Dict[str, Any]):
 
     overwrite = bool(payload.get("overwrite", False))
     blocking = bool(payload.get("blocking", False))
+    tool = payload.get("tool")
+    if tool:
+        tool = str(tool).strip()
     resolved_path = Path(path_value).expanduser()
     logger.info(
-        "POST /vn/import path=%s overwrite=%s blocking=%s",
+        "POST /vn/import path=%s overwrite=%s blocking=%s tool=%s",
         resolved_path,
         overwrite,
         blocking,
+        tool,
     )
 
     task_id = task_registry.register(
         "vn.import",
         {"path": str(resolved_path), "overwrite": overwrite},
         message=f"Import {resolved_path.name}",
-        meta={"package": str(resolved_path)},
+        meta={"package": str(resolved_path), "tool": tool},
     )
 
     if blocking:
         try:
-            summary = _execute_import(task_id, str(resolved_path), overwrite)
+            summary = _execute_import(task_id, str(resolved_path), overwrite, tool)
         except VNImportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except FileNotFoundError as exc:  # pragma: no cover - defensive
@@ -108,7 +123,7 @@ async def import_vn(payload: Dict[str, Any]):
         return {"ok": True, "import": summary, "job": {"id": task_id}}
 
     try:
-        _spawn_import_job(task_id, str(resolved_path), overwrite)
+        _spawn_import_job(task_id, str(resolved_path), overwrite, tool)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to spawn VN import job: %s", exc)
         raise HTTPException(status_code=500, detail="vn import spawn failed") from exc
@@ -179,3 +194,47 @@ async def import_history(limit: int = 20, _: bool = Depends(require_scope(["cont
     limit = max(1, min(int(limit), 200))
     history = _load_history(limit)
     return {"ok": True, "imports": history}
+
+
+def _tool_to_dict(tool) -> Dict[str, Any]:
+    return {
+        "name": tool.name,
+        "path": str(tool.path),
+        "extensions": tool.extensions,
+        "notes": tool.notes,
+        "warning": tool.warning,
+    }
+
+
+@router.get("/tools")
+async def list_tools(_: bool = Depends(require_scope(["content.read"], cost=1))):
+    tools = [_tool_to_dict(tool) for tool in extractor_manager.list_tools()]
+    return {"ok": True, "tools": tools}
+
+
+@router.post("/tools/register")
+async def register_tool(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))):
+    name = (payload.get("name") or "").strip()
+    path_value = payload.get("path") or payload.get("binary")
+    if not name or not path_value:
+        raise HTTPException(status_code=400, detail="name and path required")
+
+    extensions = payload.get("extensions") or []
+    if not isinstance(extensions, list):
+        raise HTTPException(status_code=400, detail="extensions must be a list")
+    notes = str(payload.get("notes") or "")
+    warning = str(payload.get("warning") or "")
+
+    tool_path = Path(path_value).expanduser()
+    if not tool_path.exists():
+        raise HTTPException(status_code=400, detail="tool path does not exist")
+
+    tool = extractor_manager.register(name, str(tool_path), extensions=extensions, notes=notes, warning=warning)
+    return {"ok": True, "tool": _tool_to_dict(tool)}
+
+
+@router.delete("/tools/{name}")
+async def remove_tool(name: str, _: bool = Depends(require_scope(["content.write"], cost=5))):
+    if not extractor_manager.unregister(name):
+        raise HTTPException(status_code=404, detail="tool not found")
+    return {"ok": True}

@@ -1,0 +1,9 @@
+{
+  "id": "tool_installer",
+  "name": "External Tool Installers",
+  "version": "0.1.0",
+  "description": "Lists optional VN extraction helpers (e.g. arc_unpacker) and links to installation docs.",
+  "official": false,
+  "author": "Importer Chat",
+  "homepage": "https://github.com/vn-tools/arc_unpacker"
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 # comfyvn/server/core/logging_ex.py
 import logging, os, sys, json
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Optional
 
 class JsonFormatter(logging.Formatter):
@@ -29,6 +30,20 @@ def _mk_handler(to_file: Optional[str], level: int) -> logging.Handler:
     h.setFormatter(fmt)
     return h
 
+def _attach_special_logger(logger_name: str, file_path: Path, level: int, tag: str) -> None:
+    logger = logging.getLogger(logger_name)
+    existing = [
+        handler for handler in logger.handlers if getattr(handler, "_comfyvn_tag", None) == tag
+    ]
+    for handler in existing:
+        logger.removeHandler(handler)
+    handler = _mk_handler(str(file_path), level)
+    setattr(handler, "_comfyvn_tag", tag)
+    logger.addHandler(handler)
+    if logger.level == logging.NOTSET or logger.level > level:
+        logger.setLevel(level)
+    logger.propagate = True
+
 def setup_logging() -> None:
     level_name = os.getenv("COMFYVN_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
@@ -43,3 +58,29 @@ def setup_logging() -> None:
     # quiet noisy deps
     for noisy in ("uvicorn.access", "watchfiles.main"):
         logging.getLogger(noisy).setLevel(max(level, logging.WARNING))
+
+    # dedicated audio/advisory logs
+    if to_file:
+        log_dir = Path(to_file).resolve().parent
+    else:
+        log_dir = Path(os.getenv("COMFYVN_LOG_DIR", "logs")).resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    audio_path = Path(os.getenv("COMFYVN_AUDIO_LOG_FILE", str(log_dir / "audio.log")))
+    policy_path = Path(os.getenv("COMFYVN_POLICY_LOG_FILE", str(log_dir / "advisory.log")))
+
+    for name in (
+        "comfyvn.audio",
+        "comfyvn.audio.pipeline",
+        "comfyvn.api.tts",
+        "comfyvn.api.voice",
+        "comfyvn.api.music",
+    ):
+        _attach_special_logger(name, audio_path, level, "audio")
+
+    for name in (
+        "comfyvn.advisory",
+        "comfyvn.api.advisory",
+        "comfyvn.api.policy",
+    ):
+        _attach_special_logger(name, policy_path, level, "policy")

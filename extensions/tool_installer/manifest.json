@@ -1,0 +1,13 @@
+{
+  "name": "External Tool Installers",
+  "id": "tool_installer",
+  "version": "0.1.0",
+  "menus": [
+    {
+      "menu": "Tools",
+      "label": "Import Tools → Installers",
+      "action": "open_tool_installer_docs",
+      "notes": "Opens docs/tool_installers.md in the embedded viewer (GUI hookup pending)."
+    }
+  ]
+}

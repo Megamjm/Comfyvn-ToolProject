@@ -59,3 +59,4 @@ Future Hooks
 - Music remix endpoints should emit artifacts under `exports/music/` with the same sidecar contract.
 - Integrate asset provenance by appending the sidecar payload to the `provenance` table once Phase 2 Part B completes.
 - When swapping to a real TTS engine, preserve the `(artifact, sidecar, cached)` return signature to avoid breaking the GUI voice panel.
+- For a ready-to-run ComfyUI pipeline, follow `docs/comfyui_music_workflow.md` to install `ComfyUI-Music-Gen` nodes and export a reusable workflow JSON.

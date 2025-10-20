@@ -3,7 +3,7 @@ ComfyVN — Architecture Update Notes (2025-10-21)
 
 Scope: Snapshot of recent local changes and alignment tasks against `ARCHITECTURE.md`.
 
-- Phase 6 progression: audio cache manager (`comfyvn/core/audio_cache.py`), `/api/music/remix` stub, and expanded TTS metadata/logging captured in the docs + architecture notes.
+- Phase 6 progression: audio cache manager (`comfyvn/core/audio_cache.py`), `/api/music/remix` stub, GUI audio panel hooked to new endpoints, and ComfyUI workflow guide (`docs/comfyui_music_workflow.md`) for real pipelines.
 - Phase 7 progression: policy gate + filter endpoints (`policy_api.py`), settings-backed acknowledgements, and advisory-friendly filter previews documented for debugging.
 
 Recent Changes Observed
@@ -19,6 +19,8 @@ Recent Changes Observed
 - Phase 5 compute span landed: `comfyvn/core/gpu_manager.py`, `/api/gpu/*`, `/api/providers/*`, and `/compute/advise` expose policy-aware device selection, provider health checks, and advisor rationale. Job metadata now includes the selected compute target, and registry/logging emits debug messages for troubleshooting.
 - Phase 5 metrics/job queue completed: `/jobs/ws` streams registry updates via FastAPI WebSocket; `JobsPanel` consumes the stream with auto-reconnect + HTTP fallback, writing state changes to `logs/gui.log` for diagnosis.
 - VN importer pipeline landed: `comfyvn/server/core/vn_importer.py`, `/vn/import` API, GUI VN importer wiring, TaskRegistry-backed jobs (`/jobs/status/:id`), `GET /vn/import/{job_id}`, and per-import summaries archived under `data/imports/vn/*` for provenance/debugging. GUI follow-ups captured in `docs/gui_followups.md`.
+- Arc/unpacker support: `/vn/tools/*` endpoints manage external extractor registrations with legal warnings, importer detects `.arc/.xp3` via registered binaries, and `extensions/tool_installer` surfaces installer docs for GUI integration.
+- Documentation: `docs/importer_engine_matrix.md` outlines engine detection signatures + hook expectations; `docs/remote_gpu_services.md` captures provider catalog and advisor inputs for importer-driven GPU recommendations; `docs/tool_installers.md` expanded with config notes.
 - Studio API stubs (`comfyvn/server/modules/studio_api.py`) provide `/api/studio/open_project`, `/switch_view`, `/export_bundle`; `comfyvn/gui/studio_window.py` prototype consumes them via `ServerBridge.post`.
 - Roleplay importer endpoints (`POST /roleplay/import`, `GET /roleplay/imports/{job_id}`) hardened: jobs/import rows now created via studio registries, scenes/characters persisted, transcripts registered as assets, and debug logs stored in `logs/imports/`.
 - Import observability expanded with `/roleplay/imports` listing and `/roleplay/imports/{job_id}/log` streaming so Studio panels can surface queues + logs without touching disk.
