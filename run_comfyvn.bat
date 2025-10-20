@@ -27,5 +27,12 @@ echo [ComfyVN] Launching using %PYTHON_CMD% …
 call %PYTHON_CMD% "%SCRIPT_DIR%run_comfyvn.py" %*
 
 set "EXIT_CODE=%ERRORLEVEL%"
+
+if not "%EXIT_CODE%"=="0" (
+    echo [ComfyVN] Launcher exited with error level %EXIT_CODE%.
+    echo [ComfyVN] Press any key to close this window.
+    pause >nul
+)
+
 popd >nul 2>&1
 exit /b %EXIT_CODE%
