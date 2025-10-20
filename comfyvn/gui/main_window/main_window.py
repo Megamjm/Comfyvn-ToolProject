@@ -63,7 +63,8 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         # Services & controllers
         self.bridge = ServerBridge(base="http://127.0.0.1:8001")
         self.dockman = DockManager(self)
-        self.workspace = WorkspaceController(self)
+        workspace_store = Path("data/workspaces")
+        self.workspace = WorkspaceController(self, workspace_store)
 
         # Central canvas (assets & editors dock around it)
         self.central = CentralSpace(
