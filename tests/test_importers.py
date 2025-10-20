@@ -16,10 +16,16 @@ def _write_file(path: Path, content: bytes | str = b"") -> None:
         path.write_text(content, encoding="utf-8")
 
 
-def test_renpy_detection(tmp_path: Path):
+def test_renpy_detection(tmp_path: Path, monkeypatch):
     game_dir = tmp_path / "game"
     _write_file(game_dir / "script.rpy", "label start: pass")
     _write_file(game_dir / "images.rpa", b"dummy")
+
+    fake_sdk = tmp_path / "renpy-sdk"
+    fake_sdk.mkdir()
+    _write_file(fake_sdk / "renpy.sh", "#!/bin/sh\n")
+    monkeypatch.setattr("comfyvn.importers.renpy.ensure_renpy_sdk", lambda: fake_sdk)
+    monkeypatch.setattr("comfyvn.importers.renpy.get_renpy_executable", lambda _: fake_sdk / "renpy.sh")
 
     importer = RenpyImporter()
     det = importer.detect(tmp_path)
@@ -28,6 +34,8 @@ def test_renpy_detection(tmp_path: Path):
     manifest = json.loads((pack_path / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["engine"] == importer.label
     assert manifest["schema"] == "comfyvn-pack@1"
+    assert manifest["sources"]["renpy_home"] == str(fake_sdk)
+    assert manifest["sources"]["renpy_executable"].endswith("renpy.sh")
 
 
 def test_kirikiri_detection(tmp_path: Path):
