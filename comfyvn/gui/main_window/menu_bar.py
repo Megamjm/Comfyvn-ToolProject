@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
+import textwrap
 
 from comfyvn.core.settings_manager import SettingsManager
 
@@ -95,11 +96,14 @@ def rebuild_menus_from_registry(window, registry):
             continue
         sorted_items = _sort_items(items, section)
         menu = menubar.addMenu(section)
+        menu.setStyleSheet("QMenu { menu-scrollable: 1; }")
         last_sep = False
         for item in sorted_items:
             if getattr(item, "separator_before", False) and not last_sep:
                 menu.addSeparator()
-            action = QAction(item.label, window)
+            display_label = _wrap_label(item.label)
+            action = QAction(display_label, window)
+            action.setProperty("_sourceLabel", item.label)
             if item.callback is not None:
                 action.triggered.connect(lambda _, cb=item.callback: cb(window))
             else:
@@ -125,3 +129,10 @@ def update_window_menu_state(window):
     if menu_bar is None:
         return
     _ = menu_bar.actions()
+
+
+def _wrap_label(label: str, width: int = 32) -> str:
+    if len(label) <= width:
+        return label
+    wrapped = textwrap.fill(label, width=width)
+    return wrapped

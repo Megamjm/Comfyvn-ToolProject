@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Tuple, Optional, Set
 from dataclasses import dataclass, field
 from comfyvn.workflows.models import WorkflowSpec, NodeSpec
 from comfyvn.ext.plugins import PluginManager
+from comfyvn.assets.pose_utils import load_pose as _load_pose
 
 CACHE_DIR = Path("./data/runtime_cache"); CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -56,11 +57,88 @@ class NodeExec:
         self.pm = PluginManager()
 
     def call(self, typ: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        if typ == "echo":
+        low = typ.lower()
+        if low == "echo":
             return {"ok": True, "out": str(payload.get("message",""))}
-        if typ == "concat":
+        if low == "concat":
             a, b = str(payload.get("a","")), str(payload.get("b",""))
             return {"ok": True, "out": a + b}
+        if low == "loadimage":
+            filename = payload.get("filename")
+            return {"ok": True, "image": filename if filename else None}
+        if low == "compositeimage":
+            layers = payload.get("layers")
+            if isinstance(layers, str):
+                layer_list = [part.strip() for part in layers.split(",") if part.strip()]
+            else:
+                layer_list = [layer for layer in list(layers or []) if layer]
+            return {
+                "ok": True,
+                "out": f"composite:{payload.get('background')}:{':'.join(layer_list)}",
+                "layers": layer_list,
+            }
+        if low == "loadpose":
+            filename = payload.get("filename")
+            try:
+                pose = _load_pose(filename) if filename else {}
+            except Exception:
+                pose = {"pose_id": (Path(filename).stem if filename else "pose")}
+            return {"ok": True, "pose": json.dumps(pose)}
+        if low == "posedelta":
+            pose_a_json = payload.get("pose_a") or payload.get("pose_a_json")
+            pose_b_json = payload.get("pose_b") or payload.get("pose_b_json")
+            try:
+                pose_a = json.loads(pose_a_json) if isinstance(pose_a_json, str) else pose_a_json or {}
+                pose_b = json.loads(pose_b_json) if isinstance(pose_b_json, str) else pose_b_json or {}
+            except Exception:
+                pose_a, pose_b = {}, {}
+            skeleton_a = pose_a.get("skeleton", {}) if isinstance(pose_a, dict) else {}
+            skeleton_b = pose_b.get("skeleton", {}) if isinstance(pose_b, dict) else {}
+            delta = {"deltas": {}}
+            for key, coords in skeleton_a.items():
+                other = skeleton_b.get(key) or {}
+                delta["deltas"][key] = {
+                    "dx": (other.get("x", 0) or 0) - (coords.get("x", 0) or 0),
+                    "dy": (other.get("y", 0) or 0) - (coords.get("y", 0) or 0),
+                }
+            return {"ok": True, "delta": json.dumps(delta), "out": json.dumps(delta)}
+        if low == "poseinterpolator":
+            pose_json = payload.get("pose_a_json")
+            delta_json = payload.get("delta_json")
+            try:
+                pose = json.loads(pose_json) if isinstance(pose_json, str) else pose_json or {}
+                delta = json.loads(delta_json) if isinstance(delta_json, str) else delta_json or {}
+            except Exception:
+                pose, delta = {}, {}
+            t = float(payload.get("t", 1.0))
+            skeleton = pose.get("skeleton", {}) if isinstance(pose, dict) else {}
+            deltas = delta.get("deltas", {}) if isinstance(delta, dict) else {}
+            blended = {"pose_id": f"{pose.get('pose_id', 'pose')}__interp", "skeleton": {}}
+            for key, coords in skeleton.items():
+                base_x = coords.get("x", 0) or 0
+                base_y = coords.get("y", 0) or 0
+                d = deltas.get(key, {})
+                blended["skeleton"][key] = {
+                    "x": base_x + (d.get("dx", 0) or 0) * t,
+                    "y": base_y + (d.get("dy", 0) or 0) * t,
+                }
+            return {"ok": True, "pose": json.dumps(blended)}
+        if low == "poseinterpolatorworkflow":
+            inner = {
+                "name": "pose_blend_inline",
+                "inputs": {},
+                "outputs": {"pose": "interp.pose"},
+                "nodes": [
+                    {"id": "load_a", "type": "LoadPose", "params": {"filename": payload.get("pose_a")}, "inputs": {}, "outputs": {"pose": "load_a.pose"}},
+                    {"id": "load_b", "type": "LoadPose", "params": {"filename": payload.get("pose_b")}, "inputs": {}, "outputs": {"pose": "load_b.pose"}},
+                    {"id": "delta", "type": "PoseDelta", "params": {}, "inputs": {"pose_a": "load_a.pose", "pose_b": "load_b.pose"}, "outputs": {"delta": "delta.out"}},
+                    {"id": "interp", "type": "PoseInterpolator", "params": {"t": payload.get("blend", 0.5)}, "inputs": {"pose_a_json": "load_a.pose", "delta_json": "delta.out"}, "outputs": {"pose": "$output.pose"}},
+                ],
+                "edges": []
+            }
+            runtime = WorkflowRuntime(inner, run_id=f"pose_{int(time.time()*1000)}")
+            result = runtime.run()
+            return {"ok": True, "pose": result.get("outputs", {}).get("pose")}
         # Fallback: plugin job
         res = self.pm.handle(typ, payload, None) or {}
         # adapt common fields
@@ -119,21 +197,30 @@ class WorkflowRuntime:
         (CACHE_DIR / f"{key}.json").write_text(json.dumps(out), encoding="utf-8")
 
     def _eval_inputs(self, n: NodeSpec) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for port, src in (n.inputs or {}).items():
+        def resolve(src):
+            if isinstance(src, list):
+                return [resolve(item) for item in src if item]
             if not src:
-                raise ValueError(f"input '{port}' missing source reference")
-            if src.startswith("$input."):
-                key = src.split(".",1)[1]; out[port] = self.inputs.get(key)
-            else:
-                if "." not in src: raise ValueError(f"bad source '{src}'")
-                snode, sport = src.split(".",1)
+                return None
+            if isinstance(src, str) and "|" in src and not src.startswith("$input."):
+                parts = [part.strip() for part in src.split("|") if part.strip()]
+                return [resolve(part) for part in parts]
+            if isinstance(src, str) and src.startswith("$input."):
+                key = src.split(".", 1)[1]
+                return self.inputs.get(key)
+            if isinstance(src, str) and "." in src:
+                snode, sport = src.split(".", 1)
                 if snode not in self.values:
                     raise ValueError(f"node '{snode}' has not produced outputs for '{src}'")
                 node_outputs = self.values[snode]
                 if sport not in node_outputs:
                     raise ValueError(f"node '{snode}' missing output '{sport}' for '{src}'")
-                out[port] = node_outputs[sport]
+                return node_outputs[sport]
+            return src
+
+        out: Dict[str, Any] = {}
+        for port, src in (n.inputs or {}).items():
+            out[port] = resolve(src)
         return out
 
     def _coerce_params(self, params: Dict[str, Any]) -> Dict[str, Any]:

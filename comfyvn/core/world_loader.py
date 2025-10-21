@@ -6,19 +6,23 @@ logger = logging.getLogger(__name__)
 # ComfyVN Architect — Production Standard (2025-10)
 # [⚙️ 3. Server Core Production Chat]
 
-import os, json, hashlib
+import os, json, hashlib, shutil
+from pathlib import Path
 from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge
+from comfyvn.config.runtime_paths import data_dir
 
 
 class WorldLoader:
     """Handles loading, merging, caching, and syncing of world lore files."""
 
-    def __init__(self, data_path="./data/worlds"):
-        self.data_path = data_path
+    def __init__(self, data_path: str | None = None):
+        resolved_path = data_dir("worlds") if data_path is None else data_path
+        self.data_path = resolved_path
         self.cache = {}
         self.active_world = "default_world.json"
         self.bridge = SillyTavernBridge()
-        os.makedirs(data_path, exist_ok=True)
+        os.makedirs(self.data_path, exist_ok=True)
+        self._ensure_default_world()
 
     # -----------------------------------------------------
     # JSON Utilities
@@ -71,6 +75,24 @@ class WorldLoader:
     def get_location_theme(self, location_id: str) -> dict:
         world = self.cache.get(self.active_world, {})
         return world.get("locations", {}).get(location_id, {})
+
+    def _ensure_default_world(self) -> None:
+        """Copy packaged default worlds into the user data directory if missing."""
+        base = Path(__file__).resolve().parents[2] / "defaults" / "worlds"
+        if not base.exists():
+            return
+        destination = Path(self.data_path)
+        placeholder_missing = not (Path(self.data_path) / self.active_world).exists()
+        for source in base.glob("*.json"):
+            target = destination / source.name
+            if not target.exists():
+                try:
+                    shutil.copy2(source, target)
+                except OSError:
+                    continue
+            if placeholder_missing:
+                self.active_world = target.name
+                placeholder_missing = False
 
     # -----------------------------------------------------
     # Clean-State Sync (enhanced)

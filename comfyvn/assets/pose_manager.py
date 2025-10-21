@@ -1,7 +1,8 @@
 from PySide6.QtGui import QAction
 from pathlib import Path
 import json
-POSE_DIRS=[Path('./data/poses'), Path('./comfyvn/data/poses')]
+from comfyvn.config.runtime_paths import data_dir
+POSE_DIRS=[data_dir('poses'), Path('./comfyvn/data/poses')]
 class PoseManager:
     def list(self):
         out=[]

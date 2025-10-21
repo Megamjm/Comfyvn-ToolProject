@@ -1,0 +1,74 @@
+{
+  "id": "auroragate",
+  "name": "AuroraGate Transit Station",
+  "summary": "A luminous interstellar transit hub suspended in polar orbit above a tidally-locked planet. AuroraGate is equal parts waystation, diplomatic neutral ground, and clandestine meeting point for travelers who live between colony-states.",
+  "tone": "Hopeful science-fantasy with grounded technology, vibrant lightscapes, and intimate character moments.",
+  "rules": {
+    "technology_level": "Post-scarcity nanofabrication mixed with artisanal craftsmanship.",
+    "energy_rules": "Station-wide power routed through aurora siphons; surges can cause chromatic storms.",
+    "narrative_focus": "Character-driven encounters that reveal secrets through dialogue and environmental cues.",
+    "visual_motifs": [
+      "glass promenades washed in teal and magenta",
+      "holographic koi swimming through weightless gardens",
+      "fractured sunlight refracted by orbiting aurora panels"
+    ]
+  },
+  "locations": {
+    "concourse": {
+      "name": "Main Concourse",
+      "summary": "A cathedral-like hall with layered glass walkways and suspended kiosks. Travelers float between platforms while auroral light rivers through the ceiling domes.",
+      "sensory": {
+        "scent": "Ozone, starfruit tea, and polished carbon composites.",
+        "sound": "Gentle announcement chimes harmonized with distant string synths.",
+        "temperature": "Cool drafts offset by radiant floor strips"
+      },
+      "story_hooks": [
+        "A courier drops a prism-drive that hums with encrypted coordinates.",
+        "A diplomatic envoy requests a quiet corner to negotiate a ceasefire.",
+        "Maintenance drones glitch, painting sky glyphs that hint at sabotage."
+      ]
+    },
+    "hangar_east": {
+      "name": "Hangar Epsilon",
+      "summary": "An exposed docking bay with panoramic shutters revealing the planet's auroral storms. Repair crews in mag-coated suits scale ships anchored by magnetic tethers.",
+      "sensory": {
+        "scent": "Ionized fuel, lubricant vapors, and cold vacuum filters.",
+        "sound": "Hydraulic sighs, tool harmonics, distant thunder from the aurora siphons.",
+        "temperature": "Frigid whenever the shutters cycle open"
+      },
+      "story_hooks": [
+        "A derelict shuttle glows with forbidden biotech filaments.",
+        "Smugglers barter for forged clearance tags behind stacked cargo crates.",
+        "A child engineers a paper glider that maps turbulent airflow patterns."
+      ]
+    }
+  },
+  "factions": {
+    "lumen_guild": {
+      "summary": "Artisans who weave light into physical constructs; they maintain the station's aurora lattices.",
+      "goals": "Protect the aurora siphons, preserve artistic sovereignty, trade designs with off-world partners.",
+      "visual": "Flowing coats threaded with fiber optics, opal visors reflecting auroral spectra."
+    },
+    "relay_collective": {
+      "summary": "Network cartographers charting wormhole drifts and slipstream anomalies.",
+      "goals": "Map secure transit lanes, broker safe passage, archive traveler testimonies.",
+      "visual": "Modular cloaks covered in stitched star charts and sensor beads."
+    }
+  },
+  "lore": {
+    "origin": "AuroraGate was built by a coalition of fringe colonies seeking neutral ground after the Corridor Fracture. Its energy grid is powered by harvesting auroral ions using crystalline sails.",
+    "recent_events": [
+      "Aurora siphon #7 overloaded, imprinting latent memories into the station's glasswork.",
+      "A courier from the Relay Collective vanished after receiving a Lumen Guild dataprism.",
+      "Unauthorized broadcasts count down to an unknown convergence."
+    ],
+    "myths": [
+      "Some believe the auroral rivers are conscious and remember every traveler.",
+      "Maintenance tunnels hide a forgotten dock that surfaces once every orbit cycle."
+    ]
+  },
+  "prompt_templates": {
+    "base": "{location_summary}\nTone: {tone}\nVisual Motifs: {motifs}\nStory Hooks: {hooks}\nRules: {rules}",
+    "character": "{character_name} meets {companion_desc} at {location_name}. Use auroral lighting and reflective surfaces to paint the scene."
+  }
+}

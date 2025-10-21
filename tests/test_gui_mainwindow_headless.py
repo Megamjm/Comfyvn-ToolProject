@@ -65,6 +65,32 @@ class _StubCharacterRegistry:
         pass
 
 
+class _StubTimelineRegistry:
+    def __init__(self, project_id: str = "default") -> None:
+        self.project_id = project_id
+        self._timelines: dict[int, dict] = {}
+        self._counter = 1
+
+    def list_timelines(self) -> list[dict]:
+        return list(self._timelines.values())
+
+    def save_timeline(self, *, name: str, scene_order: list, meta: dict | None = None, timeline_id: int | None = None) -> int:
+        if timeline_id is None:
+            timeline_id = self._counter
+            self._counter += 1
+        record = {
+            "id": timeline_id,
+            "name": name,
+            "scene_order": scene_order,
+            "meta": meta or {},
+        }
+        self._timelines[timeline_id] = record
+        return timeline_id
+
+    def delete_timeline(self, timeline_id: int) -> None:
+        self._timelines.pop(timeline_id, None)
+
+
 @pytest.fixture(scope="module")
 def qt_app():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -81,6 +107,7 @@ def test_main_window_headless_smoke(monkeypatch: pytest.MonkeyPatch, qt_app):
     monkeypatch.setattr(mw, "ServerBridge", _StubServerBridge)
     monkeypatch.setattr(mw, "SceneRegistry", _StubSceneRegistry)
     monkeypatch.setattr(mw, "CharacterRegistry", _StubCharacterRegistry)
+    monkeypatch.setattr(mw, "TimelineRegistry", _StubTimelineRegistry)
 
     window = mw.MainWindow()
 

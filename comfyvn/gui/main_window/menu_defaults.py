@@ -22,6 +22,7 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
     registry.add("Characters", "open_characters_panel", section="Modules", order=30)
     registry.add("Assets", "open_asset_browser", section="Modules", order=40)
     registry.add("Playground", "open_playground", section="Modules", order=50)
+    registry.add("Sprites", "open_sprite_panel", section="Modules", order=55)
     registry.add("Timeline", "open_timeline", section="Modules", order=60)
     registry.add("Imports", "open_imports_panel", section="Modules", separator_before=True, order=70)
     registry.add("Audio", "open_audio_panel", section="Modules", order=80)

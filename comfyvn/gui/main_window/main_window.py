@@ -40,6 +40,7 @@ from comfyvn.gui.panels.characters_panel import CharactersPanel
 from comfyvn.gui.panels.imports_panel import ImportsPanel
 from comfyvn.gui.panels.audio_panel import AudioPanel
 from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
+from comfyvn.gui.panels.sprite_panel import SpritePanel
 from comfyvn.gui.widgets.log_hub import LogHub
 from comfyvn.gui.panels.notify_overlay import NotifyOverlay
 from comfyvn.core.notifier import notifier
@@ -51,7 +52,7 @@ from comfyvn.gui.panels.central_space import CentralSpace
 from comfyvn.gui.main_window.menu_bar import ensure_menu_bar, update_window_menu_state, rebuild_menus_from_registry
 from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
 from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
-from comfyvn.studio.core import SceneRegistry, CharacterRegistry
+from comfyvn.studio.core import SceneRegistry, CharacterRegistry, TimelineRegistry
 from comfyvn.config import runtime_paths
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._current_project_path: Path | None = None
         self._scene_registry = SceneRegistry()
         self._character_registry = CharacterRegistry()
+        self._timeline_registry = TimelineRegistry()
         self._extension_metadata: list[ExtensionMetadata] = []
 
         # Central canvas (assets & editors dock around it)
@@ -261,13 +263,25 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock.setVisible(True)
         dock.raise_()
 
+    def open_sprite_panel(self):
+        dock = getattr(self, "_sprite_panel", None)
+        if dock is None:
+            dock = SpritePanel(self)
+            self.dockman.dock(dock, "Sprites")
+            self._sprite_panel = dock
+            logger.debug("Sprite panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
     def open_timeline(self):
         dock = getattr(self, "_timeline", None)
         if dock is None:
-            dock = TimelinePanel()
+            dock = TimelinePanel(self._scene_registry, self._timeline_registry, self)
             self.dockman.dock(dock, "Timeline")
             self._timeline = dock
             logger.debug("Timeline module created")
+        elif isinstance(dock, TimelinePanel):
+            dock.set_registries(scene_registry=self._scene_registry, timeline_registry=self._timeline_registry)
         dock.setVisible(True)
         dock.raise_()
 
@@ -403,6 +417,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         logger.info("Initializing registries for project %s", project_id)
         self._scene_registry = SceneRegistry(project_id=project_id)
         self._character_registry = CharacterRegistry(project_id=project_id)
+        self._timeline_registry = TimelineRegistry(project_id=project_id)
         self._refresh_project_panels()
 
     def _refresh_project_panels(self) -> None:
@@ -412,6 +427,12 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock = getattr(self, "_characters_panel", None)
         if dock is not None and isinstance(dock.widget(), CharactersPanel):
             dock.widget().set_registry(self._character_registry)
+        dock = getattr(self, "_timeline", None)
+        if dock is not None and isinstance(dock, TimelinePanel):
+            dock.set_registries(
+                scene_registry=self._scene_registry,
+                timeline_registry=self._timeline_registry,
+            )
 
     # --------------------
     # Server monitoring

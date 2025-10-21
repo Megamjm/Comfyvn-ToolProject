@@ -264,6 +264,7 @@ Recent Phase 4 updates (2025-10-22):
 - ✅ Extension manifests now enforce semantic-version compatibility (`requires.comfyvn`, optional API versions, explicit entrypoints). Incompatible plugins are skipped with surfaced diagnostics instead of hard failures.
 - ✅ Runtime data (logs, settings, workspaces, caches) moved to OS-specific user directories via `comfyvn.config.runtime_paths`, with optional overrides (`COMFYVN_RUNTIME_ROOT`, `COMFYVN_LOG_DIR`, etc.) and legacy-friendly symlinks for existing scripts.
 - ✅ Packaging roadmap documented in `docs/packaging_plan.md`, aligning wheel + PyInstaller/AppImage deliverables and signing/notarisation requirements.
+- ✅ Sprite & pose panel exposes persona sprite controls, pose assignment, and previews hooked into ComfyUI workflows.
 
 Part A — Scenes view (designer)
 
@@ -304,6 +305,9 @@ Outputs:
 Drag/drop scene order; branch grouping; seed control
 
 Acceptance: Timeline can be saved/loaded; seeded replay consistent.
+
+Progress:
+- ✅ 2025-10-22 — Timeline panel enables creating, duplicating, and reordering scene sequences; entries persist via the timeline registry with per-step notes.
 
 Part D — Assets library
 
@@ -616,6 +620,7 @@ Scene JSON: { id, title, nodes:[ {id,type("text"|"choice"|"action"),content,dire
 Character JSON: { id, name, traits{}, portrait_asset_id, linked_scene_ids[] }
 
 Timeline JSON: { id, name, scene_order[], meta }
+World JSON: { id, name, summary, tone, rules{}, locations{}, factions{}, lore{}, prompt_templates{} }
 
 Asset registry row: { id, uid, type, path_full, path_thumb, hash, bytes, meta{license,nsfw,origin}, created_at }
 

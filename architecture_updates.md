@@ -7,6 +7,10 @@ Scope: Snapshot of recent local changes and alignment tasks against `ARCHITECTUR
 - Phase 7 progression: policy gate + filter endpoints (`policy_api.py`), settings-backed acknowledgements, and advisory-friendly filter previews documented for debugging.
 - Runtime storage overhaul: `comfyvn/config/runtime_paths.py` centralises log/config/cache/data directories via `platformdirs`, relocates mutable assets to user-space folders, exposes overrides (`COMFYVN_RUNTIME_ROOT`, `COMFYVN_LOG_DIR`, etc.), and provisions optional symlink shims for legacy `logs/` / `data/settings` references.
 - Extension compatibility enforcement: `extensions_discovery` validates `extension.json` manifests (semantic `requires`, entrypoints, API hints), `menu_runtime_bridge` now supports callable callbacks, and GUI reloads surface incompatibilities via the new warning toast log.
+- Timeline builder pass: new `TimelineRegistry` + dockable Timeline panel provide drag/drop sequences, notes per entry, and persistence for multiple timelines per project.
+- World lore pipeline: seeded default `data/worlds/default_world.json`, `world_prompt.build_world_prompt()` converts SillyTavern-style lore into ComfyUI prompt text with trace metadata, and documentation captured in `docs/world_prompt_notes.md`.
+- Sprite & pose controls: `SpritePanel` exposes persona expression switching, sprite previews, and pose assignment via `PoseManager`; persona metadata now retains the applied pose for ComfyUI exports.
+- Workflow templates expanded: ComfyUI-ready specs (`sprite_composite_basic`, `pose_blend_basic`, `sprite_pose_composite`) landed with runtime stubs so GUI requests can be simulated without a running ComfyUI instance.
 
 Recent Changes Observed
 ----------------------

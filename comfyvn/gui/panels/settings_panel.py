@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QFileDialog,
     QInputDialog,
+    QScrollArea,
 )
 from PySide6.QtCore import Qt
 
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.core.compute_registry import ComputeProviderRegistry
+from comfyvn.gui.widgets.drawer import Drawer, DrawerContainer
 from typing import Optional
 import os
 import socket
@@ -45,7 +47,8 @@ class SettingsPanel(QDockWidget):
         w = QWidget()
         root = QVBoxLayout(w)
 
-        form = QFormLayout()
+        basics_widget = QWidget()
+        form = QFormLayout(basics_widget)
         cfg_snapshot = self.settings_manager.load()
         server_cfg = cfg_snapshot.get("server", {})
         self.api = QLineEdit(self.bridge.base)
@@ -83,14 +86,22 @@ class SettingsPanel(QDockWidget):
         form.addRow("Legacy Remote GPU Endpoints:", self.remote_list)
         form.addRow("Menu Sort Order:", self.menu_sort)
         form.addRow(btn_save)
-        root.addLayout(form)
+
+        drawer_container = DrawerContainer()
+        drawer_container.add_drawer(Drawer("Studio Basics", basics_widget))
 
         self.server_group = self._build_server_controls()
-        root.addWidget(self.server_group)
+        drawer_container.add_drawer(Drawer("Compute & Server", self.server_group))
 
         self.audio_group = self._build_audio_settings(cfg_snapshot)
-        root.addWidget(self.audio_group)
-        root.addStretch(1)
+        drawer_container.add_drawer(Drawer("Audio & Music", self.audio_group))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(drawer_container)
+        root.addWidget(scroll)
+
         self.setWidget(w)
 
         self._refresh_servers()

@@ -122,6 +122,12 @@ Added “dry-run” mode for preview exports.
 
 Packaging roadmap tracked in `docs/packaging_plan.md`.
 
+🖼️ Sprite & Pose Toolkit
+
+- Modules → `Sprites` opens the sprite panel for managing persona expressions, previews, and pose assignments.
+- Poses load from user runtime directories (`data/poses`); active pose JSON is embedded in persona metadata and surfaced to ComfyUI workflows.
+- Ship with starter ComfyUI workflow templates: `sprite_composite_basic`, `pose_blend_basic`, and `sprite_pose_composite`.
+
 ⚙️ Cross-System Improvements
 Category	Update
 Async Safety	Replaced blocking I/O with asyncio.create_task().
@@ -207,3 +213,7 @@ Currently the file covers `libegl1`, `libxkbcommon0`, and `libdbus-1-3`; add new
 ## Extension Development
 
 See `docs/extension_manifest_guide.md` for the manifest schema, semantic-version negotiation rules, and examples of registering menu callbacks with the new loader.
+
+## World Lore
+
+- Sample world data lives in `defaults/worlds/auroragate.json` (AuroraGate Transit Station). Pair it with `docs/world_prompt_notes.md` and `comfyvn/core/world_prompt.py` to translate lore into ComfyUI prompt strings.

@@ -16,6 +16,7 @@ from .variable_registry import VariableRegistry
 from .job_registry import JobRegistry
 from .import_registry import ImportRegistry
 from .provenance_registry import ProvenanceRegistry
+from .timeline_registry import TimelineRegistry
 
 __all__ = [
     "BaseRegistry",
@@ -28,4 +29,5 @@ __all__ = [
     "JobRegistry",
     "ImportRegistry",
     "ProvenanceRegistry",
+    "TimelineRegistry",
 ]
