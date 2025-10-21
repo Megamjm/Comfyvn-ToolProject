@@ -45,6 +45,15 @@ def _make_demo_package(path: Path) -> Path:
     return pkg
 
 
+def _make_manga_archive(path: Path) -> Path:
+    archive = path / "manga.cbz"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("page1.png", b"fake")
+        z.writestr("page1.txt", "Alice: Hello!\nBob: Hi Alice.")
+        z.writestr("page2.png", b"fake")
+    return archive
+
+
 def test_vn_import_blocking_and_jobs_status(client: TestClient, tmp_path: Path):
     package = _make_demo_package(tmp_path)
     resp = client.post(
@@ -95,4 +104,31 @@ def test_roleplay_import_log_stream_present(client: TestClient):
     log = client.get(f"/roleplay/imports/{job_id}/log")
     assert log.status_code == 200
     assert "scene_id=" in log.text or "[ok]" in log.text
+    status = client.get(f"/roleplay/imports/status/{job_id}")
+    assert status.status_code == 200
 
+
+def test_manga_import_blocking(client: TestClient, tmp_path: Path, monkeypatch):
+    archive = _make_manga_archive(tmp_path)
+    data_root = tmp_path / "manga_data"
+    monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
+
+    resp = client.post(
+        "/manga/import",
+        json={"path": str(archive), "blocking": True, "translation": False},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["ok"] is True
+    job_id = payload["job"]["id"]
+    summary = payload["import"]
+    assert summary["scenes"]
+    assert summary["assets"]
+    assert summary["summary_path"]
+    assert Path(summary["summary_path"]).exists()
+    status = client.get(f"/manga/import/{job_id}")
+    assert status.status_code == 200
+    history = client.get("/manga/imports/history")
+    assert history.status_code == 200
+    imports = history.json()["imports"]
+    assert any(item.get("import_id") == summary["import_id"] for item in imports)

@@ -7,9 +7,11 @@ Provides a lightweight toolbar hooked into the new /api/studio endpoints.
 from __future__ import annotations
 
 import logging
+import os
+import threading
+from typing import Any, Dict, Mapping, Optional
 
-from PySide6.QtCore import Qt
-from typing import Any, Dict
+from PySide6.QtCore import Qt, QTimer, Signal
 
 from PySide6.QtWidgets import (
     QAction,
@@ -23,12 +25,16 @@ from PySide6.QtWidgets import (
 )
 
 from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
 
 logger = logging.getLogger(__name__)
 
 
 class StudioWindow(QMainWindow):
     """Prototype Studio shell window using the new Studio REST endpoints."""
+
+    autostart_completed = Signal(bool)
+    manual_start_completed = Signal(bool)
 
     def __init__(self, bridge: ServerBridge | None = None):
         super().__init__()
@@ -37,7 +43,18 @@ class StudioWindow(QMainWindow):
 
         self.bridge = bridge or ServerBridge("http://127.0.0.1:8001")
         self.bridge.status_updated.connect(self._on_metrics)
-        self.bridge.start_polling()
+
+        self._autostart_enabled = self._resolve_autostart_flag()
+        self._autostart_base_delay = 3
+        self._autostart_max_delay = 45
+        self._autostart_step = 0
+        self._autostart_inflight = False
+        self._manual_start_in_progress = False
+        self._autostart_timer = QTimer(self)
+        self._autostart_timer.setSingleShot(True)
+        self._autostart_timer.timeout.connect(self._attempt_autostart)
+        self.autostart_completed.connect(self._on_autostart_complete)
+        self.manual_start_completed.connect(self._on_manual_start_complete)
 
         self._current_project = "default"
         self._current_view = "Modules"
@@ -45,6 +62,10 @@ class StudioWindow(QMainWindow):
         self._init_toolbar()
         self._init_central()
         self._init_status()
+
+        self.bridge.start_polling()
+        if self._autostart_enabled:
+            self._schedule_autostart(initial=True)
 
     def _init_toolbar(self) -> None:
         toolbar = QToolBar("Studio Controls")
@@ -76,10 +97,25 @@ class StudioWindow(QMainWindow):
             "Use the toolbar to open a project, switch views, or export a bundle stub."
         )
 
+        self._dashboard = MetricsDashboard(self)
+        layout.addWidget(self._dashboard)
+        self._dashboard.set_manual_enabled(True)
+        self._dashboard.start_button.clicked.connect(self._manual_start_server)
+        if not self._autostart_enabled:
+            self._dashboard.show_message("Autostart disabled. Use Start Embedded Server to launch the backend manually.")
+
+        layout.addStretch(1)
+
         self.setCentralWidget(container)
 
     def _init_status(self) -> None:
         status = QStatusBar(self)
+        self._status_indicator = QLabel(self)
+        self._status_indicator.setTextFormat(Qt.RichText)
+        self._status_indicator.setText(self._format_status_dot(False))
+        self._status_indicator.setToolTip("Backend health indicator")
+        status.addPermanentWidget(self._status_indicator, 0)
+
         self._metrics_label = QLabel("Server metrics: pending", self)
         status.addPermanentWidget(self._metrics_label, 1)
         self.setStatusBar(status)
@@ -159,16 +195,146 @@ class StudioWindow(QMainWindow):
         logger.info("Bundle export result: %s", summary)
 
     def _on_metrics(self, payload: Dict[str, Any]) -> None:
-        if not payload.get("ok"):
-            self._metrics_label.setText("Server metrics: offline")
+        if not isinstance(payload, dict):
             return
-        cpu = payload.get("cpu")
-        mem = payload.get("mem")
-        disk = payload.get("disk")
-        gpus = len(payload.get("gpus", []))
-        self._metrics_label.setText(f"Server metrics — CPU: {cpu}% • MEM: {mem}% • DISK: {disk}% • GPUs: {gpus}")
+
+        ok = bool(payload.get("ok"))
+        health_info = payload.get("health")
+        if isinstance(health_info, Mapping):
+            health_ok = bool(health_info.get("ok"))
+        else:
+            health_ok = False
+
+        self._dashboard.update_metrics(payload if ok else None)
+        self._dashboard.update_health(health_info if isinstance(health_info, Mapping) else None, fallback_ok=ok)
+        self._update_status_indicator(health_ok or ok)
+        self._update_metrics_label(payload if ok else None)
+
+        if ok or health_ok:
+            self._handle_server_online()
+            return
+
+        if self._autostart_enabled and not self._manual_start_in_progress:
+            self._schedule_autostart()
+        elif not self._autostart_enabled:
+            self._dashboard.show_message("Backend offline. Use Start Embedded Server to launch the local backend.")
+        self._dashboard.set_manual_enabled(not self._autostart_inflight and not self._manual_start_in_progress)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.bridge.stop_polling()
         logger.info("Studio window closed; polling stopped")
         super().closeEvent(event)
+        if self._autostart_timer.isActive():
+            self._autostart_timer.stop()
+
+    # -----------------
+    # Studio workflows
+    # -----------------
+    def new_project(self) -> None:
+        """Placeholder stub for menu integration."""
+        logger.info("New project requested from Studio shell (stub).")
+        self._info_label.setText(
+            "New project workflow is not yet available in the Studio shell.\n"
+            "Switch to the main ComfyVN Studio for full project management."
+        )
+
+    # -----------------
+    # Internal helpers
+    # -----------------
+    def _handle_server_online(self) -> None:
+        if self._autostart_timer.isActive():
+            self._autostart_timer.stop()
+        self._dashboard.set_retry_message(0)
+        self._dashboard.show_message(None)
+        self._dashboard.set_manual_enabled(True)
+        self._autostart_inflight = False
+        self._manual_start_in_progress = False
+        self._autostart_step = 0
+
+    def _update_metrics_label(self, payload: Optional[Mapping[str, Any]]) -> None:
+        if not payload:
+            self._metrics_label.setText("Server metrics: offline")
+            return
+        cpu = self._bound_percent(payload.get("cpu"))
+        mem = self._bound_percent(payload.get("mem"))
+        disk = self._bound_percent(payload.get("disk"))
+        gpus = payload.get("gpus")
+        gpu_count = len(gpus) if isinstance(gpus, list) else 0
+        self._metrics_label.setText(f"Server metrics — CPU {cpu}% • RAM {mem}% • Disk {disk}% • GPUs {gpu_count}")
+
+    def _update_status_indicator(self, ok: bool) -> None:
+        self._status_indicator.setText(self._format_status_dot(ok))
+        self._status_indicator.setToolTip("Backend online" if ok else "Backend offline")
+
+    @staticmethod
+    def _bound_percent(value: Any) -> int:
+        if isinstance(value, (int, float)):
+            return max(0, min(100, int(round(value))))
+        return 0
+
+    @staticmethod
+    def _format_status_dot(ok: bool) -> str:
+        color = "#2ecc71" if ok else "#e74c3c"
+        status = "●" if ok else "●"
+        return f'<span style="color:{color};font-weight:600;">{status}</span>'
+
+    def _schedule_autostart(self, *, initial: bool = False) -> None:
+        if not self._autostart_enabled or self._autostart_inflight or self._manual_start_in_progress:
+            return
+        if self._autostart_timer.isActive() and not initial:
+            return
+        delay = 0 if initial else min(self._autostart_max_delay, self._autostart_base_delay * (2 ** self._autostart_step))
+        self._dashboard.set_retry_message(delay)
+        self._autostart_timer.start(max(0, int(delay * 1000)))
+
+    def _attempt_autostart(self) -> None:
+        if self._autostart_inflight or self._manual_start_in_progress:
+            return
+        self._autostart_inflight = True
+        self._dashboard.show_message("Attempting to start embedded server…")
+        self._dashboard.set_manual_enabled(False)
+
+        def worker():
+            ok = self.bridge.ensure_online(autostart=True, deadline=20.0)
+            self.autostart_completed.emit(ok)
+
+        threading.Thread(target=worker, daemon=True, name="StudioAutoStart").start()
+
+    def _on_autostart_complete(self, ok: bool) -> None:
+        self._autostart_inflight = False
+        if ok:
+            self._handle_server_online()
+        else:
+            self._dashboard.show_message("Embedded server did not report healthy status.")
+            self._dashboard.set_manual_enabled(True)
+            self._autostart_step = min(self._autostart_step + 1, 6)
+            self._schedule_autostart()
+
+    def _manual_start_server(self) -> None:
+        if self._manual_start_in_progress:
+            return
+        self._manual_start_in_progress = True
+        self._dashboard.show_message("Manual server start requested…")
+        self._dashboard.set_manual_enabled(False)
+
+        def worker():
+            ok = self.bridge.ensure_online(autostart=True, deadline=25.0)
+            self.manual_start_completed.emit(ok)
+
+        threading.Thread(target=worker, daemon=True, name="StudioManualStart").start()
+
+    def _on_manual_start_complete(self, ok: bool) -> None:
+        self._manual_start_in_progress = False
+        if ok:
+            self._handle_server_online()
+        else:
+            self._dashboard.show_message("Manual start failed. Check logs and try again.")
+            if self._autostart_enabled:
+                self._schedule_autostart()
+            else:
+                self._dashboard.set_manual_enabled(True)
+
+    @staticmethod
+    def _resolve_autostart_flag() -> bool:
+        env = os.getenv("COMFYVN_STUDIO_AUTOSTART", "1").strip().lower()
+        return env not in {"0", "false", "off", "no"}

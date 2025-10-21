@@ -14,24 +14,25 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Iterable, Optional
 
-DEFAULT_DB_PATH = Path("comfyvn/data/comfyvn.db")
+from comfyvn.core.db_manager import DBManager, DEFAULT_DB_PATH as CORE_DB_PATH
+
+DEFAULT_DB_PATH = CORE_DB_PATH
 
 
 class BaseRegistry:
     """Base class for registry objects backed by SQLite."""
 
     def __init__(self, db_path: Path | str = DEFAULT_DB_PATH, project_id: str = "default"):
-        self.db_path = Path(db_path)
+        self._db_manager = DBManager(db_path)
+        self.db_path = self._db_manager.db_path
         self.project_id = project_id
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._db_manager.ensure_schema()
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
         """Hook for subclasses that need to create tables."""
-        # Base implementation creates the database file if it does not exist.
-        if not self.db_path.exists():
-            # touching the file is enough; schema will be applied by migration scripts.
-            self.db_path.touch()
+        # Subclasses may extend this to apply additional constraints or indexes.
+        return None
 
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection, None, None]:

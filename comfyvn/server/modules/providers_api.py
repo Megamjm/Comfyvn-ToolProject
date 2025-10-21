@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, Optional, List
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 
 from comfyvn.core.compute_providers import health as provider_health
 from comfyvn.core.compute_registry import get_provider_registry
@@ -16,11 +16,25 @@ router = APIRouter(prefix="/api/providers", tags=["Compute Providers"])
 REGISTRY = get_provider_registry()
 
 
-@router.get("/list")
-async def list_providers() -> Dict[str, Any]:
+def _build_provider_listing() -> Dict[str, Any]:
     providers = REGISTRY.list()
     templates = REGISTRY.templates_public()
     return {"ok": True, "providers": providers, "templates": templates}
+
+
+@router.get("")
+async def list_providers_root() -> Dict[str, Any]:
+    return _build_provider_listing()
+
+
+@router.get("/")
+async def list_providers_root_slash() -> Dict[str, Any]:
+    return _build_provider_listing()
+
+
+@router.get("/list")
+async def list_providers() -> Dict[str, Any]:
+    return _build_provider_listing()
 
 
 @router.post("/register")
@@ -79,10 +93,7 @@ async def reorder_providers(payload: Dict[str, Any] = Body(...)) -> Dict[str, An
     return {"ok": True, "providers": providers}
 
 
-@router.post("/health")
-async def provider_health_check(payload: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
-    payload = payload or {}
-    provider_id = payload.get("id")
+def _provider_health(provider_id: Optional[str]) -> Dict[str, Any]:
     if provider_id:
         entry = REGISTRY.get(provider_id)
         if not entry:
@@ -103,6 +114,18 @@ async def provider_health_check(payload: Optional[Dict[str, Any]] = Body(None)) 
         REGISTRY.record_health(pid, status)
         results.append(status)
     return {"ok": True, "results": results}
+
+
+@router.get("/health")
+async def provider_health_query(provider_id: Optional[str] = Query(None, alias="id")) -> Dict[str, Any]:
+    return _provider_health(provider_id)
+
+
+@router.post("/health")
+async def provider_health_check(payload: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
+    payload = payload or {}
+    provider_id = payload.get("id")
+    return _provider_health(provider_id)
 
 
 @router.delete("/remove/{provider_id}")

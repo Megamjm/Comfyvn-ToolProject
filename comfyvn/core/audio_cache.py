@@ -66,20 +66,24 @@ class AudioCacheManager:
     @staticmethod
     def make_key(
         *,
-        voice: str,
+        character_id: Optional[str],
         text_hash: str,
-        lang: Optional[str] = None,
-        character_id: Optional[str] = None,
+        voice: str,
         style: Optional[str] = None,
+        lang: Optional[str] = None,
         model_hash: Optional[str] = None,
     ) -> str:
+        voice_label = voice or "default"
+        voice_style_parts = [voice_label, style or "default"]
+        if lang:
+            voice_style_parts.append(lang)
+        voice_style = ":".join(voice_style_parts)
+
         parts = [
-            voice or "",
+            character_id or "global",
             text_hash,
-            lang or "",
-            character_id or "",
-            style or "",
-            model_hash or "",
+            voice_style,
+            model_hash or "default",
         ]
         return "|".join(parts)
 

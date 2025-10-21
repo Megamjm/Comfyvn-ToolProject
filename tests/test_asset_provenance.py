@@ -23,14 +23,15 @@ def test_register_file_records_provenance(tmp_path):
     img.save(source)  # type: ignore[attr-defined]
 
     db_path = tmp_path / "db.sqlite"
-    registry = AssetRegistry(db_path=db_path)
-    # Redirect storage roots into the temporary directory.
-    registry.ASSETS_ROOT = tmp_path / "assets"
-    registry.META_ROOT = registry.ASSETS_ROOT / "_meta"
-    registry.THUMB_ROOT = tmp_path / "thumbs"
-    registry.ASSETS_ROOT.mkdir(parents=True, exist_ok=True)
-    registry.META_ROOT.mkdir(parents=True, exist_ok=True)
-    registry.THUMB_ROOT.mkdir(parents=True, exist_ok=True)
+    assets_root = tmp_path / "assets"
+    thumbs_root = tmp_path / "thumbs"
+    meta_root = tmp_path / "assets_meta"
+    registry = AssetRegistry(
+        db_path=db_path,
+        assets_root=assets_root,
+        thumb_root=thumbs_root,
+        meta_root=meta_root,
+    )
 
     provenance_payload = {
         "source": "test-suite",
@@ -52,7 +53,7 @@ def test_register_file_records_provenance(tmp_path):
     assert asset["meta"]["license"] == "CC-BY-4.0"
 
     # Sidecar should include provenance payload.
-    sidecar_path = (registry.META_ROOT / Path(asset["path"])).with_suffix(".json")
+    sidecar_path = registry.ASSETS_ROOT / asset["sidecar"]
     sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
     assert sidecar["provenance"]["id"] == prov_record["id"]
 
@@ -72,16 +73,18 @@ def test_register_file_records_provenance(tmp_path):
 
 
 @pytest.mark.skipif(Image is None, reason="Pillow is required for thumbnail regression test")
-def test_thumbnail_registration_wait(tmp_path, monkeypatch):
+def test_thumbnail_registration_wait(tmp_path):
     assets_root = tmp_path / "assets"
     thumbs_root = tmp_path / "thumbs"
     meta_root = assets_root / "_meta"
-    monkeypatch.setattr(AssetRegistry, "ASSETS_ROOT", assets_root, raising=False)
-    monkeypatch.setattr(AssetRegistry, "META_ROOT", meta_root, raising=False)
-    monkeypatch.setattr(AssetRegistry, "THUMB_ROOT", thumbs_root, raising=False)
 
     db_path = tmp_path / "db.sqlite"
-    registry = AssetRegistry(db_path=db_path)
+    registry = AssetRegistry(
+        db_path=db_path,
+        assets_root=assets_root,
+        thumb_root=thumbs_root,
+        meta_root=meta_root,
+    )
 
     source = tmp_path / "sample.png"
     img = Image.new("RGB", (32, 32), color="blue")  # type: ignore[attr-defined]

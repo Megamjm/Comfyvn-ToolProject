@@ -1,12 +1,12 @@
-from PySide6.QtGui import QAction
 import logging
 logger = logging.getLogger(__name__)
 # comfyvn/modules/playground_manager.py
 # 🧪 Playground Manager – Unified Scene & Pose Sandbox (v0.4.3)
 # [ComfyVN Architect | Server Core + GUI Integration Sync]
 
-import os, json
-from typing import Dict, List, Any, Optional
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from comfyvn.assets.pose_manager import PoseManager
 from comfyvn.assets.pose_utils import apply_delta
 
@@ -18,17 +18,22 @@ class PlaygroundManager:
     """
 
     def __init__(
-        self, pose_dir: str = "./data/poses", delta_dir: str = "./data/pose_deltas"
+        self,
+        pose_dir: str | Path | None = None,
+        delta_dir: str | Path = "./data/pose_deltas",
     ):
         # Prompt mutation memory
         self.history: Dict[str, List[str]] = {}
 
         # Pose management paths
-        self.pose_dir = pose_dir
-        self.delta_dir = delta_dir
-        os.makedirs(self.pose_dir, exist_ok=True)
-        os.makedirs(self.delta_dir, exist_ok=True)
-        self.pose_manager = PoseManager(self.pose_dir)
+        self.pose_dir = Path(pose_dir).expanduser() if pose_dir else None
+        self.delta_dir = Path(delta_dir).expanduser()
+        self.delta_dir.mkdir(parents=True, exist_ok=True)
+        if self.pose_dir:
+            self.pose_dir.mkdir(parents=True, exist_ok=True)
+            self.pose_manager = PoseManager(self.pose_dir)
+        else:
+            self.pose_manager = PoseManager()
 
     # -------------------------------------------------
     # 🔤 Prompt Sandbox (from Patch E)
@@ -53,20 +58,20 @@ class PlaygroundManager:
     # -------------------------------------------------
     # 🧍 Pose Interpolation System
     # -------------------------------------------------
-    def list_poses(self) -> List[str]:
+    def list_poses(self) -> List[Dict[str, Any]]:
         return self.pose_manager.list_poses()
 
     def get_pose(self, pose_id: str) -> Optional[Dict[str, Any]]:
         return self.pose_manager.get_pose(pose_id)
 
     def list_deltas(self) -> List[str]:
-        if not os.path.isdir(self.delta_dir):
+        if not self.delta_dir.exists():
             return []
-        return [f for f in os.listdir(self.delta_dir) if f.endswith(".json")]
+        return sorted([path.name for path in self.delta_dir.glob("*.json")])
 
     def load_delta(self, name: str) -> Dict[str, Any]:
-        path = os.path.join(self.delta_dir, name)
-        return json.load(open(path, "r", encoding="utf-8"))
+        path = self.delta_dir / name
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def interpolate(self, pose_a_id: str, delta_name: str, t: float) -> Dict[str, Any]:
         pose_a = self.get_pose(pose_a_id)

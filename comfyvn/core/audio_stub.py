@@ -192,6 +192,7 @@ def _synth_via_comfyui(
     model_hash: Optional[str],
     artifact_path: Path,
     text_length: int,
+    device_hint: Optional[str],
 ) -> Tuple[Path, Path, Dict[str, Any]]:
     config = ComfyUIWorkflowConfig.from_dict(provider)
     runner = ComfyUIAudioRunner(config)
@@ -205,6 +206,7 @@ def _synth_via_comfyui(
         "character_id": character_id or "",
         "model_hash": model_hash or "",
         "text_hash": text_hash,
+        "device_hint": device_hint or "",
     }
 
     files, record = runner.run(context=context, output_types=("audio",))
@@ -234,6 +236,7 @@ def _synth_via_comfyui(
             "prompt_id": record.get("prompt_id"),
             "base_url": config.base_url,
         },
+        "device_hint": device_hint,
     }
     sidecar_path = artifact_path.with_suffix(".json")
     sidecar_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -245,6 +248,8 @@ def _synth_via_comfyui(
         "character_id": character_id or "",
         "model_hash": metadata["model_hash"],
         "provider": provider.get("id", "comfyui"),
+        "voice": voice,
+        "device_hint": device_hint or "",
     }
     _store_cache_entry(
         cache_key=cache_key,
@@ -277,6 +282,7 @@ def _synth_voice_fallback(
     style: Optional[str],
     model_hash: Optional[str],
     artifact_path: Path,
+    device_hint: Optional[str],
 ) -> Tuple[Path, Path, Dict[str, Any]]:
     digest_input = "|".join(
         filter(
@@ -325,6 +331,7 @@ def _synth_voice_fallback(
         "sample_rate": sample_rate,
         "format": artifact_path.suffix.lstrip(".") or "wav",
         "provider": "synthetic",
+        "device_hint": device_hint,
     }
     sidecar_path = artifact_path.with_suffix(".json")
     sidecar_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -337,6 +344,8 @@ def _synth_voice_fallback(
         "model_hash": metadata["model_hash"],
         "duration_seconds": f"{metadata.get('duration_seconds', 0.0):.3f}",
         "provider": "synthetic",
+        "voice": voice,
+        "device_hint": device_hint or "",
     }
     _store_cache_entry(
         cache_key=cache_key,
@@ -367,6 +376,7 @@ def synth_voice(
     lang: Optional[str] = None,
     style: Optional[str] = None,
     model_hash: Optional[str] = None,
+    device_hint: Optional[str] = None,
 ) -> Tuple[str, Optional[str], bool]:
     """Generate speech audio, preferring ComfyUI when available with cache dedupe."""
 
@@ -379,11 +389,11 @@ def synth_voice(
 
     text_hash = _hash_text(cleaned)
     cache_key = audio_cache.make_key(
-        voice=voice,
         text_hash=text_hash,
-        lang=lang,
         character_id=character_id,
+        voice=voice,
         style=style,
+        lang=lang,
         model_hash=model_hash,
     )
 
@@ -428,6 +438,7 @@ def synth_voice(
                 model_hash=model_hash,
                 artifact_path=artifact_path,
                 text_length=len(cleaned),
+                device_hint=device_hint,
             )
             return str(artifact), str(sidecar), False
         except ComfyUIWorkflowError as exc:
@@ -446,5 +457,6 @@ def synth_voice(
         style=style,
         model_hash=model_hash,
         artifact_path=artifact_path,
+        device_hint=device_hint,
     )
     return str(artifact), str(sidecar), False

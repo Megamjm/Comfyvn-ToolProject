@@ -11,7 +11,9 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
+from comfyvn.config.runtime_paths import data_dir
 from comfyvn.server.app import create_app
+from comfyvn.server.modules.roleplay.roleplay_api import _asset_registry
 from setup.apply_phase06_rebuild import ensure_db, ensure_dirs
 # Ensure required folders/tables exist before exercising APIs.
 ensure_dirs()
@@ -43,9 +45,14 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert scene["title"] == "Importer Test"
     assert len(scene["nodes"]) == 3
     assert scene["meta"]["participants"] == ["Alice", "Bob", "Narrator"]
+    advisories = data["advisory_flags"]
+    assert any((issue.get("detail") or {}).get("field") == "license" for issue in advisories)
+    assert any((issue.get("detail") or {}).get("field") == "safety" for issue in advisories)
+    assert "preview_path" in data
+    assert "status" in data
 
     asset = data["asset"]
-    asset_path = Path("data/assets") / asset["path"]
+    asset_path = (_asset_registry.ASSETS_ROOT / asset["path"]).resolve()
     assert asset_path.exists()
 
     log_path = Path(data["logs_path"])
@@ -57,6 +64,11 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert status_payload["status"] == "completed"
     assert status_payload["output"]["scene_id"] == data["scene_db_id"]
     assert status_payload["output"]["asset_uid"] == asset["uid"]
+    assert status_payload["output"]["paths"]["preview"].endswith(".json")
+    assert status_payload["output"]["status"]["status"] == "ready"
+
+    status_via_preview = client.get(f"/roleplay/imports/status/{data['job_id']}")
+    assert status_via_preview.status_code == 200
 
     list_resp = client.get("/roleplay/imports")
     assert list_resp.status_code == 200
@@ -66,6 +78,12 @@ def test_roleplay_import_persists_scene(client: TestClient):
     log_resp = client.get(f"/roleplay/imports/{data['job_id']}/log")
     assert log_resp.status_code == 200
     assert "scene_id=" in log_resp.text
+
+    preview_resp = client.get(f"/roleplay/preview/{data['scene_uid']}")
+    assert preview_resp.status_code == 200
+    preview_payload = preview_resp.json()
+    assert preview_payload["preview"]["excerpt"]
+    assert preview_payload["status"]["status"] in {"ready", "stale"}
 
 
 def test_roleplay_import_async_background(client: TestClient):
@@ -91,6 +109,7 @@ def test_roleplay_import_async_background(client: TestClient):
         if job_payload["status"] == "completed":
             output = job_payload["output"]
             assert output["scene_id"]
+            assert "preview" in output["paths"]
             break
         if job_payload["status"] == "failed":
             pytest.fail(f"roleplay import failed: {job_payload['output']}")
@@ -98,9 +117,14 @@ def test_roleplay_import_async_background(client: TestClient):
     else:
         pytest.fail("roleplay import did not complete in time")
 
-    log_resp = client.get(f"/roleplay/imports/{job_id}/log")
-    assert log_resp.status_code == 200
-    assert "scene_id=" in log_resp.text
+    status_endpoint_resp = client.get(f"/roleplay/imports/status/{job_id}")
+    assert status_endpoint_resp.status_code == 200
+
+    preview_resp = client.get(f"/roleplay/preview/{output['scene_uid']}")
+    assert preview_resp.status_code == 200
+    preview_json = preview_resp.json()
+    assert preview_json["preview"]["excerpt"]
+    assert preview_json["status"]["status"] in {"ready", "stale"}
 
 
 def _auth_headers() -> dict[str, str]:

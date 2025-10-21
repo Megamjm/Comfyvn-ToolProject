@@ -2,9 +2,9 @@
 
 ### Registry Overview
 
-- Assets live under `data/assets/` (per type directories).
-- Sidecar metadata is written to `data/assets/_meta/<asset>.json`.
-- Thumbnails (when Pillow is available) are stored in `cache/thumbs/` and referenced in the registry.
+- Assets live under `assets/` by default (per-type subdirectories). The location can be overridden via `COMFYVN_ASSETS_ROOT`.
+- Sidecar metadata is written alongside each asset as `<filename>.asset.json` and mirrored to `assets/_meta/<asset>.json` for legacy tooling.
+- Thumbnails (and waveform previews for WAV audio) are written to the thumbnail cache (defaults to `cache/thumbs/`) and referenced in the registry.
 
 ### Registering an Asset
 
@@ -21,19 +21,29 @@ The helper performs the following actions:
 2. Computes a SHA-256 hash to derive a stable asset `uid`.
 3. Writes/updates the `assets_registry` table with the file metadata and byte size.
 4. Records a provenance row (`provenance` table) capturing the source workflow, inputs, and commit hash.
-5. Generates a sidecar JSON payload describing the asset, including the provenance entry.
-6. Attempts to build a thumbnail (requires Pillow; otherwise skipped with a log message).
+5. Generates a sidecar JSON payload describing the asset (including provenance and preview metadata).
+6. Attempts to build a thumbnail for images (requires Pillow) or a lightweight waveform preview for WAV audio files.
 7. When Pillow is available and the asset is a PNG, embeds a `comfyvn_provenance` marker directly into the image metadata for downstream tooling.
+
+### Rebuilding the Registry
+
+Use the CLI helper to re-index everything under `assets/`, regenerate sidecars, and refresh previews:
+
+```bash
+python tools/rebuild_asset_registry.py --assets-dir assets --db-path comfyvn/data/comfyvn.db
+```
+
+Pass `--verbose` to inspect individual registrations. The utility also removes stale database rows for files that no longer exist on disk.
 
 ### Future Enhancements
 
-- Thumbnail worker to process assets asynchronously.
-- Audio/voice assets: embed provenance markers in sidecars & waveform headers.
-- CLI command to batch-import assets and rebuild thumbnails.
+- Background worker service to process thumbnails outside the main thread.
+- Broader audio support (MP3/OGG waveform snapshots) when optional dependencies are available.
+- Import adapters that annotate assets with richer metadata during bulk ingestion.
 
 ### Debugging Tips
 
-- Sidecars live under `data/assets/_meta/<asset>.json` and now include a `provenance` object (`id`, `source`, `workflow_hash`, inputs).
+- Sidecars live beside each asset (`<name>.asset.json`) and include a `provenance` object (`id`, `source`, `workflow_hash`, inputs).
 - Provenance ledger rows can be inspected via SQLite:
   ```bash
   sqlite3 comfyvn/data/comfyvn.db "

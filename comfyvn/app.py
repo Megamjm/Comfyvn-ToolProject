@@ -31,8 +31,12 @@ def create_app(
     ensure compatibility endpoints remain available.
     """
     logger.debug("Delegating create_app to comfyvn.server.app (enable_cors=%s)", enable_cors)
-    app = _create_app(enable_cors=enable_cors, allowed_origins=list(allowed_origins) if allowed_origins else None)
+    cors_origins = list(allowed_origins) if allowed_origins is not None else None
+    app = _create_app(enable_cors=enable_cors, allowed_origins=cors_origins)
     _ensure_legacy_health(app)
+    log_path = getattr(app.state, "log_path", None)
+    if log_path:
+        logger.debug("Server logging rooted at %s", log_path)
     logger.debug("FastAPI app ready (routes=%d)", len(app.routes))
     return app
 

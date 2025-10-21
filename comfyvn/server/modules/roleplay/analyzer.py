@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+import re
 from typing import Dict, List
 
 LOGGER = logging.getLogger(__name__)
+
+_PERSONA_HINT_PATTERN = re.compile(r"\(([^)]+)\)|\[([^\]]+)\]")
 
 
 class RoleplayAnalyzer:
@@ -28,3 +31,30 @@ class RoleplayAnalyzer:
         frequencies = dict(counter)
         LOGGER.debug("Speaker frequencies: %s", frequencies)
         return frequencies
+
+    def persona_hints(self, lines: List[Dict[str, str]]) -> Dict[str, List[str]]:
+        """
+        Extract lightweight persona hints from inline metadata or text markers.
+        """
+        hints: Dict[str, List[str]] = {}
+        for entry in lines:
+            speaker = entry.get("speaker") or "Narrator"
+            bucket = hints.setdefault(speaker, [])
+
+            meta = entry.get("meta")
+            if isinstance(meta, str):
+                cleaned = meta.strip()
+                if cleaned and cleaned not in bucket:
+                    bucket.append(cleaned)
+
+            text = entry.get("text") or ""
+            for match in _PERSONA_HINT_PATTERN.finditer(text):
+                snippet = next((group for group in match.groups() if group), "").strip()
+                if snippet and snippet not in bucket:
+                    bucket.append(snippet)
+
+            # Keep hint lists compact.
+            if len(bucket) > 5:
+                del bucket[5:]
+        LOGGER.debug("Persona hints: %s", hints)
+        return hints

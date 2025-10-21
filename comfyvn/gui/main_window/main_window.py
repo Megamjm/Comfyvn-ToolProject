@@ -115,6 +115,8 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._extension_messages_seen: set[str] = set()
         notifier.attach(self._on_notifier_event)
 
+        self._menus_built = False
+
         # Toolbars (Quick Access) are dynamic via shortcut registry
         self._rebuild_shortcuts_toolbar()
         self._restore_layout()
@@ -162,8 +164,12 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         except Exception as e:
             print("[Menu] reload error:", e)
             logger.exception("Menu reload failed: %s", e)
+        menubar = self.menuBar()
+        if menubar is not None:
+            menubar.clear()
         rebuild_menus_from_registry(self, menu_registry)
         self._populate_extensions_menu()
+        self._menus_built = True
         logger.debug("Menus rebuilt with %d items", len(menu_registry.items))
 
     def _rebuild_shortcuts_toolbar(self):

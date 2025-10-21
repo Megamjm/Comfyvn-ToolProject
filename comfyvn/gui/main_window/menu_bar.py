@@ -115,10 +115,14 @@ def rebuild_menus_from_registry(window, registry):
 
 
 def ensure_menu_bar(window):
-    try:
-        window._build_menus_from_registry()
-    except Exception:
-        pass
+    if not hasattr(window, "menuBar"):
+        return
+    menu_bar = window.menuBar()
+    if menu_bar is None:
+        return
+    if getattr(window, "_menus_built", False):
+        return
+    menu_bar.clear()
 
 
 def update_window_menu_state(window):

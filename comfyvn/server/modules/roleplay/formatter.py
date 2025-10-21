@@ -48,6 +48,7 @@ class RoleplayFormatter:
             previous_node = node
 
         participants = self.analyzer.participants(lines)
+        persona_hints = self.analyzer.persona_hints(lines)
         timestamp = dt.datetime.utcnow().isoformat() + "Z"
 
         return {
@@ -62,5 +63,6 @@ class RoleplayFormatter:
                 "participants": participants,
                 "speaker_frequencies": self.analyzer.speaker_frequencies(lines),
                 "job_ref": job_ref,
+                "persona_hints": persona_hints,
             },
         }

@@ -160,6 +160,8 @@ class AudioManager:
     # ------------------------------------------------------------
     def toggle(self, key: AudioKey, state: bool):
         if key in self.media_settings:
+            if self.media_settings.get(key) == state:
+                return
             self.media_settings[key] = state
             self.log(f"{key} set to {state}")
             if self.autosave:
@@ -167,6 +169,45 @@ class AudioManager:
             self._notify(
                 f"Audio toggled: {key} {'ON' if state else 'OFF'}", fx="toggle"
             )
+
+    def is_enabled(self, key: AudioKey) -> bool:
+        """Return the current toggle state for a media channel."""
+        return bool(self.media_settings.get(key, False))
+
+    def set_music_enabled(self, enabled: bool):
+        """Explicit toggle helper for music with optional fade-out."""
+        was_enabled = self.is_enabled("music")
+        self.toggle("music", enabled)
+        if was_enabled and not enabled:
+            self.stop_music()
+
+    def set_voice_enabled(self, enabled: bool):
+        """Enable or disable voice playback; stops active voice when turning off."""
+        was_enabled = self.is_enabled("voice")
+        self.toggle("voice", enabled)
+        if was_enabled and not enabled:
+            if self.backend == "pygame":
+                try:
+                    channel = self._pygame_channels.get("voice")
+                    if channel:
+                        channel.stop()
+                except Exception as e:
+                    self.log(f"[ERR] Stop voice: {e}")
+            self.current_tracks["voice"] = None
+
+    def set_sfx_enabled(self, enabled: bool):
+        """Toggle SFX (fx + ui sound cues) as a single control."""
+        was_fx = self.is_enabled("fx")
+        was_sound = self.is_enabled("sound")
+        self.toggle("fx", enabled)
+        self.toggle("sound", enabled)
+        if (was_fx or was_sound) and not enabled and self.backend == "pygame":
+            try:
+                channel = self._pygame_channels.get("fx")
+                if channel:
+                    channel.stop()
+            except Exception as e:
+                self.log(f"[ERR] Stop sfx: {e}")
 
     def set_volume(self, category: Category, value: float):
         value = max(0.0, min(1.0, float(value)))

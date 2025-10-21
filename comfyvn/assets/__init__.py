@@ -1,4 +1,7 @@
-from PySide6.QtGui import QAction
+try:
+    from PySide6.QtGui import QAction  # type: ignore
+except Exception:  # pragma: no cover - optional UI dependency
+    QAction = object  # type: ignore
 """Auto-generated module exports."""
 
 __all__ = [

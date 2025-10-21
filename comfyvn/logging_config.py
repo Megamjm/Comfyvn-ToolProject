@@ -1,27 +1,48 @@
 # [ComfyVN AutoPatch | Final Stage Sweep v0.4-pre | 2025-10-13]
-import os
+from __future__ import annotations
+
 import logging
-from pathlib import Path
+import os
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-from comfyvn.config.runtime_paths import logs_dir
+DEFAULT_LOG_DIR = Path(os.getenv("COMFYVN_SERVER_LOG_DIR", "./logs")).resolve()
+DEFAULT_LOG_FILE = "server.log"
 
-def init_logging(log_dir: str | os.PathLike[str] | None = None, level: str = 'INFO', filename: str = 'system.log'):
-    base = Path(log_dir) if log_dir else logs_dir()
+
+def _coerce_level(level: str) -> int:
+    try:
+        return getattr(logging, level.upper())
+    except AttributeError:
+        return logging.INFO
+
+
+def init_logging(
+    log_dir: str | os.PathLike[str] | None = None,
+    *,
+    level: str = "INFO",
+    filename: str = DEFAULT_LOG_FILE,
+) -> Path:
+    """Initialise the root logger and write to ./logs/server.log by default."""
+
+    base = Path(log_dir).expanduser().resolve() if log_dir else DEFAULT_LOG_DIR
     base.mkdir(parents=True, exist_ok=True)
     log_path = base / filename
 
     logger = logging.getLogger()
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    logger.setLevel(_coerce_level(level))
 
-    # Remove any existing handlers to avoid duplicate logs
-    for h in list(logger.handlers):
-        logger.removeHandler(h)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
 
-    handler = RotatingFileHandler(str(log_path), maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')
-    fmt = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
-    handler.setFormatter(fmt)
+    handler = RotatingFileHandler(
+        str(log_path),
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logger.addHandler(handler)
 
-    # Do not add console handler so logs are batched to file only
+    os.environ.setdefault("COMFYVN_LOG_FILE", str(log_path))
     return log_path

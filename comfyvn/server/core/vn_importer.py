@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from comfyvn.core.file_importer import FileImporter, log_license_issues
 from comfyvn.core.normalizer import NormalizerResult, normalize_tree
 from comfyvn.importers import ALL_IMPORTERS, get_importer
 from comfyvn.server.core.external_extractors import extractor_manager
@@ -49,6 +50,10 @@ class ImportSummary:
     detections: List[Dict[str, object]] = field(default_factory=list)
     translation: Dict[str, object] = field(default_factory=dict)
     remix: Dict[str, object] = field(default_factory=dict)
+    advisories: List[Dict[str, object]] = field(default_factory=list)
+    raw_path: Optional[str] = None
+    extracted_path: Optional[str] = None
+    converted_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -71,6 +76,10 @@ class ImportSummary:
             "detections": self.detections,
             "translation": self.translation,
             "remix": self.remix,
+            "advisories": self.advisories,
+            "raw_path": self.raw_path,
+            "extracted_path": self.extracted_path,
+            "converted_path": self.converted_path,
         }
 
 
@@ -254,21 +263,25 @@ def import_vn_package(
     package_path = Path(package).expanduser().resolve()
     if not package_path.exists():
         raise VNImportError(f"package not found: {package_path}")
-    entries, extractor_name, extractor_warning = _gather_entries(package_path, tool_hint=tool)
 
     root = _resolve_data_root(data_root)
     import_id = f"{package_path.stem}-{int(time.time())}"
-    import_root = root / "imports" / "vn" / import_id
-    import_root.mkdir(parents=True, exist_ok=True)
+    importer_paths = FileImporter("vn", data_root=root)
+    try:
+        session = importer_paths.new_session(package_path, import_id=import_id, metadata={"tool": tool})
+    except FileNotFoundError as exc:  # pragma: no cover - defensive
+        raise VNImportError(str(exc)) from exc
+
+    entries, extractor_name, extractor_warning = _gather_entries(package_path, tool_hint=tool)
 
     summary = ImportSummary(import_id=import_id, package_path=str(package_path), data_root=str(root))
+    summary.raw_path = session.raw_path.as_posix()
+    summary.extracted_path = session.extracted_dir.as_posix()
+    summary.converted_path = session.converted_dir.as_posix()
 
     logger.info("Starting VN import '%s' from %s", import_id, package_path)
 
-    archive_copy = import_root / package_path.name
-    shutil.copy2(package_path, archive_copy)
-
-    stage_root = import_root / "stage"
+    stage_root = session.extracted_dir
     stage_root.mkdir(parents=True, exist_ok=True)
 
     staged_entries: List[tuple[Path, Path]] = []
@@ -287,8 +300,8 @@ def import_vn_package(
     characters_dir = root / "characters"
     timelines_dir = root / "timelines"
     assets_dir = root / "assets"
-    licenses_dir = import_root / "licenses"
-    manifest_path = import_root / "manifest.json"
+    licenses_dir = session.converted_dir / "licenses"
+    manifest_path = session.manifest_path
 
     seen_member_names: List[str] = []
     original_manifest: Optional[Dict[str, object]] = None
@@ -395,7 +408,7 @@ def import_vn_package(
     try:
         if importer:
             logger.info("Running %s importer for %s", importer.id, import_id)
-            normalizer_result = importer.import_pack(stage_root, import_root)
+            normalizer_result = importer.import_pack(stage_root, session.converted_dir)
         else:
             fallback_adapter = _infer_adapter(original_manifest, seen_member_names)
             adapter_id = fallback_adapter
@@ -406,7 +419,7 @@ def import_vn_package(
             }
             if original_manifest:
                 fallback_patch["original_manifest"] = original_manifest
-            normalizer_result = normalize_tree(stage_root, import_root, engine=fallback_engine, manifest_patch=fallback_patch)
+            normalizer_result = normalize_tree(stage_root, session.converted_dir, engine=fallback_engine, manifest_patch=fallback_patch)
     except Exception as exc:
         summary.warnings.append(f"normalizer failed: {exc}")
         logger.warning("Normalizer execution failed during import %s: %s", import_id, exc, exc_info=True)
@@ -438,19 +451,26 @@ def import_vn_package(
 
     try:
         scene_paths = [scenes_dir / f"{scene}.json" for scene in summary.scenes]
-        summary.translation = build_translation_bundle(scene_paths, import_root)
+        summary.translation = build_translation_bundle(scene_paths, session.converted_dir)
     except Exception as exc:
         summary.warnings.append(f"translation bundle failed: {exc}")
         logger.warning("Translation bundle failed for %s: %s", import_id, exc)
 
     try:
         manifest_for_remix = summary.manifest or {}
-        summary.remix = plan_remix_tasks(manifest_for_remix, summary.scenes, import_root)
+        summary.remix = plan_remix_tasks(manifest_for_remix, summary.scenes, session.converted_dir)
     except Exception as exc:
         summary.warnings.append(f"remix planning failed: {exc}")
         logger.warning("Remix planning failed for %s: %s", import_id, exc)
 
-    summary_path = import_root / "summary.json"
+    summary.advisories = log_license_issues(
+        summary.import_id,
+        summary.assets,
+        summary.licenses,
+        import_kind="vn",
+    )
+
+    summary_path = session.summary_path
     summary.summary_path = summary_path.as_posix()
     _write_json(summary_path, summary.to_dict())
     logger.info(

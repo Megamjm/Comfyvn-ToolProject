@@ -12,15 +12,14 @@ import logging
 import os
 import pkgutil
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
-from comfyvn.config.runtime_paths import logs_dir
 from comfyvn.core.warning_bus import warning_bus
-from comfyvn.server.core.logging_ex import setup_logging
+from comfyvn.logging_config import init_logging
 
 try:
     import orjson as _orjson  # type: ignore
@@ -39,16 +38,34 @@ LOGGER = logging.getLogger(__name__)
 APP_VERSION = os.getenv("COMFYVN_VERSION", "0.8.0")
 MODULE_PACKAGE = "comfyvn.server.modules"
 MODULE_PATH = Path(__file__).resolve().parent / "modules"
-LOG_PATH = logs_dir("server.log")
+DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+)
+DEFAULT_LOG_PATH = Path("./logs/server.log").resolve()
+PRIORITY_MODULES: tuple[str, ...] = (
+    "comfyvn.server.modules.system_api",
+    "comfyvn.server.modules.settings_api",
+    "comfyvn.server.modules.jobs_api",
+    "comfyvn.server.modules.roleplay_api",
+    "comfyvn.server.modules.playground_api",
+    "comfyvn.server.modules.events_api",
+    "comfyvn.server.modules.gpu_api",
+)
 
 
-def _configure_logging() -> None:
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # Preserve user override but ensure default path exists
-    os.environ.setdefault("COMFYVN_LOG_FILE", str(LOG_PATH))
-    setup_logging()
+def _configure_logging() -> Path:
+    level = os.getenv("COMFYVN_LOG_LEVEL", "INFO")
+    log_path = init_logging(
+        log_dir=DEFAULT_LOG_PATH.parent,
+        level=level,
+        filename=DEFAULT_LOG_PATH.name,
+    )
     warning_bus.attach_logging_handler()
-    LOGGER.info("Server logging configured -> %s", os.environ.get("COMFYVN_LOG_FILE"))
+    LOGGER.info("Server logging configured -> %s", log_path)
+    return log_path
 
 
 def _iter_module_names() -> Iterable[str]:
@@ -74,33 +91,60 @@ def _iter_module_names() -> Iterable[str]:
     yield from _walk([str(MODULE_PATH)], f"{MODULE_PACKAGE}.")
 
 
+def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) -> None:
+    if module_name in seen:
+        return
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        LOGGER.warning("Skipping router %s (import failed: %s)", module_name, exc)
+        return
+    router = getattr(module, "router", None)
+    if router is None:
+        return
+    try:
+        app.include_router(router)
+        seen.add(module_name)
+        LOGGER.debug(
+            "Included router: %s (prefix=%s)", module_name, getattr(router, "prefix", "")
+        )
+    except Exception as exc:
+        LOGGER.warning("Failed to include router %s: %s", module_name, exc)
+
+
 def _include_routers(app: FastAPI) -> None:
+    seen: set[str] = set()
+    for module_name in PRIORITY_MODULES:
+        _include_router_module(app, module_name, seen=seen)
     for module_name in _iter_module_names():
-        try:
-            module = importlib.import_module(module_name)
-        except Exception as exc:
-            LOGGER.warning("Skipping router %s (import failed: %s)", module_name, exc)
-            continue
-        router = getattr(module, "router", None)
-        if router is None:
-            continue
-        try:
-            app.include_router(router)
-            LOGGER.debug("Included router: %s", module_name)
-        except Exception as exc:
-            LOGGER.warning("Failed to include router %s: %s", module_name, exc)
+        _include_router_module(app, module_name, seen=seen)
 
 
-def create_app(*, enable_cors: bool = True, allowed_origins: Optional[list[str]] = None) -> FastAPI:
+def _resolve_cors_origins(allowed_origins: Optional[Sequence[str]]) -> list[str]:
+    if allowed_origins is not None:
+        origins = list(allowed_origins)
+    else:
+        origins = list(DEFAULT_ALLOWED_ORIGINS)
+    extra = os.getenv("COMFYVN_CORS_ORIGINS", "")
+    if extra:
+        origins.extend(origin.strip() for origin in extra.split(",") if origin.strip())
+    # Preserve order while removing duplicates
+    return list(dict.fromkeys(origins))
+
+
+def create_app(
+    *, enable_cors: bool = True, allowed_origins: Optional[Sequence[str]] = None
+) -> FastAPI:
     """Application factory used by both CLI launches and ASGI servers."""
-    _configure_logging()
+    log_path = _configure_logging()
 
     default_kwargs = {"default_response_class": _ORJSON} if _ORJSON else {}
     app = FastAPI(title="ComfyVN", version=APP_VERSION, **default_kwargs)
     app.state.version = APP_VERSION
+    app.state.log_path = log_path
 
     if enable_cors:
-        origins = allowed_origins or ["*"]
+        origins = _resolve_cors_origins(allowed_origins)
         app.add_middleware(
             CORSMiddleware,
             allow_origins=origins,
@@ -118,12 +162,8 @@ def create_app(*, enable_cors: bool = True, allowed_origins: Optional[list[str]]
 
     @app.get("/status", tags=["System"], summary="Service status overview")
     async def core_status():
-        routes = [
-            route.path
-            for route in app.routes
-            if isinstance(route, APIRoute)
-        ]
-        return {"ok": True, "version": APP_VERSION, "routes": routes}
+        routes = [route.path for route in app.routes if isinstance(route, APIRoute)]
+        return {"status": "ok", "version": APP_VERSION, "routes": routes}
 
     LOGGER.info("FastAPI application created with %d routes", len(app.routes))
     return app

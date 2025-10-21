@@ -184,12 +184,25 @@ def _data_root() -> Path:
 
 
 def _load_history(limit: int = 20) -> List[Dict[str, Any]]:
-    root = _data_root() / "imports" / "vn"
-    if not root.exists():
+    base = _data_root() / "imports" / "vn"
+    converted = base / "converted"
+    summary_paths: List[Path] = []
+    if converted.exists():
+        summary_paths.extend(converted.glob("*/summary.json"))
+    if base.exists():
+        summary_paths.extend(base.glob("*/summary.json"))
+    if not summary_paths:
         return []
     summaries: List[Dict[str, Any]] = []
-    files = sorted(root.glob("*/summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for summary_path in files[:limit]:
+    files = sorted(summary_paths, key=lambda p: p.stat().st_mtime, reverse=True)
+    seen: set[Path] = set()
+    for summary_path in files:
+        if len(summaries) >= limit:
+            break
+        resolved = summary_path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
         try:
             data = json.loads(summary_path.read_text(encoding="utf-8"))
             data.setdefault("summary_path", summary_path.as_posix())

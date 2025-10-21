@@ -15,6 +15,14 @@ from fastapi.responses import PlainTextResponse
 from starlette.datastructures import UploadFile
 
 from comfyvn.config.runtime_paths import data_dir, imports_log_dir
+from comfyvn.core import advisory as advisory_core
+from comfyvn.core.advisory import AdvisoryIssue
+from comfyvn.core.file_importer import (
+    ImportDirectories,
+    build_preview_payload,
+    flatten_lines,
+    sanitize_filename,
+)
 from comfyvn.lmstudio_client import get_base_url as lmstudio_get_base_url
 from comfyvn.studio.core import (
     AssetRegistry,
@@ -32,16 +40,27 @@ router = APIRouter(prefix="/roleplay", tags=["Roleplay"])
 LOGGER = logging.getLogger(__name__)
 
 LOG_DIR = imports_log_dir()
-ROLEPLAY_ROOT = data_dir("roleplay")
-RAW_DIR = data_dir("roleplay", "raw")
-PROCESSED_DIR = data_dir("roleplay", "processed")
-FINAL_DIR = data_dir("roleplay", "final")
-PREVIEW_DIR = data_dir("roleplay", "preview")
-METADATA_DIR = data_dir("roleplay", "metadata")
+ROLEPLAY_DIRS = ImportDirectories.ensure("roleplay")
+ROLEPLAY_ROOT = ROLEPLAY_DIRS.root
+RAW_DIR = ROLEPLAY_DIRS.raw
+PROCESSED_DIR = ROLEPLAY_DIRS.converted
+PREVIEW_DIR = ROLEPLAY_DIRS.preview
+STATUS_DIR = data_dir("roleplay", "metadata")
 LEGACY_RAW_DIR = data_dir("imports", "roleplay")
-LEGACY_PROCESSED_DIR = data_dir("roleplay", "converted")
+LEGACY_PROCESSED_DIR = data_dir("roleplay", "processed")
+LEGACY_FINAL_DIR = data_dir("roleplay", "final")
 
-for _dir in (ROLEPLAY_ROOT, RAW_DIR, PROCESSED_DIR, FINAL_DIR, PREVIEW_DIR, METADATA_DIR, LEGACY_RAW_DIR, LEGACY_PROCESSED_DIR):
+for _dir in (
+    ROLEPLAY_ROOT,
+    RAW_DIR,
+    PROCESSED_DIR,
+    PREVIEW_DIR,
+    STATUS_DIR,
+    LEGACY_RAW_DIR,
+    LEGACY_PROCESSED_DIR,
+    LEGACY_FINAL_DIR,
+    LOG_DIR,
+):
     _dir.mkdir(parents=True, exist_ok=True)
 
 ASSET_TYPE = "transcripts"
@@ -104,18 +123,36 @@ def _processed_file(scene_uid: str) -> Path:
     return PROCESSED_DIR / f"{scene_uid}.json"
 
 
-def _final_file(scene_uid: str) -> Path:
-    return FINAL_DIR / f"{scene_uid}.json"
+def _preview_file(scene_uid: str) -> Path:
+    return PREVIEW_DIR / f"{scene_uid}.json"
+
+
+def _status_file(scene_uid: str) -> Path:
+    return STATUS_DIR / f"{scene_uid}.json"
 
 
 def _load_processed_scene(scene_uid: str) -> Dict[str, Any]:
     path = _processed_file(scene_uid)
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Processed scene not found.")
+        legacy_path = LEGACY_PROCESSED_DIR / f"{scene_uid}.json"
+        if legacy_path.exists():
+            path = legacy_path
+        else:
+            raise HTTPException(status_code=404, detail="Processed scene not found.")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=500, detail=f"Processed scene payload corrupt: {exc}") from exc
+
+
+def _load_preview(scene_uid: str) -> Dict[str, Any]:
+    path = _preview_file(scene_uid)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Preview payload not found.")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=f"Preview payload corrupt: {exc}") from exc
 
 
 def _save_processed_scene(scene_uid: str, payload: Dict[str, Any]) -> None:
@@ -129,28 +166,44 @@ def _save_processed_scene(scene_uid: str, payload: Dict[str, Any]) -> None:
         LOGGER.debug("Unable to mirror legacy processed transcript path", exc_info=True)
 
 
-def _load_final_scene(scene_uid: str) -> Dict[str, Any]:
-    path = _final_file(scene_uid)
+def _save_preview(scene_uid: str, payload: Dict[str, Any]) -> None:
+    preview_path = _preview_file(scene_uid)
+    preview_json = json.dumps(payload, ensure_ascii=False, indent=2)
+    preview_path.write_text(preview_json, encoding="utf-8")
+
+
+def _load_status(scene_uid: str) -> Dict[str, Any]:
+    path = _status_file(scene_uid)
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Finalized scene not found.")
+        legacy_path = LEGACY_FINAL_DIR / f"{scene_uid}.json"
+        if legacy_path.exists():
+            path = legacy_path
+        else:
+            raise HTTPException(status_code=404, detail="Scene status not found.")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail=f"Final scene payload corrupt: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Status payload corrupt: {exc}") from exc
 
 
-def _save_final_scene(scene_uid: str, payload: Dict[str, Any]) -> None:
-    final_path = _final_file(scene_uid)
-    final_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+def _save_status(scene_uid: str, payload: Dict[str, Any]) -> None:
+    status_path = _status_file(scene_uid)
+    status_json = json.dumps(payload, ensure_ascii=False, indent=2)
+    status_path.write_text(status_json, encoding="utf-8")
+    try:
+        legacy_status = LEGACY_FINAL_DIR / status_path.name
+        legacy_status.write_text(status_json, encoding="utf-8")
+    except Exception:  # pragma: no cover - optional legacy mirror
+        LOGGER.debug("Unable to mirror legacy status path", exc_info=True)
 
 
 def _mark_final_status(scene_uid: str, status: str, *, result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    payload = _load_final_scene(scene_uid)
+    payload = _load_status(scene_uid)
     payload["status"] = status
     payload["updated_at"] = dt.datetime.utcnow().isoformat() + "Z"
     if result is not None:
         payload["result"] = result
-    _save_final_scene(scene_uid, payload)
+    _save_status(scene_uid, payload)
     return payload
 
 
@@ -253,11 +306,8 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
 
     try:
         if not text_content and payload.structured_lines:
-            text_content = "\n".join(
-                f"{line.get('speaker', 'Narrator')}: {line.get('text', '')}"
-                for line in payload.structured_lines
-                if isinstance(line, dict)
-            )
+            structured = [line for line in payload.structured_lines if isinstance(line, dict)]
+            text_content = flatten_lines(structured)
 
         if not text_content and not payload.structured_lines:
             raise HTTPException(status_code=400, detail="Transcript content is empty.")
@@ -290,6 +340,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
         else:
             parsed_lines = _parser.parse_text(text_content)
 
+        if not parsed_lines:
+            raise HTTPException(status_code=400, detail="Parsed transcript has no lines.")
+
         scene_payload = _formatter.to_scene(
             parsed_lines,
             title=payload.title,
@@ -297,25 +350,81 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
             source=payload.source,
             job_ref=job_id,
         )
-        scene_payload.setdefault("meta", {})["llm_detail"] = payload.detail_level
+        scene_meta = scene_payload.setdefault("meta", {})
+        scene_meta["llm_detail"] = payload.detail_level
+        scene_meta["line_count"] = len(parsed_lines)
+        scene_uid = scene_payload["id"]
 
-        scene_meta = scene_payload.get("meta", {})
+        canonical_transcript = text_content or flatten_lines(parsed_lines)
+        advisory_flags = advisory_core.scan_text(
+            scene_uid,
+            canonical_transcript,
+            license_scan=bool(payload.metadata.get("license")),
+        )
+
+        extra_issues: List[Dict[str, Any]] = []
+        if not payload.metadata.get("license"):
+            issue = AdvisoryIssue(
+                scene_uid,
+                "policy",
+                "License metadata missing; manual review required",
+                "warn",
+                detail={"field": "license"},
+            )
+            advisory_core.log_issue(issue)
+            extra_issues.append(issue.to_dict())
+
+        safety_value = str(
+            payload.metadata.get("safety")
+            or payload.metadata.get("content_rating")
+            or ""
+        ).strip().lower()
+        if safety_value not in {"sfw", "nsfw", "mixed"}:
+            issue = AdvisoryIssue(
+                scene_uid,
+                "nsfw",
+                "Content rating unknown; mark SFW/NSFW before distribution",
+                "warn",
+                detail={"field": "safety"},
+            )
+            advisory_core.log_issue(issue)
+            extra_issues.append(issue.to_dict())
+
+        if extra_issues:
+            advisory_flags.extend(extra_issues)
+
+        scene_meta["advisory_flags"] = advisory_flags
+
         scene_body = json.dumps(scene_payload, ensure_ascii=False, indent=2)
         scene_db_id = _scene_registry.upsert_scene(scene_payload["title"], scene_body, scene_meta)
 
         linked_characters = []
-        for name in scene_payload.get("meta", {}).get("participants", []):
+        persona_map = scene_meta.get("persona_hints", {})
+        for name in scene_meta.get("participants", []):
             character_meta = {
                 "origin": "roleplay_import",
                 "job_id": job_id,
                 "world": payload.world,
+                "scene_uid": scene_uid,
+                "advisory_flags": advisory_flags,
             }
-            char_id = _character_registry.upsert_character(name, meta=character_meta)
+            hints = persona_map.get(name, [])
+            if hints:
+                character_meta["persona_hints"] = hints
+            char_id = _character_registry.upsert_character(
+                name,
+                traits={"persona_hints": hints} if hints else None,
+                meta=character_meta,
+            )
             _character_registry.append_scene_link(char_id, scene_db_id)
-            linked_characters.append({"id": char_id, "name": name})
+            linked_characters.append({"id": char_id, "name": name, "persona_hints": hints})
+
+        processed_path = _processed_file(scene_uid)
+        preview_path = _preview_file(scene_uid)
+        status_path = _status_file(scene_uid)
 
         processed_payload = {
-            "scene_uid": scene_payload["id"],
+            "scene_uid": scene_uid,
             "scene_db_id": scene_db_id,
             "detail_level": payload.detail_level,
             "context": {
@@ -329,27 +438,38 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
             "lines": parsed_lines,
             "scene": scene_payload,
             "metadata": payload.metadata,
+            "advisory_flags": advisory_flags,
+            "persona_hints": persona_map,
         }
-        processed_json = json.dumps(processed_payload, ensure_ascii=False, indent=2)
-        processed_path = _processed_file(scene_payload["id"])
-        processed_path.write_text(processed_json, encoding="utf-8")
-        try:
-            legacy_processed = LEGACY_PROCESSED_DIR / processed_path.name
-            legacy_processed.write_text(processed_json, encoding="utf-8")
-        except Exception:  # pragma: no cover - optional legacy mirror
-            LOGGER.debug("Unable to mirror legacy processed transcript path", exc_info=True)
+        processed_payload["preview_path"] = str(preview_path)
+        processed_payload["status_path"] = str(status_path)
+        _save_processed_scene(scene_uid, processed_payload)
 
-        final_path = _final_file(scene_payload["id"])
-        if not final_path.exists():
-            final_stub = {
-                "scene_uid": scene_payload["id"],
-                "scene_db_id": scene_db_id,
-                "detail_level": payload.detail_level,
-                "status": "pending",
-                "updated_at": None,
-                "result": None,
-            }
-            final_path.write_text(json.dumps(final_stub, ensure_ascii=False, indent=2), encoding="utf-8")
+        preview_payload = build_preview_payload(
+            scene_uid=scene_uid,
+            title=scene_payload["title"],
+            detail_level=payload.detail_level,
+            lines=parsed_lines,
+            participants=scene_meta.get("participants", []),
+            persona_hints=persona_map,
+            advisory_flags=advisory_flags,
+            world=payload.world,
+            source=payload.source,
+        )
+        _save_preview(scene_uid, preview_payload)
+
+        status_payload = {
+            "scene_uid": scene_uid,
+            "scene_db_id": scene_db_id,
+            "detail_level": payload.detail_level,
+            "status": "processing",
+            "updated_at": dt.datetime.utcnow().isoformat() + "Z",
+            "result": None,
+            "job_id": job_id,
+            "import_id": import_id,
+            "advisory_flags": advisory_flags,
+        }
+        _save_status(scene_uid, status_payload)
 
         asset_metadata = {
             "job_id": job_id,
@@ -360,6 +480,7 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
             "original_filename": payload.original_filename,
             "extra": payload.metadata,
             "detail_level": payload.detail_level,
+            "advisory_flags": advisory_flags,
         }
         provenance_payload = {
             "source": payload.source or "roleplay_import",
@@ -369,6 +490,7 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
                 "world": payload.world,
                 "participants": scene_payload.get("meta", {}).get("participants", []),
                 "original_filename": payload.original_filename,
+                "detail_level": payload.detail_level,
             },
             "user_id": payload.metadata.get("submitted_by"),
         }
@@ -392,67 +514,100 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
             license_tag=payload.metadata.get("license"),
         )
 
-        final_asset = _asset_registry.register_file(
-            final_path,
+        preview_asset = _asset_registry.register_file(
+            preview_path,
             asset_type=ASSET_TYPE_FINAL,
-            dest_relative=Path(ASSET_TYPE_FINAL) / final_path.name,
-            metadata={**asset_metadata, "stage": "final"},
+            dest_relative=Path(ASSET_TYPE_FINAL) / preview_path.name,
+            metadata={**asset_metadata, "stage": "preview"},
             copy=True,
             provenance=provenance_payload,
             license_tag=payload.metadata.get("license"),
         )
+        final_asset = preview_asset
 
         _import_registry.mark_processed(
             import_id,
             meta={
                 **import_meta,
                 "scene_id": scene_db_id,
-                "scene_uid": scene_payload["id"],
+                "scene_uid": scene_uid,
                 "asset_uid": asset_info["uid"],
                 "processed_asset_uid": processed_asset["uid"],
                 "final_asset_uid": final_asset["uid"],
                 "paths": {
                     "raw": str(raw_path),
                     "processed": str(processed_path),
-                    "final": str(final_path),
+                    "converted": str(processed_path),
+                    "preview": str(preview_path),
+                    "status": str(status_path),
                 },
+                "advisory_flags": advisory_flags,
             },
         )
 
+        result_payload = {
+            "scene_id": scene_db_id,
+            "scene_uid": scene_uid,
+            "preview_path": str(preview_path),
+            "participants": scene_meta.get("participants", []),
+            "advisory_flags": advisory_flags,
+        }
+        final_status = _mark_final_status(scene_uid, "ready", result=result_payload)
+
         output_payload = {
             "scene_id": scene_db_id,
-            "scene_uid": scene_payload["id"],
+            "scene_uid": scene_uid,
             "import_id": import_id,
             "asset_uid": asset_info["uid"],
-             "processed_asset_uid": processed_asset["uid"],
-             "final_asset_uid": final_asset["uid"],
-             "participants": linked_characters,
-             "detail_level": payload.detail_level,
-             "paths": {
-                 "raw": str(raw_path),
-                 "processed": str(processed_path),
-                 "final": str(final_path),
-             },
+            "processed_asset_uid": processed_asset["uid"],
+            "final_asset_uid": final_asset["uid"],
+            "preview_asset_uid": preview_asset["uid"],
+            "participants": linked_characters,
+            "detail_level": payload.detail_level,
+            "advisory_flags": advisory_flags,
+            "paths": {
+                "raw": str(raw_path),
+                "processed": str(processed_path),
+                "converted": str(processed_path),
+                "final": str(status_path),
+                "status": str(status_path),
+                "preview": str(preview_path),
+            },
+            "status": final_status,
         }
         _job_registry.update_job(job_id, status="completed", output_payload=output_payload)
 
         with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(f"[ok] scene_id={scene_db_id} lines={len(parsed_lines)} participants={linked_characters}\n")
+            handle.write(
+                "[ok] scene_id=%s lines=%s participants=%s advisory=%s\n"
+                % (
+                    scene_db_id,
+                    len(parsed_lines),
+                    [entry["name"] for entry in linked_characters],
+                    len(advisory_flags),
+                )
+            )
 
         return {
             "ok": True,
             "job_id": job_id,
             "scene": scene_payload,
             "scene_db_id": scene_db_id,
-            "scene_uid": scene_payload["id"],
+            "scene_uid": scene_uid,
             "asset": asset_info,
             "processed_asset": processed_asset,
             "final_asset": final_asset,
+            "preview_asset": preview_asset,
             "detail_level": payload.detail_level,
+            "advisory_flags": advisory_flags,
             "processed_path": str(processed_path),
-            "final_path": str(final_path),
+            "converted_path": str(processed_path),
+            "preview_path": str(preview_path),
+            "status_path": str(status_path),
             "import_id": import_id,
             "logs_path": str(log_path),
+            "preview": preview_payload,
+            "status": final_status,
         }
 
     except HTTPException as exc:
@@ -546,7 +701,7 @@ async def import_roleplay(request: Request):
         if isinstance(uploaded, UploadFile):
             data = await uploaded.read()
             text_content = data.decode("utf-8", errors="replace")
-            original_filename = uploaded.filename or "roleplay.txt"
+            original_filename = sanitize_filename(uploaded.filename, "roleplay.txt")
         else:
             text_content = str(form.get("text") or "")
         world = form.get("world")
@@ -568,7 +723,8 @@ async def import_roleplay(request: Request):
         title = payload.get("title")
         source = payload.get("source") or "api"
         metadata = payload.get("metadata") or {}
-        original_filename = payload.get("filename")
+        if payload.get("filename"):
+            original_filename = sanitize_filename(payload.get("filename"))
         lines_value = payload.get("lines")
         if isinstance(lines_value, list):
             lines_payload = [line for line in lines_value if isinstance(line, dict)]
@@ -589,6 +745,8 @@ async def import_roleplay(request: Request):
 
     detail_level = _normalize_detail_level(detail_level_value)
     metadata = {**metadata, "llm_detail": detail_level}
+    if original_filename:
+        metadata["original_filename"] = original_filename
 
     job_payload = RoleplayJobPayload(
         text_content=text_content,
@@ -634,6 +792,7 @@ async def import_roleplay(request: Request):
 
 
 @router.get("/imports/{job_id}")
+@router.get("/imports/status/{job_id}")
 def import_status(job_id: int):
     """Return the job/import status for a previously submitted transcript."""
     job = _job_registry.get_job(job_id)
@@ -679,11 +838,17 @@ def get_import_log(job_id: int):
 @router.get("/preview/{scene_uid}")
 def preview_scene(scene_uid: str):
     data = _load_processed_scene(scene_uid)
-    final_payload: Optional[Dict[str, Any]] = None
+    preview_payload: Optional[Dict[str, Any]] = None
     try:
-        final_payload = _load_final_scene(scene_uid)
+        preview_payload = _load_preview(scene_uid)
     except HTTPException:
-        final_payload = None
+        preview_payload = None
+
+    status_payload: Optional[Dict[str, Any]] = None
+    try:
+        status_payload = _load_status(scene_uid)
+    except HTTPException:
+        status_payload = None
     return {
         "ok": True,
         "scene_uid": scene_uid,
@@ -692,7 +857,10 @@ def preview_scene(scene_uid: str):
         "scene": data.get("scene"),
         "context": data.get("context", {}),
         "metadata": data.get("metadata", {}),
-        "final": final_payload,
+        "advisory_flags": data.get("advisory_flags", []),
+        "preview": preview_payload,
+        "status": status_payload,
+        "final": status_payload,
     }
 
 
@@ -729,9 +897,49 @@ def apply_corrections(payload: Dict[str, Any]):
         source=context.get("source"),
         job_ref=context.get("job_id"),
     )
-    scene_payload.setdefault("meta", {})["llm_detail"] = detail_level
+    scene_meta = scene_payload.setdefault("meta", {})
+    scene_meta["llm_detail"] = detail_level
+    scene_meta["line_count"] = len(sanitized_lines)
 
-    scene_meta = scene_payload.get("meta", {})
+    metadata_payload = processed.get("metadata") or {}
+    canonical_transcript = flatten_lines(sanitized_lines)
+    advisory_flags = advisory_core.scan_text(
+        scene_uid,
+        canonical_transcript,
+        license_scan=bool(metadata_payload.get("license")),
+    )
+
+    extra_issues: List[Dict[str, Any]] = []
+    if not metadata_payload.get("license"):
+        issue = AdvisoryIssue(
+            scene_uid,
+            "policy",
+            "License metadata missing; manual review required",
+            "warn",
+            detail={"field": "license"},
+        )
+        advisory_core.log_issue(issue)
+        extra_issues.append(issue.to_dict())
+
+    safety_value = str(
+        metadata_payload.get("safety") or metadata_payload.get("content_rating") or ""
+    ).strip().lower()
+    if safety_value not in {"sfw", "nsfw", "mixed"}:
+        issue = AdvisoryIssue(
+            scene_uid,
+            "nsfw",
+            "Content rating unknown; mark SFW/NSFW before distribution",
+            "warn",
+            detail={"field": "safety"},
+        )
+        advisory_core.log_issue(issue)
+        extra_issues.append(issue.to_dict())
+
+    if extra_issues:
+        advisory_flags.extend(extra_issues)
+
+    scene_meta["advisory_flags"] = advisory_flags
+
     scene_body = json.dumps(scene_payload, ensure_ascii=False, indent=2)
     scene_db_id_context = processed.get("scene_db_id") or context.get("scene_db_id")
     if scene_db_id_context:
@@ -744,6 +952,9 @@ def apply_corrections(payload: Dict[str, Any]):
     else:
         scene_db_id = _scene_registry.upsert_scene(scene_payload["title"], scene_body, scene_meta)
 
+    preview_path = _preview_file(scene_uid)
+    status_path = _status_file(scene_uid)
+
     processed.update(
         {
             "scene": scene_payload,
@@ -751,15 +962,33 @@ def apply_corrections(payload: Dict[str, Any]):
             "detail_level": detail_level,
             "scene_db_id": scene_db_id,
             "character_meta": payload.get("character_meta") or processed.get("character_meta") or {},
+            "advisory_flags": advisory_flags,
+            "persona_hints": scene_meta.get("persona_hints", {}),
+            "preview_path": str(preview_path),
+            "status_path": str(status_path),
         }
     )
     _save_processed_scene(scene_uid, processed)
+
+    preview_payload = build_preview_payload(
+        scene_uid=scene_uid,
+        title=scene_payload["title"],
+        detail_level=detail_level,
+        lines=sanitized_lines,
+        participants=scene_meta.get("participants", []),
+        persona_hints=scene_meta.get("persona_hints", {}),
+        advisory_flags=advisory_flags,
+        world=context.get("world"),
+        source=context.get("source"),
+    )
+    _save_preview(scene_uid, preview_payload)
 
     asset_metadata = {
         "scene_id": scene_db_id,
         "scene_uid": scene_uid,
         "stage": "processed",
         "detail_level": detail_level,
+        "advisory_flags": advisory_flags,
     }
     provenance_payload = {
         "source": context.get("source") or "roleplay_import",
@@ -767,6 +996,7 @@ def apply_corrections(payload: Dict[str, Any]):
             "scene_uid": scene_uid,
             "scene_id": scene_db_id,
             "job_id": context.get("job_id"),
+            "detail_level": detail_level,
         },
     }
     processed_path = _processed_file(scene_uid)
@@ -779,7 +1009,40 @@ def apply_corrections(payload: Dict[str, Any]):
         provenance=provenance_payload,
     )
 
-    final_payload = _mark_final_status(scene_uid, "stale")
+    preview_asset = _asset_registry.register_file(
+        preview_path,
+        asset_type=ASSET_TYPE_FINAL,
+        dest_relative=Path(ASSET_TYPE_FINAL) / preview_path.name,
+        metadata={**asset_metadata, "stage": "preview"},
+        copy=True,
+        provenance=provenance_payload,
+    )
+
+    result_payload = {
+        "scene_id": scene_db_id,
+        "scene_uid": scene_uid,
+        "preview_path": str(preview_path),
+        "advisory_flags": advisory_flags,
+    }
+    final_payload: Dict[str, Any]
+    try:
+        final_payload = _mark_final_status(scene_uid, "stale", result=result_payload)
+    except HTTPException:
+        # Recreate status stub when missing.
+        _save_status(
+            scene_uid,
+            {
+                "scene_uid": scene_uid,
+                "scene_db_id": scene_db_id,
+                "detail_level": detail_level,
+                "status": "stale",
+                "updated_at": dt.datetime.utcnow().isoformat() + "Z",
+                "result": result_payload,
+                "advisory_flags": advisory_flags,
+            },
+        )
+        final_payload = _mark_final_status(scene_uid, "stale", result=result_payload)
+
     return {
         "ok": True,
         "scene_uid": scene_uid,
@@ -787,6 +1050,11 @@ def apply_corrections(payload: Dict[str, Any]):
         "scene_db_id": scene_db_id,
         "detail_level": detail_level,
         "processed_asset": processed_asset,
+        "preview_asset": preview_asset,
+        "final_asset": preview_asset,
+        "advisory_flags": advisory_flags,
+        "preview": preview_payload,
+        "status": final_payload,
         "final": final_payload,
     }
 
@@ -865,14 +1133,14 @@ def sample_llm(payload: Dict[str, Any]):
     }
 
     final_payload = _mark_final_status(scene_uid, "ready", result=result_payload)
-    final_path = _final_file(scene_uid)
+    status_path = _status_file(scene_uid)
     final_asset = _asset_registry.register_file(
-        final_path,
+        status_path,
         asset_type=ASSET_TYPE_FINAL,
-        dest_relative=Path(ASSET_TYPE_FINAL) / final_path.name,
+        dest_relative=Path(ASSET_TYPE_FINAL) / status_path.name,
         metadata={
             "scene_uid": scene_uid,
-            "stage": "final",
+            "stage": "status",
             "detail_level": detail_level,
             "model": model,
         },

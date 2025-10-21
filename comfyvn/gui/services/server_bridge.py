@@ -39,8 +39,21 @@ class ServerBridge(QObject):
     async def _poll_once(self) -> None:
         try:
             async with httpx.AsyncClient(timeout=3.0) as cli:
-                response = await cli.get(f"{self.base_url}/system/metrics")
-                metrics_ok = await self._process_metrics_response(response)
+                metrics_payload, metrics_ok = await self._fetch_metrics(cli)
+                health_payload = await self._fetch_health(cli)
+
+                combined: Dict[str, Any] = dict(metrics_payload)
+                overall_ok = bool(metrics_payload.get("ok"))
+                if health_payload is not None:
+                    combined["health"] = health_payload
+                    if not overall_ok:
+                        overall_ok = bool(health_payload.get("ok"))
+                combined["ok"] = overall_ok
+
+                self._latest = combined
+                logger.debug("Metrics poll -> %s", combined)
+                self.status_updated.emit(dict(combined))
+
                 if metrics_ok:
                     await self._process_warnings(cli)
         except Exception as exc:
@@ -48,21 +61,58 @@ class ServerBridge(QObject):
             self._latest = {"ok": False, "error": str(exc)}
             self.status_updated.emit(self._latest)
 
-    async def _process_metrics_response(self, response: httpx.Response) -> bool:
+    async def _fetch_metrics(self, client: httpx.AsyncClient) -> tuple[Dict[str, Any], bool]:
+        try:
+            response = await client.get(f"{self.base_url}/system/metrics")
+        except Exception as exc:
+            logger.warning("Metrics request failed: %s", exc)
+            payload: Dict[str, Any] = {"ok": False, "error": str(exc)}
+            return payload, False
+        return await self._process_metrics_response(response)
+
+    async def _process_metrics_response(self, response: httpx.Response) -> tuple[Dict[str, Any], bool]:
         if response.status_code == 200:
             try:
                 payload = response.json()
             except Exception:
                 payload = {}
-            self._latest = payload
+            if not isinstance(payload, dict):
+                payload = {"ok": True, "data": payload}
+            payload.setdefault("ok", True)
             logger.debug("Received system metrics: %s", payload)
-            self.status_updated.emit(payload)
-            return True
+            return payload, True
 
         logger.warning("Metrics request failed: %s", response.status_code)
-        self._latest = {"ok": False, "status": response.status_code}
-        self.status_updated.emit(self._latest)
-        return False
+        payload = {"ok": False, "status": response.status_code}
+        return payload, False
+
+    async def _fetch_health(self, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+        try:
+            response = await client.get(f"{self.base_url}/health")
+        except Exception as exc:
+            logger.debug("Health request failed: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+        payload: Dict[str, Any]
+        try:
+            data = response.json()
+        except Exception:
+            data = {}
+
+        ok = response.status_code < 400
+        if isinstance(data, dict):
+            data_ok = data.get("ok")
+            if data_ok is not None:
+                ok = bool(data_ok)
+            elif str(data.get("status")).lower() in {"ok", "healthy"}:
+                ok = True
+
+        payload = {
+            "ok": ok,
+            "status": response.status_code,
+            "data": data if isinstance(data, dict) else {"raw": data},
+        }
+        return payload
 
     async def _process_warnings(self, client: httpx.AsyncClient) -> None:
         try:
@@ -114,6 +164,10 @@ class ServerBridge(QObject):
 
     def stop_polling(self) -> None:
         self._stop = True
+        thread = self._thread
+        if thread and thread.is_alive() and threading.current_thread() is not thread:
+            thread.join(timeout=0.5)
+        self._thread = None
         logger.info("ServerBridge polling stopped")
 
     # ─────────────────────────────
@@ -217,8 +271,18 @@ class ServerBridge(QObject):
             return default
         return result
 
-    def save_settings(self, payload: Dict[str, Any], cb: Optional[Callable[[Dict[str, Any]], None]] = None):
-        return self.post_json("/settings/save", payload, cb=cb)
+    def save_settings(
+        self,
+        payload: Dict[str, Any],
+        cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        *,
+        timeout: float = 8.0,
+    ):
+        if not isinstance(payload, dict):
+            logger.warning("save_settings expects dict payload, received %s", type(payload).__name__)
+            payload = {}
+        return self.post_json("/settings/save", payload, timeout=timeout, cb=cb)
+
     def post(self, path: str, payload: Dict[str, Any], *, timeout: float = 5.0, cb: Optional[Callable[[Dict[str, Any]], None]] = None, default: Any = _UNSET):
         return self.post_json(path, payload, timeout=timeout, cb=cb, default=default)
 
@@ -250,7 +314,6 @@ class ServerBridge(QObject):
 
     def get_warnings(self) -> list[Dict[str, Any]]:
         return list(self._warnings)
-        return None
 
     def providers_activate(self, provider_id: str, active: bool) -> Optional[Dict[str, Any]]:
         result = self.post_json("/api/providers/activate", {"id": provider_id, "active": active}, default=None)
@@ -347,8 +410,34 @@ class ServerBridge(QObject):
         return self.post_json(f"/projects/select/{name}", {})
 
     def set_host(self, host: str) -> str:
-        self.base_url = host.rstrip("/")
-        logger.info("ServerBridge host set to %s", self.base_url)
+        if not host:
+            return self.base_url
+        candidate = host.strip()
+        if not candidate:
+            return self.base_url
+        if "://" not in candidate:
+            candidate = f"http://{candidate}"
+        parsed = urlparse(candidate)
+        if not parsed.scheme or not parsed.netloc:
+            logger.warning("Invalid host supplied to ServerBridge.set_host: %s", host)
+            return self.base_url
+        normalized = f"{parsed.scheme}://{parsed.netloc}"
+        if parsed.path and parsed.path != "/":
+            normalized += parsed.path.rstrip("/")
+        normalized = normalized.rstrip("/")
+        if normalized == self.base_url:
+            return self.base_url
+
+        logger.info("ServerBridge host updating from %s to %s", self.base_url, normalized)
+        self.base_url = normalized
+        self._latest = {}
+        self._warnings.clear()
+        self._seen_warning_ids.clear()
+
+        was_polling = self._thread is not None and self._thread.is_alive()
+        if was_polling:
+            self.stop_polling()
+            self.start_polling()
         return self.base_url
 
     @property

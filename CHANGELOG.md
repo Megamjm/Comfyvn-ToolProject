@@ -1,3 +1,13 @@
+### 2025-10-25 — Asset & Sprite System (chat: Assets)
+- `AssetRegistry` now honours configurable asset roots, writes `<filename>.asset.json` sidecars alongside media files (while mirroring legacy `_meta` paths), and schedules thumbnails or WAV waveform previews during registration.
+- Pose tooling (`comfyvn/assets/pose_manager.py`, `playground_manager.py`) now integrates with the registry so newly saved poses write JSON payloads, emit sidecars, and appear in registry queries.
+- Added `tools/rebuild_asset_registry.py` to scan `assets/`, dedupe by file hash, regenerate sidecars, and prune stale registry rows; pairs with documentation updates in `docs/studio_assets.md`.
+
+### 2025-10-24 — Roleplay Importer Hardened (chat: Roleplay/World Lore)
+- `/roleplay/import` now accepts multipart uploads with filename sanitisation, runs advisory scans for missing content ratings or licenses, and emits preview + status artefacts under `data/roleplay/{raw,converted,preview}`.
+- Added `/roleplay/imports/status/{id}` plus richer `/roleplay/preview/{id}` responses so Studio panels can poll job progress, advisory flags, persona hints, and ready-to-display excerpts.
+- Persona hints and participant metadata feed new character trait updates; preview assets and status files register in the asset ledger to keep Scenes + Characters synchronised after corrections or LLM samples.
+
 ### 2025-10-23 — Audio Remix & Policy Gate (chat: Audio & Policy)
 - TTS and music remix pipelines now submit templated workflows to ComfyUI when available, automatically falling back to deterministic synthetic generation if the server or workflow is missing.
 - Introduced `comfyvn/core/audio_cache.py` and upgraded the TTS pipeline to emit deterministic WAV voice lines with cache-backed dedupe and structured provenance sidecars.

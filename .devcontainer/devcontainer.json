@@ -54,3 +54,5 @@
   // GPU passthrough (optional): set to ["--gpus=all"] when NVIDIA Container Toolkit is installed.
   "runArgs": []
 }
+"workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/Comfyvn-ToolProject,type=bind",
+"workspaceFolder": "/workspaces/Comfyvn-ToolProject"

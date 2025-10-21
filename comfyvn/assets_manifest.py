@@ -48,6 +48,7 @@ def _probe_image(path: pathlib.Path) -> Tuple[Optional[int], Optional[int]]:
 def _load_sidecar(relpath: str, assets_root: pathlib.Path) -> Dict[str, Any]:
     base = assets_root / relpath
     candidates = [
+        base.with_suffix(base.suffix + ".asset.json"),
         base.with_suffix(base.suffix + ".json"),
         assets_root / META_ROOT_NAME / f"{relpath}.json",
     ]

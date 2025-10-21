@@ -196,6 +196,12 @@ def test_import_vn_package(tmp_path: Path):
     assert summary["adapter"] == "generic"
     assert summary["summary_path"]
     assert summary["pack_path"]
+    assert summary["raw_path"]
+    assert summary["extracted_path"]
+    assert summary["converted_path"]
+    assert Path(summary["raw_path"]).exists()
+    assert Path(summary["converted_path"]).exists()
+    assert isinstance(summary["advisories"], list)
     assert Path(summary["pack_path"]).exists()
     assert Path(summary["normalizer"]["manifest_path"]).exists()
     translation = summary["translation"]

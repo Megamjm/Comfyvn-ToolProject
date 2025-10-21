@@ -4,16 +4,18 @@ Asset registry facade for the Studio shell.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
 import shutil
 import sqlite3
 import threading
+import hashlib
+import wave
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from array import array
 from comfyvn.config.runtime_paths import thumb_cache_dir
 
 try:  # thumbnail generation optional
@@ -50,18 +52,77 @@ class AssetRegistry(BaseRegistry):
     ASSETS_ROOT = Path("data/assets")
     META_ROOT = ASSETS_ROOT / "_meta"
     THUMB_ROOT = thumb_cache_dir()
-    _THUMBNAIL_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+    SIDECAR_SUFFIX = ".asset.json"
+    _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+    _AUDIO_WAVEFORM_SUFFIXES = {".wav", ".wave"}
     _thumb_executor: ThreadPoolExecutor | None = None
     _thumb_executor_lock = threading.Lock()
     _pending_futures: set[Future] = set()
     _pending_lock = threading.Lock()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        *args,
+        assets_root: Path | str | None = None,
+        thumb_root: Path | str | None = None,
+        meta_root: Path | str | None = None,
+        sidecar_suffix: Optional[str] = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
+        self.ASSETS_ROOT = self._resolve_assets_root(assets_root)
+        self.META_ROOT = self._resolve_meta_root(meta_root)
+        self.THUMB_ROOT = self._resolve_thumb_root(thumb_root)
+        self.sidecar_suffix = sidecar_suffix or self.SIDECAR_SUFFIX
+        rel_hint = os.getenv("COMFYVN_THUMBS_REL")
+        self._thumb_rel_base = Path(rel_hint).expanduser() if rel_hint else Path("cache/thumbs")
         self.ASSETS_ROOT.mkdir(parents=True, exist_ok=True)
-        self.META_ROOT.mkdir(parents=True, exist_ok=True)
+        if self.META_ROOT:
+            self.META_ROOT.mkdir(parents=True, exist_ok=True)
         self.THUMB_ROOT.mkdir(parents=True, exist_ok=True)
         self._provenance = ProvenanceRegistry(db_path=self.db_path, project_id=self.project_id)
+
+    @classmethod
+    def _resolve_assets_root(cls, override: Path | str | None) -> Path:
+        if override:
+            return Path(override).expanduser().resolve()
+        env = os.getenv("COMFYVN_ASSETS_ROOT")
+        if env:
+            return Path(env).expanduser().resolve()
+        candidates = [
+            Path("assets"),
+            Path("data/assets"),
+            Path("comfyvn/data/assets"),
+            cls.ASSETS_ROOT,
+        ]
+        for candidate in candidates:
+            candidate = Path(candidate).expanduser()
+            if candidate.exists():
+                return candidate.resolve()
+        return Path("assets").expanduser().resolve()
+
+    def _resolve_meta_root(self, override: Path | str | None) -> Path | None:
+        if override is False:  # type: ignore[truthy-function]
+            return None
+        if override:
+            meta = Path(override).expanduser().resolve()
+            meta.mkdir(parents=True, exist_ok=True)
+            return meta
+        # keep legacy _meta directory for callers that still rely on it
+        legacy = self.ASSETS_ROOT / "_meta"
+        return legacy
+
+    @staticmethod
+    def _resolve_thumb_root(override: Path | str | None) -> Path:
+        if override:
+            return Path(override).expanduser().resolve()
+        env = os.getenv("COMFYVN_THUMBS_ROOT")
+        if env:
+            return Path(env).expanduser().resolve()
+        repo_cache = Path("cache/thumbs")
+        if repo_cache.exists() or repo_cache.parent.exists():
+            return repo_cache.expanduser().resolve()
+        return thumb_cache_dir()
 
     def _ensure_schema(self) -> None:
         super()._ensure_schema()
@@ -128,16 +189,31 @@ class AssetRegistry(BaseRegistry):
         if not source.exists():
             raise FileNotFoundError(f"Asset source does not exist: {source}")
 
-        rel_path = Path(dest_relative) if dest_relative else Path(asset_type) / source.name
-        dest = self.ASSETS_ROOT / rel_path
+        if dest_relative:
+            rel_path = Path(dest_relative)
+            if rel_path.is_absolute():
+                raise ValueError("dest_relative must be relative to the assets root.")
+        else:
+            rel_path = Path(asset_type) / source.name
+
+        dest = (self.ASSETS_ROOT / rel_path).resolve()
         dest.parent.mkdir(parents=True, exist_ok=True)
 
         if copy:
-            shutil.copy2(source, dest)
-            LOGGER.debug("Copied asset %s -> %s", source, dest)
+            if source != dest:
+                shutil.copy2(source, dest)
+                LOGGER.debug("Copied asset %s -> %s", source, dest)
+            else:
+                LOGGER.debug("Source and destination are identical for %s; skipping copy.", source)
+                copy = False
         else:
+            try:
+                rel_path = source.relative_to(self.ASSETS_ROOT)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Non-copied assets must reside inside the assets root ({self.ASSETS_ROOT}); got {source}"
+                ) from exc
             dest = source
-            rel_path = dest.relative_to(self.ASSETS_ROOT)
 
         file_hash = self._sha256(dest)
         uid = file_hash[:16]
@@ -145,7 +221,9 @@ class AssetRegistry(BaseRegistry):
         if license_tag:
             meta_payload.setdefault("license", license_tag)
         size_bytes = dest.stat().st_size
-        thumb_rel = self._schedule_thumbnail(dest, uid)
+        preview_rel, preview_kind = self._schedule_preview(dest, uid)
+        if preview_rel:
+            meta_payload.setdefault("preview", {"path": preview_rel, "kind": preview_kind or "thumbnail"})
 
         meta_json = self.dumps(meta_payload)
         with self.connection() as conn:
@@ -166,7 +244,7 @@ class AssetRegistry(BaseRegistry):
                     uid,
                     asset_type,
                     str(rel_path.as_posix()),
-                    thumb_rel,
+                    preview_rel,
                     file_hash,
                     size_bytes,
                     meta_json,
@@ -193,7 +271,13 @@ class AssetRegistry(BaseRegistry):
         elif provenance:
             LOGGER.warning("Provenance payload supplied but asset id unavailable for uid=%s", uid)
 
+        preview_entry = None
+        if preview_rel:
+            preview_entry = {"path": preview_rel, "kind": preview_kind or "thumbnail"}
+
+        sidecar_path = self._sidecar_path(rel_path)
         sidecar = {
+            "id": uid,
             "uid": uid,
             "type": asset_type,
             "path": str(rel_path.as_posix()),
@@ -201,19 +285,29 @@ class AssetRegistry(BaseRegistry):
             "bytes": size_bytes,
             "meta": meta_payload,
         }
+        if license_tag:
+            sidecar["license"] = license_tag
+        if preview_entry:
+            sidecar["preview"] = preview_entry
         if provenance_record:
             sidecar["provenance"] = provenance_record
         self._write_sidecar(rel_path, sidecar)
         LOGGER.info("Registered asset %s (%s)", uid, rel_path)
+        try:
+            sidecar_rel = str(sidecar_path.relative_to(self.ASSETS_ROOT).as_posix())
+        except ValueError:
+            sidecar_rel = sidecar_path.as_posix()
         return {
             "uid": uid,
             "type": asset_type,
             "path": str(rel_path.as_posix()),
-            "thumb": thumb_rel,
+            "thumb": preview_rel,
             "hash": file_hash,
             "bytes": size_bytes,
             "meta": meta_payload,
             "provenance": provenance_record,
+            "preview": preview_entry,
+            "sidecar": sidecar_rel,
         }
 
     def resolve_path(self, uid: str) -> Optional[Path]:
@@ -251,12 +345,20 @@ class AssetRegistry(BaseRegistry):
             except Exception:
                 LOGGER.debug("Failed to remove asset file for %s", uid)
 
-        sidecar_path = (self.META_ROOT / Path(asset["path"])).with_suffix(".json")
-        if sidecar_path.exists():
+        rel_path = Path(asset["path"])
+        primary_sidecar = self._sidecar_path(rel_path)
+        if primary_sidecar.exists():
             try:
-                sidecar_path.unlink()
+                primary_sidecar.unlink()
             except Exception:
                 LOGGER.debug("Failed to remove sidecar for %s", uid)
+        if self.META_ROOT:
+            legacy_sidecar = (self.META_ROOT / rel_path).with_suffix(".json")
+            if legacy_sidecar.exists():
+                try:
+                    legacy_sidecar.unlink()
+                except Exception:
+                    LOGGER.debug("Failed to remove legacy sidecar for %s", uid)
 
         LOGGER.info("Removed asset %s", uid)
         return True
@@ -272,14 +374,25 @@ class AssetRegistry(BaseRegistry):
                 h.update(chunk)
         return h.hexdigest()
 
-    def _write_sidecar(self, rel_path: Path, payload: Dict[str, Any]) -> None:
-        sidecar_path = (self.META_ROOT / rel_path).with_suffix(".json")
-        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-        sidecar_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        LOGGER.debug("Sidecar written: %s", sidecar_path)
+    def _sidecar_path(self, rel_path: Path) -> Path:
+        rel = Path(rel_path)
+        target = self.ASSETS_ROOT / rel
+        return target.with_suffix(target.suffix + self.sidecar_suffix)
 
-    @staticmethod
-    def _format_asset_row(row: sqlite3.Row) -> Dict[str, Any]:
+    def _write_sidecar(self, rel_path: Path, payload: Dict[str, Any]) -> None:
+        canonical = dict(payload)
+        canonical.setdefault("id", canonical.get("uid"))
+        primary_path = self._sidecar_path(rel_path)
+        primary_path.parent.mkdir(parents=True, exist_ok=True)
+        primary_path.write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8")
+        LOGGER.debug("Sidecar written: %s", primary_path)
+        if self.META_ROOT:
+            legacy_path = (self.META_ROOT / rel_path).with_suffix(".json")
+            legacy_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy_path.write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8")
+            LOGGER.debug("Legacy sidecar mirrored: %s", legacy_path)
+
+    def _format_asset_row(self, row: sqlite3.Row) -> Dict[str, Any]:
         payload = dict(row)
         payload["path"] = payload.pop("path_full")
         thumb = payload.pop("path_thumb", None)
@@ -291,6 +404,13 @@ class AssetRegistry(BaseRegistry):
                 payload["meta"] = json.loads(meta)
             except json.JSONDecodeError:
                 payload["meta"] = meta
+        rel_path = Path(payload["path"])
+        sidecar_path = self._sidecar_path(rel_path)
+        try:
+            sidecar_rel = sidecar_path.relative_to(self.ASSETS_ROOT)
+            payload["sidecar"] = sidecar_rel.as_posix()
+        except Exception:
+            payload["sidecar"] = sidecar_path.as_posix()
         return payload
 
     @classmethod
@@ -304,22 +424,27 @@ class AssetRegistry(BaseRegistry):
                     )
         return cls._thumb_executor
 
-    def _schedule_thumbnail(self, dest: Path, uid: str) -> Optional[str]:
-        if Image is None:
-            LOGGER.debug("Pillow not available; skipping thumbnail for %s", dest)
-            return None
+    def _schedule_preview(self, dest: Path, uid: str) -> tuple[Optional[str], Optional[str]]:
         suffix = dest.suffix.lower()
-        if suffix not in self._THUMBNAIL_SUFFIXES:
-            LOGGER.debug("Skipping thumbnail for %s (unsupported suffix)", dest)
-            return None
+        preview_kind: Optional[str]
+        if suffix in self._IMAGE_SUFFIXES:
+            if Image is None:
+                LOGGER.debug("Pillow not available; skipping thumbnail for %s", dest)
+                return (None, None)
+            thumb_path = self.THUMB_ROOT / f"{uid}{suffix}"
+            preview_kind = "thumbnail"
+        elif suffix in self._AUDIO_WAVEFORM_SUFFIXES:
+            thumb_path = self.THUMB_ROOT / f"{uid}.waveform.json"
+            preview_kind = "waveform"
+        else:
+            LOGGER.debug("Skipping preview for %s (unsupported suffix)", dest)
+            return (None, None)
 
-        thumb_path = self.THUMB_ROOT / f"{uid}{suffix}"
-        thumb_rel = str(Path("cache/thumbs") / thumb_path.name)
-
+        thumb_rel = str((self._thumb_rel_base / thumb_path.name).as_posix())
         executor = self._get_thumbnail_executor()
-        future = executor.submit(self._thumbnail_job, dest, thumb_path, thumb_rel, uid)
+        future = executor.submit(self._thumbnail_job, dest, thumb_path, thumb_rel, uid, preview_kind)
         self._register_thumbnail_future(future)
-        return thumb_rel
+        return thumb_rel, preview_kind
 
     @classmethod
     def _register_thumbnail_future(cls, future: Future) -> None:
@@ -341,10 +466,21 @@ class AssetRegistry(BaseRegistry):
         done, not_done = wait(pending, timeout=timeout)
         return not not_done
 
-    def _thumbnail_job(self, source: Path, thumb_path: Path, thumb_rel: str, uid: str) -> None:
-        success = self._create_thumbnail_file(source, thumb_path)
+    def _thumbnail_job(
+        self,
+        source: Path,
+        thumb_path: Path,
+        thumb_rel: str,
+        uid: str,
+        preview_kind: Optional[str],
+    ) -> None:
+        success = self._create_preview_file(source, thumb_path)
         if not success:
-            LOGGER.warning("Clearing thumbnail mapping for %s due to generation failure", uid)
+            LOGGER.warning(
+                "Clearing %s preview for %s due to generation failure",
+                preview_kind or "thumbnail",
+                uid,
+            )
             thumb_path.unlink(missing_ok=True)
             with self.connection() as conn:
                 conn.execute(
@@ -352,8 +488,16 @@ class AssetRegistry(BaseRegistry):
                     (self.project_id, uid),
                 )
 
+    def _create_preview_file(self, source: Path, thumb_path: Path) -> bool:
+        suffix = source.suffix.lower()
+        if suffix in self._IMAGE_SUFFIXES:
+            return self._create_image_thumbnail(source, thumb_path)
+        if suffix in self._AUDIO_WAVEFORM_SUFFIXES:
+            return self._create_waveform_preview(source, thumb_path)
+        return False
+
     @staticmethod
-    def _create_thumbnail_file(source: Path, thumb_path: Path) -> bool:
+    def _create_image_thumbnail(source: Path, thumb_path: Path) -> bool:
         if Image is None:
             return False
         try:
@@ -364,6 +508,67 @@ class AssetRegistry(BaseRegistry):
             return True
         except Exception as exc:  # pragma: no cover - optional
             LOGGER.warning("Thumbnail generation failed for %s: %s", source, exc)
+            return False
+
+    @staticmethod
+    def _create_waveform_preview(source: Path, thumb_path: Path) -> bool:
+        try:
+            with wave.open(str(source), "rb") as wav_file:
+                frames = wav_file.getnframes()
+                channels = wav_file.getnchannels()
+                sampwidth = wav_file.getsampwidth()
+                framerate = wav_file.getframerate()
+                if frames <= 0 or sampwidth not in (1, 2):
+                    LOGGER.debug("Unsupported waveform parameters for %s", source)
+                    return False
+                raw = wav_file.readframes(frames)
+        except wave.Error as exc:
+            LOGGER.debug("Waveform probe failed for %s: %s", source, exc)
+            return False
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.warning("Waveform read failed for %s: %s", source, exc)
+            return False
+
+        if sampwidth == 1:
+            samples = array("b", raw)
+        else:
+            samples = array("h")
+            samples.frombytes(raw)
+
+        if channels > 1:
+            samples = samples[::channels]
+
+        if not samples:
+            LOGGER.debug("No samples available for waveform preview in %s", source)
+            return False
+
+        max_amplitude = max(1, max(abs(int(v)) for v in samples))
+        target_points = 512
+        step = max(1, len(samples) // target_points)
+        points: List[float] = []
+        for idx in range(0, len(samples), step):
+            window = samples[idx : idx + step]
+            if not window:
+                break
+            peak = max(window)
+            trough = min(window)
+            amplitude = max(abs(int(peak)), abs(int(trough))) / max_amplitude
+            points.append(round(float(amplitude), 4))
+            if len(points) >= target_points:
+                break
+
+        payload = {
+            "kind": "waveform",
+            "channels": channels,
+            "sample_rate": framerate,
+            "points": points,
+        }
+        try:
+            thumb_path.parent.mkdir(parents=True, exist_ok=True)
+            thumb_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            return True
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.warning("Failed to write waveform preview for %s: %s", source, exc)
             return False
 
     # ---------------------
