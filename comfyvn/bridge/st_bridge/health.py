@@ -144,23 +144,18 @@ def probe_health(
         settings_manager = None
 
     paths = resolve_paths(settings=settings_manager)
-    config_base_hint = (
-        paths.config.get("base_url")
-        or paths.config.get("base")
-        or None
-    )
+    config_base_hint = paths.config.get("base_url") or paths.config.get("base") or None
     config_plugin_hint = paths.config.get("plugin_base")
 
     bridge, bridge_config = _load_bridge(
         settings=settings_manager,
         base_url=base_url or (str(config_base_hint) if config_base_hint else None),
-        plugin_base=plugin_base or (str(config_plugin_hint) if config_plugin_hint else None),
+        plugin_base=plugin_base
+        or (str(config_plugin_hint) if config_plugin_hint else None),
         timeout=timeout,
     )
 
-    effective_base = (
-        bridge.base_url if bridge else bridge_config.get("base_url", "")
-    )
+    effective_base = bridge.base_url if bridge else bridge_config.get("base_url", "")
     ping_result: dict[str, object] | None = None
 
     if effective_base:

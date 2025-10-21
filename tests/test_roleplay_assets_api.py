@@ -22,6 +22,7 @@ data_dir = runtime_paths.data_dir
 pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
+
 from comfyvn.server.app import create_app
 from comfyvn.server.modules.roleplay.roleplay_api import _asset_registry
 from setup.apply_phase06_rebuild import ensure_db, ensure_dirs
@@ -108,8 +109,13 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert preview_payload["preview"]["excerpt"]
     assert preview_payload["status"]["status"] in {"ready", "stale"}
     assert preview_payload.get("task_id") == data["task_id"]
-    assert preview_payload.get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
-    assert preview_payload["preview"].get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
+    assert (
+        preview_payload.get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
+    )
+    assert (
+        preview_payload["preview"].get("links", {}).get("logs")
+        == f"/jobs/logs/{data['task_id']}"
+    )
 
 
 def test_roleplay_import_async_background(client: TestClient):

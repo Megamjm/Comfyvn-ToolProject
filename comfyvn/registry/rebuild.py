@@ -20,10 +20,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
+from comfyvn.config.runtime_paths import thumb_cache_dir
 from comfyvn.core.db_manager import DEFAULT_DB_PATH
 from comfyvn.db import schema_v06
 from comfyvn.studio.core import AssetRegistry
-from comfyvn.config.runtime_paths import thumb_cache_dir
 
 LOGGER = logging.getLogger("comfyvn.registry.rebuild")
 
@@ -87,7 +87,9 @@ def _iter_asset_files(root: Path) -> Iterator[Tuple[Path, Path]]:
             continue
         if rel.name.endswith(SIDECAR_SUFFIX):
             continue
-        if rel.name.endswith(LEGACY_SUFFIX) and rel.with_suffix("").name.endswith(".asset"):
+        if rel.name.endswith(LEGACY_SUFFIX) and rel.with_suffix("").name.endswith(
+            ".asset"
+        ):
             continue
         yield path, rel
 
@@ -130,7 +132,14 @@ def _load_sidecar_payload(base_path: Path) -> Tuple[Dict[str, object], Optional[
             continue
         meta = data.get("meta")
         payload = dict(meta) if isinstance(meta, dict) else {}
-        for key in ("origin", "tags", "seed", "workflow", "digest_sha256", "filesize_bytes"):
+        for key in (
+            "origin",
+            "tags",
+            "seed",
+            "workflow",
+            "digest_sha256",
+            "filesize_bytes",
+        ):
             if key in data and key not in payload:
                 payload[key] = data[key]
         license_tag = data.get("license")
@@ -277,7 +286,9 @@ def smoke_check(db_path: Path | str) -> Tuple[int, int]:
 
     path = Path(db_path).expanduser()
     with sqlite3.connect(path) as conn:
-        assets_count = conn.execute("SELECT COUNT(*) FROM assets_registry").fetchone()[0]
+        assets_count = conn.execute("SELECT COUNT(*) FROM assets_registry").fetchone()[
+            0
+        ]
         scenes_count = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
     LOGGER.info("Smoke check assets=%s scenes=%s", assets_count, scenes_count)
     return int(assets_count), int(scenes_count)

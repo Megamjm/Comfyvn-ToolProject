@@ -13,13 +13,13 @@ from typing import Iterable, Sequence, Set
 
 from .schema_v06 import (  # re-exported for convenience
     SCHEMA_VERSION,
+    TABLE_DEFINITIONS,
     ColumnPatch,
     TableDefinition,
     ensure_schema,
     existing_tables,
     iter_tables,
     table_names,
-    TABLE_DEFINITIONS,
 )
 
 __all__ = [
