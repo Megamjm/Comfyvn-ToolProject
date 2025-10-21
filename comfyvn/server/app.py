@@ -12,7 +12,7 @@ import logging
 import os
 import pkgutil
 from pathlib import Path
-from typing import Iterable, Optional, Sequence
+from typing import Iterable, Optional, Sequence, Set
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +20,7 @@ from fastapi.routing import APIRoute
 
 from comfyvn.core.warning_bus import warning_bus
 from comfyvn.logging_config import init_logging
+from comfyvn.server.system_metrics import collect_system_metrics
 
 try:
     import orjson as _orjson  # type: ignore
@@ -58,6 +59,7 @@ PRIORITY_MODULES: tuple[str, ...] = (
 
 def _configure_logging() -> Path:
     level = os.getenv("COMFYVN_LOG_LEVEL", "INFO")
+    DEFAULT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     log_path = init_logging(
         log_dir=DEFAULT_LOG_PATH.parent,
         level=level,
@@ -106,7 +108,9 @@ def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) ->
         app.include_router(router)
         seen.add(module_name)
         LOGGER.debug(
-            "Included router: %s (prefix=%s)", module_name, getattr(router, "prefix", "")
+            "Included router: %s (prefix=%s)",
+            module_name,
+            getattr(router, "prefix", ""),
         )
     except Exception as exc:
         LOGGER.warning("Failed to include router %s: %s", module_name, exc)
@@ -118,6 +122,18 @@ def _include_routers(app: FastAPI) -> None:
         _include_router_module(app, module_name, seen=seen)
     for module_name in _iter_module_names():
         _include_router_module(app, module_name, seen=seen)
+
+
+def _route_exists(app: FastAPI, path: str, methods: Set[str]) -> bool:
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if route.path != path:
+            continue
+        route_methods = getattr(route, "methods", None) or set()
+        if route_methods.intersection(methods):
+            return True
+    return False
 
 
 def _resolve_cors_origins(allowed_origins: Optional[Sequence[str]]) -> list[str]:
@@ -158,12 +174,22 @@ def create_app(
 
     @app.get("/health", tags=["System"], summary="Simple health probe")
     async def core_health():
-        return {"status": "ok"}
+        return {"status": "ok", "ok": True}
 
     @app.get("/status", tags=["System"], summary="Service status overview")
     async def core_status():
         routes = [route.path for route in app.routes if isinstance(route, APIRoute)]
         return {"status": "ok", "version": APP_VERSION, "routes": routes}
+
+    if not _route_exists(app, "/system/metrics", {"GET"}):
+
+        @app.get(
+            "/system/metrics",
+            tags=["System"],
+            summary="System metrics snapshot",
+        )
+        async def core_metrics():
+            return collect_system_metrics()
 
     LOGGER.info("FastAPI application created with %d routes", len(app.routes))
     return app

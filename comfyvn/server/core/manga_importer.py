@@ -9,8 +9,10 @@ import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from comfyvn.core.advisory_hooks import BundleContext
+from comfyvn.core.advisory_hooks import scan as scan_bundle
 from comfyvn.core.file_importer import FileImporter, ImportSession, log_license_issues
 from comfyvn.server.core.translation_pipeline import build_translation_bundle
 
@@ -118,6 +120,9 @@ def import_manga_archive(
     timeline_entries: List[Dict[str, Any]] = []
     panels_metadata: List[Dict[str, Any]] = []
 
+    scenes_for_scan: Dict[str, dict] = {}
+    scene_sources: Dict[str, Path] = {}
+
     for idx, image_path in enumerate(stage_paths, start=1):
         rel_key = image_path.relative_to(session.extracted_dir)
         asset_dest = manga_asset_root / rel_key
@@ -137,7 +142,11 @@ def import_manga_archive(
         for speaker in detected_speakers:
             speakers.setdefault(
                 speaker,
-                {"name": speaker, "character_id": _slugify(speaker), "source": "manga_import"},
+                {
+                    "name": speaker,
+                    "character_id": _slugify(speaker),
+                    "source": "manga_import",
+                },
             )
 
         scene_payload = {
@@ -161,6 +170,8 @@ def import_manga_archive(
             ],
         }
         _write_json(scenes_dir / f"{scene_id}.json", scene_payload)
+        scenes_for_scan[scene_id] = scene_payload
+        scene_sources[scene_id] = scenes_dir / f"{scene_id}.json"
         summary.scenes.append(scene_id)
 
         timeline_entries.append(
@@ -200,7 +211,11 @@ def import_manga_archive(
             "timeline_id": timeline_id,
             "title": f"{title} Draft Timeline",
             "scene_order": timeline_entries,
-            "meta": {"import_id": import_id, "source": "manga_import", "project_id": project_id},
+            "meta": {
+                "import_id": import_id,
+                "source": "manga_import",
+                "project_id": project_id,
+            },
         }
         _write_json(timelines_dir / f"{timeline_id}.json", timeline_payload)
         summary.timelines.append(timeline_id)
@@ -218,25 +233,50 @@ def import_manga_archive(
     summary.panels = panels_metadata
 
     panels_path = session.converted_dir / "panels.json"
-    panels_path.write_text(json.dumps(panels_metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    panels_path.write_text(
+        json.dumps(panels_metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     summary.metadata["panels_path"] = panels_path.as_posix()
 
     if license_hint:
-        summary.licenses.append({"name": license_hint, "scope": "manga_assets", "source": "request"})
+        summary.licenses.append(
+            {"name": license_hint, "scope": "manga_assets", "source": "request"}
+        )
 
     if translation_enabled:
         try:
-            scene_paths = [scenes_dir / f"{scene_id}.json" for scene_id in summary.scenes]
-            summary.translation = build_translation_bundle(scene_paths, session.converted_dir, target_lang=translation_lang)
+            scene_paths = [
+                scenes_dir / f"{scene_id}.json" for scene_id in summary.scenes
+            ]
+            summary.translation = build_translation_bundle(
+                scene_paths, session.converted_dir, target_lang=translation_lang
+            )
         except Exception as exc:  # pragma: no cover - defensive
             summary.warnings.append(f"translation bundle failed: {exc}")
-            LOGGER.warning("Translation bundle failed for manga import %s: %s", import_id, exc)
+            LOGGER.warning(
+                "Translation bundle failed for manga import %s: %s", import_id, exc
+            )
 
     summary.advisories = log_license_issues(
         summary.import_id,
         summary.assets,
         summary.licenses,
         import_kind="manga",
+    )
+
+    asset_pairs: List[Tuple[str, Optional[Path]]] = [
+        (rel_path, assets_root / Path(rel_path)) for rel_path in summary.assets
+    ]
+    scan_bundle(
+        BundleContext(
+            project_id=project_id,
+            timeline_id=summary.timelines[0] if summary.timelines else None,
+            scenes=scenes_for_scan,
+            scene_sources=scene_sources,
+            licenses=summary.licenses,
+            assets=asset_pairs,
+            metadata={"source": "import.manga", "import_id": summary.import_id},
+        )
     )
 
     summary_path = session.summary_path
@@ -317,7 +357,9 @@ def _load_transcript_candidates(image_path: Path) -> List[str]:
     for candidate in candidates:
         if candidate.exists():
             try:
-                lines = candidate.read_text(encoding="utf-8", errors="replace").splitlines()
+                lines = candidate.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
                 return [line.strip() for line in lines if line.strip()]
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.debug("Failed to read transcript %s: %s", candidate, exc)
@@ -325,12 +367,18 @@ def _load_transcript_candidates(image_path: Path) -> List[str]:
     return []
 
 
-def _build_scene_lines(transcripts: List[str], panel_id: str) -> tuple[List[Dict[str, Any]], List[str]]:
+def _build_scene_lines(
+    transcripts: List[str], panel_id: str
+) -> tuple[List[Dict[str, Any]], List[str]]:
     lines: List[Dict[str, Any]] = []
     speakers: List[str] = []
     for order, raw in enumerate(transcripts, start=1):
         speaker, text = _split_speaker_text(raw)
-        if speaker and speaker not in speakers and speaker not in {"Narrator", "Unknown"}:
+        if (
+            speaker
+            and speaker not in speakers
+            and speaker not in {"Narrator", "Unknown"}
+        ):
             speakers.append(speaker)
         payload = {
             "speaker": speaker,
@@ -348,7 +396,12 @@ def _build_scene_lines(transcripts: List[str], panel_id: str) -> tuple[List[Dict
             {
                 "speaker": "Narrator",
                 "text": "[No OCR transcription available]",
-                "meta": {"panel_id": panel_id, "order": 1, "source": "ocr_stub", "confidence": 0.1},
+                "meta": {
+                    "panel_id": panel_id,
+                    "order": 1,
+                    "source": "ocr_stub",
+                    "confidence": 0.1,
+                },
             }
         )
     return lines, speakers

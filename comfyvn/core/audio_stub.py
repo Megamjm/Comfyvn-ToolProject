@@ -73,12 +73,12 @@ def _generate_samples(
     lang: Optional[str],
     style: Optional[str],
     sample_rate: int,
-    cache_seed: str,
+    seed_value: int,
 ) -> Tuple[array, float]:
     """Generate a synthetic waveform approximating speech cadences."""
 
     profile = _voice_profile(voice, style)
-    rand = random.Random(cache_seed)
+    rand = random.Random(seed_value)
     samples = array("h")
 
     amplitude = int(MAX_AMPLITUDE * 32767)
@@ -116,7 +116,9 @@ def _generate_samples(
             frame_count = _sample_count(duration, sample_rate)
             for frame in range(frame_count):
                 t = frame / sample_rate
-                env = math.sin(math.pi * frame / frame_count)  # simple attack/release envelope
+                env = math.sin(
+                    math.pi * frame / frame_count
+                )  # simple attack/release envelope
                 vibrato = math.sin(2 * math.pi * vibration * t) * 0.02
                 sample_value = math.sin(2 * math.pi * (freq + freq * vibrato) * t)
                 sample_value *= env
@@ -193,6 +195,7 @@ def _synth_via_comfyui(
     artifact_path: Path,
     text_length: int,
     device_hint: Optional[str],
+    seed_value: int,
 ) -> Tuple[Path, Path, Dict[str, Any]]:
     config = ComfyUIWorkflowConfig.from_dict(provider)
     runner = ComfyUIAudioRunner(config)
@@ -207,6 +210,7 @@ def _synth_via_comfyui(
         "model_hash": model_hash or "",
         "text_hash": text_hash,
         "device_hint": device_hint or "",
+        "seed": seed_value,
     }
 
     files, record = runner.run(context=context, output_types=("audio",))
@@ -226,6 +230,7 @@ def _synth_via_comfyui(
         "scene_id": scene_id,
         "character_id": character_id,
         "model_hash": model_hash or provider.get("id") or "comfyui",
+        "model": model_hash or provider.get("model") or provider.get("id") or "comfyui",
         "text_length": text_length,
         "text_hash": text_hash,
         "created_at": created_at,
@@ -237,6 +242,7 @@ def _synth_via_comfyui(
             "base_url": config.base_url,
         },
         "device_hint": device_hint,
+        "seed": seed_value,
     }
     sidecar_path = artifact_path.with_suffix(".json")
     sidecar_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -250,6 +256,7 @@ def _synth_via_comfyui(
         "provider": provider.get("id", "comfyui"),
         "voice": voice,
         "device_hint": device_hint or "",
+        "seed": str(seed_value),
     }
     _store_cache_entry(
         cache_key=cache_key,
@@ -283,6 +290,7 @@ def _synth_voice_fallback(
     model_hash: Optional[str],
     artifact_path: Path,
     device_hint: Optional[str],
+    seed_value: int,
 ) -> Tuple[Path, Path, Dict[str, Any]]:
     digest_input = "|".join(
         filter(
@@ -300,14 +308,14 @@ def _synth_voice_fallback(
     )
 
     sample_rate = DEFAULT_SAMPLE_RATE
-    cache_seed = f"{cache_key}|{digest_input}"
+    cache_seed = f"{cache_key}|{digest_input}|{seed_value}"
     samples, duration_seconds = _generate_samples(
         cleaned,
         voice=voice,
         lang=lang,
         style=style,
         sample_rate=sample_rate,
-        cache_seed=cache_seed,
+        seed_value=seed_value,
     )
 
     with wave.open(str(artifact_path), "wb") as wav_file:
@@ -324,6 +332,7 @@ def _synth_voice_fallback(
         "scene_id": scene_id,
         "character_id": character_id,
         "model_hash": model_hash or "synthetic",
+        "model": model_hash or "synthetic",
         "text_length": len(cleaned),
         "text_hash": text_hash,
         "created_at": created_at,
@@ -332,6 +341,8 @@ def _synth_voice_fallback(
         "format": artifact_path.suffix.lstrip(".") or "wav",
         "provider": "synthetic",
         "device_hint": device_hint,
+        "workflow": "synthetic.default",
+        "seed": seed_value,
     }
     sidecar_path = artifact_path.with_suffix(".json")
     sidecar_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -346,6 +357,7 @@ def _synth_voice_fallback(
         "provider": "synthetic",
         "voice": voice,
         "device_hint": device_hint or "",
+        "seed": str(seed_value),
     }
     _store_cache_entry(
         cache_key=cache_key,
@@ -377,6 +389,7 @@ def synth_voice(
     style: Optional[str] = None,
     model_hash: Optional[str] = None,
     device_hint: Optional[str] = None,
+    seed: Optional[int] = None,
 ) -> Tuple[str, Optional[str], bool]:
     """Generate speech audio, preferring ComfyUI when available with cache dedupe."""
 
@@ -396,6 +409,16 @@ def synth_voice(
         lang=lang,
         model_hash=model_hash,
     )
+
+    if seed is not None:
+        try:
+            seed_value = int(seed)
+        except (TypeError, ValueError):
+            seed_value = int(
+                hashlib.sha1(str(seed).encode("utf-8")).hexdigest()[:8], 16
+            )
+    else:
+        seed_value = int(hashlib.sha1(cache_key.encode("utf-8")).hexdigest()[:8], 16)
 
     cached_entry = audio_cache.lookup(cache_key)
     if cached_entry:
@@ -439,6 +462,7 @@ def synth_voice(
                 artifact_path=artifact_path,
                 text_length=len(cleaned),
                 device_hint=device_hint,
+                seed_value=seed_value,
             )
             return str(artifact), str(sidecar), False
         except ComfyUIWorkflowError as exc:
@@ -458,5 +482,6 @@ def synth_voice(
         model_hash=model_hash,
         artifact_path=artifact_path,
         device_hint=device_hint,
+        seed_value=seed_value,
     )
     return str(artifact), str(sidecar), False

@@ -92,10 +92,15 @@ def _analyze_workload(workload: Dict[str, Any]) -> Dict[str, Any]:
     largest_asset_mb = max(asset_sizes) if asset_sizes else 0.0
 
     workflows = _collect_workflows(workload)
-    cached = sum(1 for wf in workflows if wf.get("cached") or wf.get("status") == "cached")
-    uncached = sum(1 for wf in workflows if not (wf.get("cached") or wf.get("status") == "cached"))
+    cached = sum(
+        1 for wf in workflows if wf.get("cached") or wf.get("status") == "cached"
+    )
+    uncached = sum(
+        1 for wf in workflows if not (wf.get("cached") or wf.get("status") == "cached")
+    )
     requires_persistent_storage = any(
-        wf.get("persist_outputs") or wf.get("requires_persistent_storage") for wf in workflows
+        wf.get("persist_outputs") or wf.get("requires_persistent_storage")
+        for wf in workflows
     )
     if total_asset_mb > 2048:
         requires_persistent_storage = True
@@ -109,7 +114,9 @@ def _analyze_workload(workload: Dict[str, Any]) -> Dict[str, Any]:
     batch_hours = expected_runtime_minutes / 60.0
     burst_mode = expected_runtime_minutes <= 20.0
 
-    min_vram_req = _coerce_float(requirements.get("min_vram_gb") or requirements.get("min_vram"))
+    min_vram_req = _coerce_float(
+        requirements.get("min_vram_gb") or requirements.get("min_vram")
+    )
     inferred_min_vram = None
     if workload_type in {"cg_batch", "cg", "render", "animation"}:
         inferred_min_vram = 24 if largest_asset_mb > 1024 else 16
@@ -145,7 +152,9 @@ def _analyze_workload(workload: Dict[str, Any]) -> Dict[str, Any]:
     budget = workload.get("budget") or {}
     limit_usd = _coerce_float(budget.get("limit_usd"))
     budget_mode = (budget.get("mode") or "").lower()
-    if budget_mode in {"frugal", "cost_saver"} or (limit_usd is not None and limit_usd <= 5):
+    if budget_mode in {"frugal", "cost_saver"} or (
+        limit_usd is not None and limit_usd <= 5
+    ):
         cost_sensitivity = "high"
     elif budget_mode in {"premium", "speed"}:
         cost_sensitivity = "low"
@@ -189,7 +198,9 @@ def _score_remote_provider(
 
     hints = meta.get("policy_hints") or {}
     workload_type = analysis.get("workload_type")
-    hint_for_workload = hints.get(workload_type) if isinstance(hints, dict) and workload_type else None
+    hint_for_workload = (
+        hints.get(workload_type) if isinstance(hints, dict) and workload_type else None
+    )
 
     cost_info = meta.get("cost") or {}
     hourly_cost = _coerce_float(cost_info.get("hourly_usd"))
@@ -277,7 +288,9 @@ def _select_remote_provider(
             continue
         if not entry.get("active", True):
             continue
-        score, hint = _score_remote_provider(entry, min_vram=min_vram, analysis=analysis)
+        score, hint = _score_remote_provider(
+            entry, min_vram=min_vram, analysis=analysis
+        )
         if score > best_score:
             best_score = score
             best_entry = entry
@@ -304,7 +317,9 @@ def advise(
 
     workload = workload or {}
     requirements = workload.get("requirements") or {}
-    min_vram = _coerce_float(requirements.get("min_vram_gb") or requirements.get("min_vram"))
+    min_vram = _coerce_float(
+        requirements.get("min_vram_gb") or requirements.get("min_vram")
+    )
 
     analysis = _analyze_workload(workload)
     if min_vram is None:
@@ -321,7 +336,9 @@ def advise(
         if device.get("kind") == "cpu":
             continue
         if _device_meets(device, min_vram):
-            if best_local is None or (device.get("memory_total") or 0) > (best_local.get("memory_total") or 0):
+            if best_local is None or (device.get("memory_total") or 0) > (
+                best_local.get("memory_total") or 0
+            ):
                 best_local = device
 
     # Determine remote suggestion
@@ -337,7 +354,9 @@ def advise(
     estimated_cost = None
     if recommended_entry:
         meta = recommended_entry.get("meta") or {}
-        estimated_cost = _estimate_cost(meta, analysis.get("expected_runtime_minutes", 30.0))
+        estimated_cost = _estimate_cost(
+            meta, analysis.get("expected_runtime_minutes", 30.0)
+        )
         cost_info = meta.get("cost") or {}
         recommended_remote = {
             "id": recommended_entry.get("id"),
@@ -347,7 +366,9 @@ def advise(
             "meta": meta,
             "cost": cost_info,
             "cost_estimate": estimated_cost,
-            "cost_estimate_str": f"${estimated_cost:.2f}" if estimated_cost is not None else None,
+            "cost_estimate_str": (
+                f"${estimated_cost:.2f}" if estimated_cost is not None else None
+            ),
             "policy_hint": policy_hint,
             "score": score,
         }
@@ -371,15 +392,21 @@ def advise(
     if analysis.get("total_asset_mb"):
         total_mb = analysis["total_asset_mb"]
         largest_mb = analysis.get("largest_asset_mb") or 0.0
-        rationale.append(f"Importer assets ~{total_mb:.0f} MB total (largest {largest_mb:.0f} MB)")
+        rationale.append(
+            f"Importer assets ~{total_mb:.0f} MB total (largest {largest_mb:.0f} MB)"
+        )
     if analysis.get("expected_runtime_minutes"):
-        rationale.append(f"Estimated runtime {analysis['expected_runtime_minutes']:.0f} minutes")
+        rationale.append(
+            f"Estimated runtime {analysis['expected_runtime_minutes']:.0f} minutes"
+        )
     if best_local:
         rationale.append(
             f"Local device {best_local.get('name')} ({best_local.get('memory_total')} MiB) meets requirements"
         )
     elif not prefer_remote:
-        rationale.append("No local GPU satisfied VRAM requirement; considering remote providers")
+        rationale.append(
+            "No local GPU satisfied VRAM requirement; considering remote providers"
+        )
 
     if recommended_remote:
         provider_line = f"Suggested remote provider: {recommended_remote['name']} ({recommended_remote.get('service')})"
@@ -389,9 +416,13 @@ def advise(
         if recommended_remote.get("policy_hint"):
             rationale.append(recommended_remote["policy_hint"])
     elif prefer_remote:
-        rationale.append("Remote processing requested but no active providers registered")
+        rationale.append(
+            "Remote processing requested but no active providers registered"
+        )
 
-    recommendation["reason"] = "; ".join(rationale) if rationale else "No specific requirements provided"
+    recommendation["reason"] = (
+        "; ".join(rationale) if rationale else "No specific requirements provided"
+    )
 
     if hardware_override:
         recommendation["choice"] = "cpu"
@@ -400,8 +431,8 @@ def advise(
         recommendation["reason"] += "; user override requested CPU fallback"
     elif prefer_remote and recommended_remote:
         recommendation["choice"] = "remote"
-    elif best_local and not prefer_remote:
-        recommendation["choice"] = "local"
+    elif best_local:
+        recommendation["choice"] = "gpu"
     elif recommended_remote:
         recommendation["choice"] = "remote"
     else:
@@ -413,10 +444,14 @@ def advise(
         recommendation["estimated_cost"] = None
 
     recommendation["job_summary"] = {
-        "recommended_provider": recommended_remote.get("id") if recommended_remote else None,
+        "recommended_provider": (
+            recommended_remote.get("id") if recommended_remote else None
+        ),
         "choice": recommendation["choice"],
         "estimated_cost": recommendation.get("estimated_cost"),
-        "policy_hint": recommended_remote.get("policy_hint") if recommended_remote else None,
+        "policy_hint": (
+            recommended_remote.get("policy_hint") if recommended_remote else None
+        ),
         "min_vram_gb": analysis.get("min_vram_gb"),
         "asset_total_mb": analysis.get("total_asset_mb"),
     }

@@ -42,6 +42,7 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
     model_hash = payload.get("model_hash") or model
     scene_id = payload.get("scene_id")
     character_id = payload.get("character_id")
+    seed = payload.get("seed")
 
     try:
         artifact, sidecar, cached = synth_voice(
@@ -52,6 +53,7 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
             lang=lang,
             style=style,
             model_hash=model_hash,
+            seed=seed,
         )
     except ValueError as exc:
         LOGGER.warning("Voice speak rejected: %s", exc)
@@ -70,6 +72,7 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
             "model_hash": model_hash,
             "artifact": artifact,
             "cached": cached,
+            "seed": seed,
         },
     )
     LOGGER.info(
@@ -88,4 +91,5 @@ def speak(payload: dict = Body(...)) -> Dict[str, Any]:
         "cached": cached,
         "style": style,
         "model_hash": model_hash,
+        "seed": seed,
     }

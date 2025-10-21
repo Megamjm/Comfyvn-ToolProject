@@ -19,7 +19,7 @@ when you do not yet have an active subscription or live credentials.
   Analyses importer workload metadata (VRAM needs, asset sizes, cached
   ComfyUI workflows, translation pipeline requirements, runtime/budget hints)
   and scores providers. It returns:
-  - `choice`: local/remote/cpu
+  - `choice`: gpu/remote/cpu
   - `remote_candidate`: provider metadata + policy hints + estimated cost
   - `analysis`: intermediate heuristics so GUIs can render explanations
   - `job_summary`: minimal payload for importer/scheduler audit logs

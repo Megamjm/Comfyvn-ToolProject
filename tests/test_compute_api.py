@@ -33,7 +33,9 @@ class _RegistryStub:
                 "base_url": "https://api.runpod.io/v2/",
                 "meta": {
                     "min_vram_gb": 12,
-                    "policy_hints": {"tts": "Remote GPU recommended for TTS workloads."},
+                    "policy_hints": {
+                        "tts": "Remote GPU recommended for TTS workloads."
+                    },
                 },
                 "active": True,
             }
@@ -47,17 +49,36 @@ class _GPUManagerStub:
     def __init__(self) -> None:
         self.registry = _RegistryStub()
         self._devices = [
-            {"id": "cuda:0", "name": "Stub GPU", "kind": "gpu", "memory_total": 24576, "source": "stub"},
-            {"id": "cpu", "name": "CPU", "kind": "cpu", "memory_total": None, "source": "stub"},
+            {
+                "id": "cuda:0",
+                "name": "Stub GPU",
+                "kind": "gpu",
+                "memory_total": 24576,
+                "source": "stub",
+            },
+            {
+                "id": "cpu",
+                "name": "CPU",
+                "kind": "cpu",
+                "memory_total": None,
+                "source": "stub",
+            },
         ]
         self._policy = {"mode": "auto"}
 
     def list_all(self, refresh: bool = False):
         return list(self._devices)
 
-    def select_device(self, *, prefer: str | None = None, requirements: dict | None = None):
+    def select_device(
+        self, *, prefer: str | None = None, requirements: dict | None = None
+    ):
         if prefer == "cpu":
-            return {"id": "cpu", "device": "cpu", "policy": "manual", "reason": "preferred"}
+            return {
+                "id": "cpu",
+                "device": "cpu",
+                "policy": "manual",
+                "reason": "preferred",
+            }
         return {"id": "cuda:0", "device": "cuda:0", "policy": "auto", "reason": "auto"}
 
     def get_policy(self):
@@ -79,13 +100,15 @@ def test_compute_advise_get_local_choice(client: TestClient):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ok"] is True
-    assert data["choice"] in {"local", "remote", "cpu"}
+    assert data["choice"] in {"gpu", "remote", "cpu"}
     assert isinstance(data["rationale"], str)
     assert data["rationale"].startswith(data["choice"].upper())
 
 
 def test_compute_advise_get_prefer_remote(client: TestClient):
-    resp = client.get("/compute/advise", params={"task": "tts", "prefer_remote": "true"})
+    resp = client.get(
+        "/compute/advise", params={"task": "tts", "prefer_remote": "true"}
+    )
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["choice"] in {"remote", "cpu"}
@@ -93,7 +116,9 @@ def test_compute_advise_get_prefer_remote(client: TestClient):
 
 
 def test_compute_advise_cpu_override(client: TestClient):
-    resp = client.get("/compute/advise", params={"task": "img", "hardware_override": "true"})
+    resp = client.get(
+        "/compute/advise", params={"task": "img", "hardware_override": "true"}
+    )
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["choice"] == "cpu"

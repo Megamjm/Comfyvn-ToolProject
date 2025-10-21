@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query
 
-from comfyvn.core.gpu_manager import get_gpu_manager
 from comfyvn.core.compute_advisor import advise as compute_advise
+from comfyvn.core.gpu_manager import POLICY_MODES, get_gpu_manager
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,9 +17,21 @@ GPU_MANAGER = get_gpu_manager()
 @router.get("/list")
 async def list_gpus(refresh: bool = Query(True)) -> Dict[str, Any]:
     devices = GPU_MANAGER.list_all(refresh=refresh)
+    local_devices = GPU_MANAGER.list_local(refresh=False)
     policy = GPU_MANAGER.get_policy()
-    LOGGER.debug("GPU list requested -> %d devices, mode=%s", len(devices), policy.get("mode"))
-    return {"ok": True, "devices": devices, "policy": policy}
+    LOGGER.debug(
+        "GPU list requested -> %d devices (%d local), mode=%s",
+        len(devices),
+        len(local_devices),
+        policy.get("mode"),
+    )
+    return {
+        "ok": True,
+        "devices": devices,
+        "local": local_devices,
+        "policy": policy,
+        "modes": sorted(POLICY_MODES),
+    }
 
 
 def _set_policy(mode: str, device: Optional[str]) -> Dict[str, Any]:
@@ -27,7 +39,16 @@ def _set_policy(mode: str, device: Optional[str]) -> Dict[str, Any]:
         policy = GPU_MANAGER.set_policy(mode, device=device)
     except AssertionError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return {"ok": True, "policy": policy}
+    LOGGER.info(
+        "GPU policy updated -> mode=%s, device=%s",
+        policy.get("mode"),
+        policy.get("manual_device"),
+    )
+    return {
+        "ok": True,
+        "policy": policy,
+        "devices": GPU_MANAGER.list_all(refresh=False),
+    }
 
 
 @router.get("/policy")
@@ -45,7 +66,9 @@ async def set_policy(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
 
 
 @router.post("/policy/{mode}")
-async def set_policy_legacy(mode: str, payload: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
+async def set_policy_legacy(
+    mode: str, payload: Optional[Dict[str, Any]] = Body(None)
+) -> Dict[str, Any]:
     device = payload.get("device") if isinstance(payload, dict) else None
     return _set_policy(mode, device)
 

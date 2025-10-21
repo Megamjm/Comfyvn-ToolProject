@@ -41,14 +41,20 @@ def _register_tts_asset(
     cache_key: str,
     text_hash: str,
     cached: bool,
+    source: str,
 ) -> Optional[dict[str, Any]]:
     artifact_path = Path(artifact)
     if not artifact_path.exists():
-        LOGGER.warning("TTS artifact missing on disk; skipping asset registration: %s", artifact_path)
+        LOGGER.warning(
+            "TTS artifact missing on disk; skipping asset registration: %s",
+            artifact_path,
+        )
         return None
 
     sidecar_payload = _load_sidecar(sidecar)
-    model_hash = payload.model_hash or payload.model or sidecar_payload.get("model_hash")
+    model_hash = (
+        payload.model_hash or payload.model or sidecar_payload.get("model_hash")
+    )
     asset_metadata: dict[str, Any] = {
         "scene_id": payload.scene_id,
         "line_id": payload.line_id,
@@ -63,6 +69,7 @@ def _register_tts_asset(
         "cached": cached,
         "sidecar": sidecar,
         "export_path": str(artifact_path),
+        "seed": payload.seed,
     }
     if payload.metadata:
         asset_metadata["request_meta"] = dict(payload.metadata)
@@ -87,9 +94,10 @@ def _register_tts_asset(
         "cache_key": cache_key,
         "cached": cached,
         "text_length": len(payload.text.strip()),
+        "seed": payload.seed,
     }
     provenance_payload = {
-        "source": "api.tts.synthesize",
+        "source": source,
         "inputs": provenance_inputs,
         "user_id": (payload.metadata or {}).get("user_id"),
     }
@@ -128,8 +136,13 @@ class TTSRequest(BaseModel):
     lang: Optional[str] = Field(None, description="Language or locale code")
     style: Optional[str] = Field(None, description="Optional vocal styling or preset")
     model: Optional[str] = Field(None, description="Engine or pipeline identifier")
-    model_hash: Optional[str] = Field(None, description="Hash of the synthesis model/preset")
-    device_hint: Optional[str] = Field(None, description="Preferred device id or synthesis target")
+    model_hash: Optional[str] = Field(
+        None, description="Hash of the synthesis model/preset"
+    )
+    device_hint: Optional[str] = Field(
+        None, description="Preferred device id or synthesis target"
+    )
+    seed: Optional[int] = Field(None, description="Deterministic seed for synthesis")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional client metadata (stored with asset provenance)",
@@ -151,8 +164,7 @@ class TTSResponse(BaseModel):
     info: dict[str, Any] = Field(default_factory=dict)
 
 
-@router.post("/synthesize", response_model=TTSResponse, summary="Synthesize speech")
-def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
+def _handle_tts_request(payload: TTSRequest, *, source_route: str) -> TTSResponse:
     cleaned_text = payload.text.strip()
     if not cleaned_text:
         LOGGER.warning("Rejected TTS request: empty text after trimming")
@@ -170,7 +182,7 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
     )
 
     LOGGER.debug(
-        "TTS request scene=%s line=%s character=%s voice=%s lang=%s style=%s device=%s cache_key=%s",
+        "TTS request scene=%s line=%s character=%s voice=%s lang=%s style=%s device=%s cache_key=%s seed=%s",
         payload.scene_id,
         payload.line_id,
         payload.character_id,
@@ -179,6 +191,7 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
         payload.style,
         payload.device_hint,
         cache_key,
+        payload.seed,
     )
 
     try:
@@ -191,6 +204,7 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
             style=payload.style,
             model_hash=model_hash,
             device_hint=payload.device_hint,
+            seed=payload.seed,
         )
     except ValueError as exc:
         LOGGER.warning("Rejected TTS request: %s", exc)
@@ -206,6 +220,7 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
         cache_key=cache_key,
         text_hash=text_hash,
         cached=cached,
+        source=source_route,
     )
 
     LOGGER.info(
@@ -231,6 +246,8 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
         "device_hint": payload.device_hint,
         "cache_key": cache_key,
         "text_hash": text_hash,
+        "seed": payload.seed,
+        "route": source_route,
     }
     if asset_info:
         info_payload["asset_uid"] = asset_info["uid"]
@@ -245,3 +262,15 @@ def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
         asset=asset_info,
         info=info_payload,
     )
+
+
+@router.post(
+    "/speak", response_model=TTSResponse, summary="Character-aware speech synthesis"
+)
+def speak(payload: TTSRequest = Body(...)) -> TTSResponse:
+    return _handle_tts_request(payload, source_route="api.tts.speak")
+
+
+@router.post("/synthesize", response_model=TTSResponse, summary="Synthesize speech")
+def synthesize(payload: TTSRequest = Body(...)) -> TTSResponse:
+    return _handle_tts_request(payload, source_route="api.tts.synthesize")

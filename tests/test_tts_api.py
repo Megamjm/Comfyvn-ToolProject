@@ -5,8 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from comfyvn.core.audio_cache import AudioCacheManager
 from comfyvn.core import audio_stub
+from comfyvn.core.audio_cache import AudioCacheManager
 from comfyvn.server.app import create_app
 from comfyvn.server.modules import tts_api
 from comfyvn.studio.core import AssetRegistry
@@ -48,7 +48,8 @@ def test_tts_synthesize_registers_asset_and_hits_cache(tmp_path, monkeypatch):
             "style": "calm",
             "device_hint": "cpu",
         }
-        resp = client.post("/api/tts/synthesize", json=payload)
+        payload["seed"] = 4242
+        resp = client.post("/api/tts/speak", json=payload)
         assert resp.status_code == 200
         data = resp.json()
         assert data["cached"] is False
@@ -58,7 +59,10 @@ def test_tts_synthesize_registers_asset_and_hits_cache(tmp_path, monkeypatch):
         assert asset["meta"]["line_id"] == "line-01"
         assert asset["meta"]["cache_key"] == data["info"]["cache_key"]
         assert asset["meta"]["device_hint"] == "cpu"
+        assert asset["meta"]["seed"] == 4242
         assert data["info"]["asset_uid"] == asset["uid"]
+        assert data["info"]["seed"] == 4242
+        assert data["info"]["route"] == "api.tts.speak"
 
         asset_path = assets_root / asset["path"]
         assert asset_path.exists()
@@ -66,15 +70,17 @@ def test_tts_synthesize_registers_asset_and_hits_cache(tmp_path, monkeypatch):
         assert sidecar_path.exists()
         provenance = asset.get("provenance")
         assert provenance is not None
-        assert provenance["source"] == "api.tts.synthesize"
+        assert provenance["source"] == "api.tts.speak"
 
         payload_again = payload | {"metadata": {"user_id": "tester"}}
-        resp_cached = client.post("/api/tts/synthesize", json=payload_again)
+        resp_cached = client.post("/api/tts/speak", json=payload_again)
         assert resp_cached.status_code == 200
         data_cached = resp_cached.json()
         assert data_cached["cached"] is True
         assert data_cached["artifact"] == data["artifact"]
         assert data_cached["info"]["cache_key"] == data["info"]["cache_key"]
+        assert data_cached["info"]["seed"] == 4242
+        assert data_cached["info"]["route"] == "api.tts.speak"
 
         cache_contents = json.loads(cache_path.read_text(encoding="utf-8"))
         assert len(cache_contents) == 1

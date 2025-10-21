@@ -11,21 +11,32 @@ import os
 import threading
 from typing import Any, Dict, Mapping, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
-
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAction,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
+    QStackedWidget,
     QStatusBar,
+    QStyle,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
+from comfyvn.gui.panels.characters_panel import CharactersPanel
+from comfyvn.gui.panels.scenes_panel import ScenesPanel
 from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.gui.views import AssetSummaryView, ImportsJobsView, TimelineSummaryView
 from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
+from comfyvn.studio.core.asset_registry import AssetRegistry
+from comfyvn.studio.core.character_registry import CharacterRegistry
+from comfyvn.studio.core.scene_registry import SceneRegistry
+from comfyvn.studio.core.timeline_registry import TimelineRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +68,13 @@ class StudioWindow(QMainWindow):
         self.manual_start_completed.connect(self._on_manual_start_complete)
 
         self._current_project = "default"
-        self._current_view = "Modules"
+        self._current_view = "Scenes"
+
+        self._scene_registry = SceneRegistry(project_id=self._current_project)
+        self._character_registry = CharacterRegistry(project_id=self._current_project)
+        self._timeline_registry = TimelineRegistry(project_id=self._current_project)
+        self._asset_registry = AssetRegistry(project_id=self._current_project)
+        self._info_default = "Use the navigation on the left to open Studio views."
 
         self._init_toolbar()
         self._init_central()
@@ -87,26 +104,155 @@ class StudioWindow(QMainWindow):
     def _init_central(self) -> None:
         container = QWidget(self)
         layout = QVBoxLayout(container)
-        layout.setAlignment(Qt.AlignTop)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
 
         self._info_label = QLabel(self)
         self._info_label.setWordWrap(True)
         layout.addWidget(self._info_label)
-        self._info_label.setText(
-            "Studio Shell ready.\n"
-            "Use the toolbar to open a project, switch views, or export a bundle stub."
-        )
+        self._info_extra = self._info_default
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(12)
+        layout.addLayout(content_row, 1)
+
+        self._nav = QListWidget(self)
+        self._nav.setObjectName("studioNav")
+        self._nav.setIconSize(QSize(20, 20))
+        self._nav.setUniformItemSizes(True)
+        self._nav.setSpacing(4)
+        self._nav.setFixedWidth(180)
+        content_row.addWidget(self._nav, 0)
+
+        self._view_stack = QStackedWidget(self)
+        content_row.addWidget(self._view_stack, 1)
+
+        self._build_views()
 
         self._dashboard = MetricsDashboard(self)
         layout.addWidget(self._dashboard)
         self._dashboard.set_manual_enabled(True)
         self._dashboard.start_button.clicked.connect(self._manual_start_server)
         if not self._autostart_enabled:
-            self._dashboard.show_message("Autostart disabled. Use Start Embedded Server to launch the backend manually.")
+            self._dashboard.show_message(
+                "Autostart disabled. Use Start Embedded Server to launch the backend manually."
+            )
 
-        layout.addStretch(1)
+        self._update_info_label()
 
         self.setCentralWidget(container)
+
+    def _build_views(self) -> None:
+        icons = {
+            "Scenes": QStyle.SP_FileIcon,
+            "Characters": QStyle.SP_FileDialogContentsView,
+            "Timeline": QStyle.SP_DirOpenIcon,
+            "Assets": QStyle.SP_DriveHDIcon,
+            "Imports": QStyle.SP_BrowserReload,
+        }
+
+        self._scene_view = ScenesPanel(self._scene_registry, self)
+        self._characters_view = CharactersPanel(self._character_registry, self)
+        self._timeline_view = TimelineSummaryView(self._timeline_registry, self)
+        self._asset_view = AssetSummaryView(self._asset_registry, self)
+        self._imports_view = ImportsJobsView(self.bridge.base_url, self)
+
+        self._view_map: dict[str, QWidget] = {
+            "Scenes": self._scene_view,
+            "Characters": self._characters_view,
+            "Timeline": self._timeline_view,
+            "Assets": self._asset_view,
+            "Imports": self._imports_view,
+        }
+        self._view_order = list(self._view_map.keys())
+
+        for name in self._view_order:
+            icon = self.style().standardIcon(icons.get(name, QStyle.SP_FileIcon))
+            item = QListWidgetItem(icon, name)
+            self._nav.addItem(item)
+            widget = self._view_map[name]
+            self._view_stack.addWidget(widget)
+
+        self._nav.currentRowChanged.connect(self._on_nav_changed)
+        if self._view_order:
+            self._nav.blockSignals(True)
+            self._nav.setCurrentRow(0)
+            self._nav.blockSignals(False)
+            self._activate_view(self._view_order[0], notify_server=False)
+
+    def _update_info_label(self) -> None:
+        lines = [
+            f"Active project: {self._current_project}",
+            f"Active view: {self._current_view}",
+        ]
+        if getattr(self, "_info_extra", None):
+            lines.append(self._info_extra)
+        self._info_label.setText("\n".join(lines))
+
+    def _set_info_extra(self, text: str | None) -> None:
+        self._info_extra = text or self._info_default
+        self._update_info_label()
+
+    def _on_nav_changed(self, index: int) -> None:
+        if index < 0 or index >= len(self._view_order):
+            return
+        label = self._view_order[index]
+        self._activate_view(label, notify_server=True)
+
+    def _activate_view(self, label: str, *, notify_server: bool) -> None:
+        widget = self._view_map.get(label)
+        if widget is None:
+            logger.debug("Unknown view requested: %s", label)
+            return
+        if self._view_stack.currentWidget() is not widget:
+            self._view_stack.setCurrentWidget(widget)
+        self._current_view = label
+        self._refresh_view(label)
+        if notify_server:
+            self.bridge.post(
+                "/api/studio/switch_view", {"view": label}, cb=self._on_view_switched
+            )
+
+    def _refresh_view(self, label: str) -> None:
+        view = self._view_map.get(label)
+        if view is None:
+            return
+        refresh = getattr(view, "refresh", None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception as exc:
+                logger.warning("Refresh for view %s failed: %s", label, exc)
+        self._update_info_label()
+
+    def _select_view(self, label: str) -> None:
+        widget = self._view_map.get(label)
+        if widget is None:
+            self._current_view = label
+            self._update_info_label()
+            return
+        target_index = self._view_order.index(label)
+        if self._nav.currentRow() != target_index:
+            self._nav.blockSignals(True)
+            self._nav.setCurrentRow(target_index)
+            self._nav.blockSignals(False)
+        self._view_stack.setCurrentWidget(widget)
+        self._current_view = label
+        self._refresh_view(label)
+
+    def _reload_registries(self) -> None:
+        logger.info("Reloading registries for project %s", self._current_project)
+        self._scene_registry = SceneRegistry(project_id=self._current_project)
+        self._character_registry = CharacterRegistry(project_id=self._current_project)
+        self._timeline_registry = TimelineRegistry(project_id=self._current_project)
+        self._asset_registry = AssetRegistry(project_id=self._current_project)
+
+        self._scene_view.set_registry(self._scene_registry)
+        self._characters_view.set_registry(self._character_registry)
+        self._timeline_view.set_registry(self._timeline_registry)
+        self._asset_view.set_registry(self._asset_registry)
+        # Imports view is project-agnostic (jobs feed), so no changes needed.
+        self._refresh_view(self._current_view)
 
     def _init_status(self) -> None:
         status = QStatusBar(self)
@@ -124,20 +270,30 @@ class StudioWindow(QMainWindow):
     # Toolbar handlers
     # -----------------
     def _prompt_project(self) -> None:
-        text, ok = QInputDialog.getText(self, "Open Project", "Project ID:", text=self._current_project)
+        text, ok = QInputDialog.getText(
+            self, "Open Project", "Project ID:", text=self._current_project
+        )
         if not ok or not text.strip():
             return
         project_id = text.strip()
         logger.info("Requesting project switch -> %s", project_id)
-        self.bridge.post("/api/studio/open_project", {"project_id": project_id}, cb=self._on_project_opened)
+        self.bridge.post(
+            "/api/studio/open_project",
+            {"project_id": project_id},
+            cb=self._on_project_opened,
+        )
 
     def _prompt_view(self) -> None:
-        text, ok = QInputDialog.getText(self, "Switch View", "View name:", text=self._current_view)
+        text, ok = QInputDialog.getText(
+            self, "Switch View", "View name:", text=self._current_view
+        )
         if not ok or not text.strip():
             return
         view = text.strip()
         logger.info("Requesting view switch -> %s", view)
-        self.bridge.post("/api/studio/switch_view", {"view": view}, cb=self._on_view_switched)
+        self.bridge.post(
+            "/api/studio/switch_view", {"view": view}, cb=self._on_view_switched
+        )
 
     def _prompt_export(self) -> None:
         text, ok = QInputDialog.getText(
@@ -155,12 +311,18 @@ class StudioWindow(QMainWindow):
                 "raw": {
                     "id": "studio-preview",
                     "dialogue": [
-                        {"type": "line", "speaker": "Guide", "text": "Welcome to the Studio shell!"}
+                        {
+                            "type": "line",
+                            "speaker": "Guide",
+                            "text": "Welcome to the Studio shell!",
+                        }
                     ],
                 }
             }
         logger.info("Requesting bundle export")
-        self.bridge.post("/api/studio/export_bundle", payload, cb=self._on_bundle_exported)
+        self.bridge.post(
+            "/api/studio/export_bundle", payload, cb=self._on_bundle_exported
+        )
 
     # -----------------
     # Bridge callbacks
@@ -169,16 +331,18 @@ class StudioWindow(QMainWindow):
         if not result.get("ok"):
             logger.warning("Open project failed: %s", result)
             return
-        self._current_project = result.get("project_id", self._current_project)
-        self._info_label.setText(f"Active project: {self._current_project}\nActive view: {self._current_view}")
+        project_id = result.get("project_id") or self._current_project
+        self._current_project = project_id
+        self._reload_registries()
+        self._set_info_extra(f"Project ready: {project_id}")
         logger.info("Active project set to %s", self._current_project)
 
     def _on_view_switched(self, result: Dict[str, Any]) -> None:
         if not result.get("ok"):
             logger.warning("Switch view failed: %s", result)
             return
-        self._current_view = result.get("view", self._current_view)
-        self._info_label.setText(f"Active project: {self._current_project}\nActive view: {self._current_view}")
+        view_name = result.get("view", self._current_view)
+        self._select_view(view_name)
         logger.info("Active view set to %s", self._current_view)
 
     def _on_bundle_exported(self, result: Dict[str, Any]) -> None:
@@ -186,12 +350,11 @@ class StudioWindow(QMainWindow):
             logger.warning("Bundle export failed: %s", result)
             return
         bundle_info = result.get("bundle", {})
-        summary = bundle_info if isinstance(bundle_info, dict) else {"bundle": bundle_info}
-        self._info_label.setText(
-            f"Active project: {self._current_project}\n"
-            f"Active view: {self._current_view}\n"
-            f"Bundle export: {summary}"
+        summary = (
+            bundle_info if isinstance(bundle_info, dict) else {"bundle": bundle_info}
         )
+        summary_text = summary if isinstance(summary, str) else repr(summary)
+        self._set_info_extra(f"Bundle export: {summary_text}")
         logger.info("Bundle export result: %s", summary)
 
     def _on_metrics(self, payload: Dict[str, Any]) -> None:
@@ -206,7 +369,9 @@ class StudioWindow(QMainWindow):
             health_ok = False
 
         self._dashboard.update_metrics(payload if ok else None)
-        self._dashboard.update_health(health_info if isinstance(health_info, Mapping) else None, fallback_ok=ok)
+        self._dashboard.update_health(
+            health_info if isinstance(health_info, Mapping) else None, fallback_ok=ok
+        )
         self._update_status_indicator(health_ok or ok)
         self._update_metrics_label(payload if ok else None)
 
@@ -217,12 +382,21 @@ class StudioWindow(QMainWindow):
         if self._autostart_enabled and not self._manual_start_in_progress:
             self._schedule_autostart()
         elif not self._autostart_enabled:
-            self._dashboard.show_message("Backend offline. Use Start Embedded Server to launch the local backend.")
-        self._dashboard.set_manual_enabled(not self._autostart_inflight and not self._manual_start_in_progress)
+            self._dashboard.show_message(
+                "Backend offline. Use Start Embedded Server to launch the local backend."
+            )
+        self._dashboard.set_manual_enabled(
+            not self._autostart_inflight and not self._manual_start_in_progress
+        )
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.bridge.stop_polling()
         logger.info("Studio window closed; polling stopped")
+        if hasattr(self, "_imports_view"):
+            try:
+                self._imports_view.close()
+            except Exception:
+                logger.debug("Imports view close handling failed", exc_info=True)
         super().closeEvent(event)
         if self._autostart_timer.isActive():
             self._autostart_timer.stop()
@@ -233,8 +407,8 @@ class StudioWindow(QMainWindow):
     def new_project(self) -> None:
         """Placeholder stub for menu integration."""
         logger.info("New project requested from Studio shell (stub).")
-        self._info_label.setText(
-            "New project workflow is not yet available in the Studio shell.\n"
+        self._set_info_extra(
+            "New project workflow is not yet available in the Studio shell. "
             "Switch to the main ComfyVN Studio for full project management."
         )
 
@@ -260,7 +434,9 @@ class StudioWindow(QMainWindow):
         disk = self._bound_percent(payload.get("disk"))
         gpus = payload.get("gpus")
         gpu_count = len(gpus) if isinstance(gpus, list) else 0
-        self._metrics_label.setText(f"Server metrics — CPU {cpu}% • RAM {mem}% • Disk {disk}% • GPUs {gpu_count}")
+        self._metrics_label.setText(
+            f"Server metrics — CPU {cpu}% • RAM {mem}% • Disk {disk}% • GPUs {gpu_count}"
+        )
 
     def _update_status_indicator(self, ok: bool) -> None:
         self._status_indicator.setText(self._format_status_dot(ok))
@@ -279,11 +455,22 @@ class StudioWindow(QMainWindow):
         return f'<span style="color:{color};font-weight:600;">{status}</span>'
 
     def _schedule_autostart(self, *, initial: bool = False) -> None:
-        if not self._autostart_enabled or self._autostart_inflight or self._manual_start_in_progress:
+        if (
+            not self._autostart_enabled
+            or self._autostart_inflight
+            or self._manual_start_in_progress
+        ):
             return
         if self._autostart_timer.isActive() and not initial:
             return
-        delay = 0 if initial else min(self._autostart_max_delay, self._autostart_base_delay * (2 ** self._autostart_step))
+        delay = (
+            0
+            if initial
+            else min(
+                self._autostart_max_delay,
+                self._autostart_base_delay * (2**self._autostart_step),
+            )
+        )
         self._dashboard.set_retry_message(delay)
         self._autostart_timer.start(max(0, int(delay * 1000)))
 
@@ -305,7 +492,9 @@ class StudioWindow(QMainWindow):
         if ok:
             self._handle_server_online()
         else:
-            self._dashboard.show_message("Embedded server did not report healthy status.")
+            self._dashboard.show_message(
+                "Embedded server did not report healthy status."
+            )
             self._dashboard.set_manual_enabled(True)
             self._autostart_step = min(self._autostart_step + 1, 6)
             self._schedule_autostart()
@@ -328,7 +517,9 @@ class StudioWindow(QMainWindow):
         if ok:
             self._handle_server_online()
         else:
-            self._dashboard.show_message("Manual start failed. Check logs and try again.")
+            self._dashboard.show_message(
+                "Manual start failed. Check logs and try again."
+            )
             if self._autostart_enabled:
                 self._schedule_autostart()
             else:

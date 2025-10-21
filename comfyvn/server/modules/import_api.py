@@ -1,25 +1,35 @@
 from __future__ import annotations
+
 import json
 import logging
+import os
 import threading
 import uuid
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from PySide6.QtGui import QAction
 
+from comfyvn.core.advisory_hooks import BundleContext
+from comfyvn.core.advisory_hooks import scan as scan_bundle
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
-from comfyvn.server.core.chat_import import apply_alias_map, assign_by_patterns, parse_text, to_scene_dict
+from comfyvn.server.core.chat_import import (
+    apply_alias_map,
+    assign_by_patterns,
+    parse_text,
+    to_scene_dict,
+)
 from comfyvn.server.core.manga_importer import MangaImportError, import_manga_archive
 from comfyvn.server.modules.auth import require_scope
 
 router = APIRouter()
 logger = logging.getLogger("comfyvn.api.imports")
 
-SCENE_DIR = Path("./data/scenes"); SCENE_DIR.mkdir(parents=True, exist_ok=True)
+SCENE_DIR = Path("./data/scenes")
+SCENE_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def _write_scene(name: str, data: Dict[str, Any]) -> str:
     p = (SCENE_DIR / f"{name}.json").resolve()
@@ -109,21 +119,33 @@ def _load_manga_history(limit: int = 20) -> List[Dict[str, Any]]:
     return history
 
 
-def _execute_manga_import(task_id: str, archive: str, options: Dict[str, Any]) -> Dict[str, Any]:
+def _execute_manga_import(
+    task_id: str, archive: str, options: Dict[str, Any]
+) -> Dict[str, Any]:
     logger.info("[Manga Import] job=%s starting -> %s", task_id, archive)
-    task_registry.update(task_id, status="running", progress=0.05, message="Preparing manga import")
+    task_registry.update(
+        task_id, status="running", progress=0.05, message="Preparing manga import"
+    )
     try:
         summary = import_manga_archive(archive, **options)
     except MangaImportError as exc:
         meta = _task_meta(task_id)
         meta["error"] = str(exc)
-        task_registry.update(task_id, status="error", progress=1.0, message=str(exc), meta=meta)
+        task_registry.update(
+            task_id, status="error", progress=1.0, message=str(exc), meta=meta
+        )
         logger.warning("[Manga Import] job=%s failed: %s", task_id, exc)
         raise
     except Exception as exc:  # pragma: no cover - defensive
         meta = _task_meta(task_id)
         meta["error"] = str(exc)
-        task_registry.update(task_id, status="error", progress=1.0, message="manga import failed", meta=meta)
+        task_registry.update(
+            task_id,
+            status="error",
+            progress=1.0,
+            message="manga import failed",
+            meta=meta,
+        )
         logger.exception("[Manga Import] job=%s failed unexpectedly", task_id)
         raise
 
@@ -155,9 +177,15 @@ def _spawn_manga_job(task_id: str, archive: str, options: Dict[str, Any]) -> Non
         except Exception:
             return
 
-    threading.Thread(target=_runner, name=f"MangaImport-{task_id[:8]}", daemon=True).start()
+    threading.Thread(
+        target=_runner, name=f"MangaImport-{task_id[:8]}", daemon=True
+    ).start()
+
+
 @router.post("/chat")
-async def import_chat(body: Dict[str, Any], _: bool = Depends(require_scope(["content.write"]))):
+async def import_chat(
+    body: Dict[str, Any], _: bool = Depends(require_scope(["content.write"]))
+):
     gate = policy_gate.evaluate_action("import.chat")
     if gate.get("requires_ack") and not gate.get("allow"):
         raise HTTPException(
@@ -168,9 +196,10 @@ async def import_chat(body: Dict[str, Any], _: bool = Depends(require_scope(["co
             },
         )
     text = str(body.get("text") or "")
-    if not text.strip(): raise HTTPException(status_code=400, detail="text required")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="text required")
     fmt = str(body.get("format") or "auto")
-    base = str(body.get("name") or f"scene_{uuid.uuid4().hex[:8]}" )
+    base = str(body.get("name") or f"scene_{uuid.uuid4().hex[:8]}")
     alias = body.get("alias_map") or {}
     rules = body.get("assign_rules") or []
     split_on = str(body.get("split_on") or "")  # regex boundary to split into scenes
@@ -185,35 +214,62 @@ async def import_chat(body: Dict[str, Any], _: bool = Depends(require_scope(["co
     scenes: List[List[dict]] = []
     if split_on:
         import re as _re
+
         current: List[dict] = []
         rgx = _re.compile(split_on, _re.IGNORECASE)
         for ln in lines:
             if rgx.search(ln.text):
-                if current: scenes.append(current); current = []
+                if current:
+                    scenes.append(current)
+                    current = []
                 continue
             current.append(ln)
-        if current: scenes.append(current)
-    elif max_lines and max_lines>0:
+        if current:
+            scenes.append(current)
+    elif max_lines and max_lines > 0:
         current: List[dict] = []
         for ln in lines:
             current.append(ln)
             if len(current) >= max_lines:
-                scenes.append(current); current = []
-        if current: scenes.append(current)
+                scenes.append(current)
+                current = []
+        if current:
+            scenes.append(current)
     else:
         scenes = [lines]
 
     created = []
+    scene_payloads: Dict[str, Dict[str, Any]] = {}
+    scene_sources: Dict[str, Path] = {}
     for i, seq in enumerate(scenes):
-        name = base if len(scenes)==1 else f"{base}_{i+1:02d}"
+        name = base if len(scenes) == 1 else f"{base}_{i+1:02d}"
         data = to_scene_dict(name, seq)
         _write_scene(name, data)
         created.append(name)
+        scene_payloads[name] = data
+        scene_sources[name] = (SCENE_DIR / f"{name}.json").resolve()
+
+    scan_bundle(
+        BundleContext(
+            project_id=str(body.get("project_id") or ""),
+            timeline_id=body.get("timeline_id"),
+            scenes=scene_payloads,
+            scene_sources=scene_sources,
+            licenses=body.get("licenses") or [],
+            metadata={
+                "source": "import.chat",
+                "import_name": base,
+                "split_on": split_on or None,
+            },
+        )
+    )
     return {"ok": True, "created": created, "count": len(created), "gate": gate}
 
 
 @router.post("/manga/import")
-async def manga_import(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))):
+async def manga_import(
+    payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))
+):
     gate = policy_gate.evaluate_action("import.manga")
     if gate.get("requires_ack") and not gate.get("allow"):
         raise HTTPException(
@@ -272,13 +328,17 @@ async def manga_import(payload: Dict[str, Any], _: bool = Depends(require_scope(
         _spawn_manga_job(task_id, str(archive_path), options)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to spawn manga import job: %s", exc)
-        raise HTTPException(status_code=500, detail="manga import spawn failed") from exc
+        raise HTTPException(
+            status_code=500, detail="manga import spawn failed"
+        ) from exc
 
     return {"ok": True, "job": {"id": task_id}}
 
 
 @router.get("/manga/import/{job_id}")
-async def manga_import_status(job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))):
+async def manga_import_status(
+    job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))
+):
     task = task_registry.get(job_id)
     if not task:
         raise HTTPException(status_code=404, detail="job not found")
@@ -287,7 +347,9 @@ async def manga_import_status(job_id: str, _: bool = Depends(require_scope(["con
 
 
 @router.get("/manga/imports/history")
-async def manga_import_history(limit: int = 20, _: bool = Depends(require_scope(["content.read"], cost=1))):
+async def manga_import_history(
+    limit: int = 20, _: bool = Depends(require_scope(["content.read"], cost=1))
+):
     limit = max(1, min(int(limit), 200))
     history = _load_manga_history(limit)
     return {"ok": True, "imports": history}

@@ -9,6 +9,7 @@ registry, rewrites sidecars, and triggers thumbnail/waveform generation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
@@ -35,7 +36,11 @@ def _load_sidecar(base_path: Path) -> Tuple[Dict[str, object], Optional[str]]:
             try:
                 data = json.loads(candidate.read_text(encoding="utf-8"))
                 meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
-                license_tag = data.get("license") if isinstance(data.get("license"), str) else None
+                license_tag = (
+                    data.get("license")
+                    if isinstance(data.get("license"), str)
+                    else None
+                )
                 return dict(meta or {}), license_tag
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("Failed to parse sidecar %s: %s", candidate, exc)
@@ -69,6 +74,17 @@ def _iter_asset_files(root: Path) -> Iterable[Tuple[Path, Path]]:
         yield path, rel
 
 
+def _compute_digest(path: Path, chunk_size: int = 1 << 16) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def rebuild_registry(
     *,
     assets_root: Path,
@@ -76,6 +92,9 @@ def rebuild_registry(
     thumbs_root: Optional[Path] = None,
     project_id: str = "default",
 ) -> Dict[str, int]:
+    if thumbs_root is None:
+        thumbs_root = ROOT / "cache" / "thumbs"
+
     registry = AssetRegistry(
         db_path=db_path,
         project_id=project_id,
@@ -89,6 +108,15 @@ def rebuild_registry(
         asset_type = _derive_asset_type(rel_path)
         meta_payload, license_tag = _load_sidecar(file_path)
         meta_payload.setdefault("origin", "rebuild_asset_registry")
+        try:
+            checksum = _compute_digest(file_path)
+            size_bytes = file_path.stat().st_size
+        except OSError as exc:
+            skipped += 1
+            LOGGER.error("Failed to stat %s: %s", file_path, exc)
+            continue
+        meta_payload.setdefault("digest_sha256", checksum)
+        meta_payload.setdefault("filesize_bytes", size_bytes)
         try:
             registry.register_file(
                 file_path,
@@ -118,8 +146,14 @@ def rebuild_registry(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Rebuild the ComfyVN asset registry from disk.")
-    parser.add_argument("--assets-dir", default="assets", help="Assets root directory (default: assets/)")
+    parser = argparse.ArgumentParser(
+        description="Rebuild the ComfyVN asset registry from disk."
+    )
+    parser.add_argument(
+        "--assets-dir",
+        default="assets",
+        help="Assets root directory (default: assets/)",
+    )
     parser.add_argument(
         "--db-path",
         default="comfyvn/data/comfyvn.db",
@@ -130,7 +164,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override thumbnail cache directory (default: auto-detected)",
     )
-    parser.add_argument("--project-id", default="default", help="Project identifier (default: default)")
+    parser.add_argument(
+        "--project-id", default="default", help="Project identifier (default: default)"
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     return parser.parse_args()
 
@@ -141,12 +177,15 @@ def main() -> None:
 
     assets_root = Path(args.assets_dir).expanduser().resolve()
     db_path = Path(args.db_path).expanduser().resolve()
-    thumbs_root = Path(args.thumbs_dir).expanduser().resolve() if args.thumbs_dir else None
+    thumbs_root = (
+        Path(args.thumbs_dir).expanduser().resolve()
+        if args.thumbs_dir
+        else (ROOT / "cache" / "thumbs")
+    )
 
     assets_root.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    if thumbs_root:
-        thumbs_root.mkdir(parents=True, exist_ok=True)
+    thumbs_root.mkdir(parents=True, exist_ok=True)
 
     LOGGER.info("Rebuilding asset registry at %s (database=%s)", assets_root, db_path)
     summary = rebuild_registry(

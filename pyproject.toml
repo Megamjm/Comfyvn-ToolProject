@@ -1,0 +1,22 @@
+# ComfyVN Architect — Phase 2/2 Project Integration Chat
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = [
+  "E402",  # non-top-level imports allowed in shims/scripts/tests
+  "E501",  # Black owns line length; ignore long-line warnings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"comfyvn/app.py" = ["E402"]
+"comfyvn/server/system_metrics.py" = ["E402"]
+"comfyvn/server/core/bootstrap.py" = ["E402"]
+"scripts/export_renpy.py" = ["E402"]
+"tools/rebuild_asset_registry.py" = ["E402"]
+"tests/test_compute_api.py" = ["E402"]
+"tests/test_gpu_advisor_api.py" = ["E402"]
+"tests/test_gpu_api.py" = ["E402"]

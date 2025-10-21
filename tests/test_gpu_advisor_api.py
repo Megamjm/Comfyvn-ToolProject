@@ -10,7 +10,6 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-
 # Minimal PySide6 stub
 if "PySide6" not in sys.modules:
     pyside6 = types.ModuleType("PySide6")
@@ -58,7 +57,9 @@ class _GPUManagerStub:
         self._policy = {"mode": mode, "device": device}
         return self.get_policy()
 
-    def select_device(self, *, prefer: str | None = None, requirements: dict | None = None):
+    def select_device(
+        self, *, prefer: str | None = None, requirements: dict | None = None
+    ):
         return {"id": "cpu", "kind": "cpu"}
 
 
@@ -75,7 +76,10 @@ def client(monkeypatch: pytest.MonkeyPatch):
 
 def test_gpu_advise_prefer_remote_and_local_paths(client: TestClient):
     # With no local devices, prefer_remote True should lean remote/cpu with rationale
-    r1 = client.post("/api/gpu/advise", json={"prefer_remote": True, "workload": {"requirements": {"min_vram_gb": 16}}})
+    r1 = client.post(
+        "/api/gpu/advise",
+        json={"prefer_remote": True, "workload": {"requirements": {"min_vram_gb": 16}}},
+    )
     assert r1.status_code == 200, r1.text
     advice1 = r1.json()["advice"]
     assert advice1["choice"] in {"remote", "cpu"}
@@ -86,19 +90,33 @@ def test_gpu_advise_prefer_remote_and_local_paths(client: TestClient):
 
     stub = gpu_api.GPU_MANAGER  # type: ignore
     stub._devices = [
-        {"id": "cuda:0", "name": "Stub GPU", "kind": "gpu", "memory_total": 16384, "source": "stub"}
+        {
+            "id": "cuda:0",
+            "name": "Stub GPU",
+            "kind": "gpu",
+            "memory_total": 16384,
+            "source": "stub",
+        }
     ]
-    r2 = client.post("/api/gpu/advise", json={"prefer_remote": False, "workload": {"requirements": {"min_vram_gb": 8}}})
+    r2 = client.post(
+        "/api/gpu/advise",
+        json={"prefer_remote": False, "workload": {"requirements": {"min_vram_gb": 8}}},
+    )
     assert r2.status_code == 200
     advice2 = r2.json()["advice"]
-    assert advice2["choice"] in {"local", "remote", "cpu"}
+    assert advice2["choice"] in {"gpu", "remote", "cpu"}
     assert advice2.get("local_candidate") is not None
 
 
 def test_gpu_advise_hardware_override_cpu(client: TestClient):
-    r = client.post("/api/gpu/advise", json={"hardware_override": True, "workload": {"requirements": {"min_vram_gb": 1}}})
+    r = client.post(
+        "/api/gpu/advise",
+        json={
+            "hardware_override": True,
+            "workload": {"requirements": {"min_vram_gb": 1}},
+        },
+    )
     assert r.status_code == 200
     advice = r.json()["advice"]
     assert advice["choice"] == "cpu"
     assert advice.get("override") in {"cpu", None}
-

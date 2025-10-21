@@ -28,7 +28,12 @@ class ServerBridge(QObject):
         self.base_url = (base or DEFAULT_BASE).rstrip("/")
         self._stop = False
         self._thread: Optional[threading.Thread] = None
-        self._interval = 3
+        self._base_interval = 2.5
+        self._backoff_schedule: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0)
+        self._backoff_step = 0
+        self._current_interval = self._base_interval
+        self._poll_lock = threading.Lock()
+        self._wake_event = threading.Event()
         self._latest: Dict[str, Any] = {}
         self._warnings: list[Dict[str, Any]] = []
         self._seen_warning_ids: set[str] = set()
@@ -37,6 +42,9 @@ class ServerBridge(QObject):
     # Async polling loop (non-blocking)
     # ─────────────────────────────
     async def _poll_once(self) -> None:
+        if not self._poll_lock.acquire(blocking=False):
+            logger.debug("Polling skipped: previous request still in flight")
+            return
         try:
             async with httpx.AsyncClient(timeout=3.0) as cli:
                 metrics_payload, metrics_ok = await self._fetch_metrics(cli)
@@ -48,20 +56,49 @@ class ServerBridge(QObject):
                     combined["health"] = health_payload
                     if not overall_ok:
                         overall_ok = bool(health_payload.get("ok"))
+                success = bool(metrics_ok)
                 combined["ok"] = overall_ok
+
+                if success:
+                    self._backoff_step = 0
+                    self._current_interval = self._base_interval
+                else:
+                    if self._backoff_step < len(self._backoff_schedule) - 1:
+                        self._backoff_step += 1
+                    self._current_interval = self._backoff_schedule[self._backoff_step]
+                    combined["retry_in"] = self._current_interval
+
+                combined["state"] = "online" if success else "waiting"
+                combined["poll_interval"] = self._current_interval
+                combined["backoff_step"] = self._backoff_step
+                combined["timestamp"] = time.time()
 
                 self._latest = combined
                 logger.debug("Metrics poll -> %s", combined)
                 self.status_updated.emit(dict(combined))
 
-                if metrics_ok:
+                if success:
                     await self._process_warnings(cli)
         except Exception as exc:
             logger.error("Metrics polling error: %s", exc, exc_info=True)
-            self._latest = {"ok": False, "error": str(exc)}
-            self.status_updated.emit(self._latest)
+            if self._backoff_step < len(self._backoff_schedule) - 1:
+                self._backoff_step += 1
+            self._current_interval = self._backoff_schedule[self._backoff_step]
+            self._latest = {
+                "ok": False,
+                "error": str(exc),
+                "state": "waiting",
+                "retry_in": self._current_interval,
+                "backoff_step": self._backoff_step,
+                "timestamp": time.time(),
+            }
+            self.status_updated.emit(dict(self._latest))
+        finally:
+            self._poll_lock.release()
 
-    async def _fetch_metrics(self, client: httpx.AsyncClient) -> tuple[Dict[str, Any], bool]:
+    async def _fetch_metrics(
+        self, client: httpx.AsyncClient
+    ) -> tuple[Dict[str, Any], bool]:
         try:
             response = await client.get(f"{self.base_url}/system/metrics")
         except Exception as exc:
@@ -70,7 +107,9 @@ class ServerBridge(QObject):
             return payload, False
         return await self._process_metrics_response(response)
 
-    async def _process_metrics_response(self, response: httpx.Response) -> tuple[Dict[str, Any], bool]:
+    async def _process_metrics_response(
+        self, response: httpx.Response
+    ) -> tuple[Dict[str, Any], bool]:
         if response.status_code == 200:
             try:
                 payload = response.json()
@@ -86,7 +125,9 @@ class ServerBridge(QObject):
         payload = {"ok": False, "status": response.status_code}
         return payload, False
 
-    async def _fetch_health(self, client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+    async def _fetch_health(
+        self, client: httpx.AsyncClient
+    ) -> Optional[Dict[str, Any]]:
         try:
             response = await client.get(f"{self.base_url}/health")
         except Exception as exc:
@@ -116,7 +157,9 @@ class ServerBridge(QObject):
 
     async def _process_warnings(self, client: httpx.AsyncClient) -> None:
         try:
-            warn_resp = await client.get(f"{self.base_url}/api/system/warnings", params={"limit": 20})
+            warn_resp = await client.get(
+                f"{self.base_url}/api/system/warnings", params={"limit": 20}
+            )
         except Exception as exc:
             logger.debug("Warning fetch failed: %s", exc)
             return
@@ -128,7 +171,9 @@ class ServerBridge(QObject):
             warn_payload = warn_resp.json()
         except Exception:
             warn_payload = {}
-        warnings = warn_payload.get("warnings", []) if isinstance(warn_payload, dict) else []
+        warnings = (
+            warn_payload.get("warnings", []) if isinstance(warn_payload, dict) else []
+        )
         if not isinstance(warnings, list):
             return
         new_warnings = []
@@ -148,22 +193,36 @@ class ServerBridge(QObject):
 
     def start_polling(self) -> None:
         if self._thread and self._thread.is_alive():
+            self._stop = False
+            self._wake_event.set()
             return
         self._stop = False
+        self._wake_event.clear()
 
         def _loop():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             while not self._stop:
                 loop.run_until_complete(self._poll_once())
-                time.sleep(self._interval)
+                if self._stop:
+                    break
+                wait_for = self._current_interval
+                if wait_for <= 0:
+                    continue
+                triggered = self._wake_event.wait(timeout=wait_for)
+                self._wake_event.clear()
+                if triggered:
+                    continue
 
-        self._thread = threading.Thread(target=_loop, daemon=True, name="ServerBridgePoller")
+        self._thread = threading.Thread(
+            target=_loop, daemon=True, name="ServerBridgePoller"
+        )
         self._thread.start()
         logger.info("ServerBridge polling started for %s", self.base_url)
 
     def stop_polling(self) -> None:
         self._stop = True
+        self._wake_event.set()
         thread = self._thread
         if thread and thread.is_alive() and threading.current_thread() is not thread:
             thread.join(timeout=0.5)
@@ -194,7 +253,9 @@ class ServerBridge(QObject):
             with httpx.Client(timeout=timeout) as cli:
                 method_upper = method.upper()
                 if method_upper in {"POST", "PUT", "PATCH", "DELETE"}:
-                    response = cli.request(method_upper, url, json=payload if payload else None)
+                    response = cli.request(
+                        method_upper, url, json=payload if payload else None
+                    )
                 else:
                     response = cli.get(url, params=payload)
         except Exception as exc:
@@ -230,7 +291,9 @@ class ServerBridge(QObject):
             return result
 
         if cb:
-            thread = threading.Thread(target=worker, daemon=True, name=f"ServerBridge{method.upper()}:{path}")
+            thread = threading.Thread(
+                target=worker, daemon=True, name=f"ServerBridge{method.upper()}:{path}"
+            )
             thread.start()
             return thread
         return worker()
@@ -271,19 +334,28 @@ class ServerBridge(QObject):
             return default
         return result
 
-    def save_settings(
+    def _post(
         self,
+        path: str,
         payload: Dict[str, Any],
-        cb: Optional[Callable[[Dict[str, Any]], None]] = None,
-        *,
-        timeout: float = 8.0,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         if not isinstance(payload, dict):
-            logger.warning("save_settings expects dict payload, received %s", type(payload).__name__)
             payload = {}
-        return self.post_json("/settings/save", payload, timeout=timeout, cb=cb)
+        return self.post_json(path, payload, cb=callback)
 
-    def post(self, path: str, payload: Dict[str, Any], *, timeout: float = 5.0, cb: Optional[Callable[[Dict[str, Any]], None]] = None, default: Any = _UNSET):
+    def save_settings(self, payload: dict, callback=None):
+        return self._post("/settings/save", payload, callback)
+
+    def post(
+        self,
+        path: str,
+        payload: Dict[str, Any],
+        *,
+        timeout: float = 5.0,
+        cb: Optional[Callable[[Dict[str, Any]], None]] = None,
+        default: Any = _UNSET,
+    ):
         return self.post_json(path, payload, timeout=timeout, cb=cb, default=default)
 
     def providers_list(self) -> Optional[Dict[str, Any]]:
@@ -315,8 +387,32 @@ class ServerBridge(QObject):
     def get_warnings(self) -> list[Dict[str, Any]]:
         return list(self._warnings)
 
-    def providers_activate(self, provider_id: str, active: bool) -> Optional[Dict[str, Any]]:
-        result = self.post_json("/api/providers/activate", {"id": provider_id, "active": active}, default=None)
+    def latest(self) -> Dict[str, Any]:
+        return dict(self._latest)
+
+    def retry_delay(self) -> float:
+        if self._latest.get("ok"):
+            return 0.0
+        return max(self._current_interval, 0.0)
+
+    def reconnect(self) -> None:
+        self._backoff_step = 0
+        self._current_interval = 0.0
+        self._stop = False
+        self.start_polling()
+        self._wake_event.set()
+        snapshot: Dict[str, Any] = dict(self._latest) if self._latest else {}
+        snapshot.update({"ok": False, "state": "waiting", "retry_in": 0.0})
+        self.status_updated.emit(snapshot)
+
+    def providers_activate(
+        self, provider_id: str, active: bool
+    ) -> Optional[Dict[str, Any]]:
+        result = self.post_json(
+            "/api/providers/activate",
+            {"id": provider_id, "active": active},
+            default=None,
+        )
         if not isinstance(result, dict):
             return None
         data = result.get("data")
@@ -334,7 +430,9 @@ class ServerBridge(QObject):
         return None
 
     def providers_remove(self, provider_id: str) -> Optional[Dict[str, Any]]:
-        result = self._request("DELETE", f"/api/providers/remove/{provider_id}", timeout=5.0)
+        result = self._request(
+            "DELETE", f"/api/providers/remove/{provider_id}", timeout=5.0
+        )
         if not isinstance(result, dict):
             return None
         data = result.get("data")
@@ -342,7 +440,9 @@ class ServerBridge(QObject):
             return data
         return None
 
-    def providers_export(self, include_secrets: bool = False) -> Optional[Dict[str, Any]]:
+    def providers_export(
+        self, include_secrets: bool = False
+    ) -> Optional[Dict[str, Any]]:
         params = {"include_secrets": "true" if include_secrets else "false"}
         result = self.get_json("/api/providers/export", params, default=None)
         if not isinstance(result, dict):
@@ -361,7 +461,9 @@ class ServerBridge(QObject):
             return data
         return None
 
-    def providers_health(self, provider_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def providers_health(
+        self, provider_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         payload = {"id": provider_id} if provider_id else None
         result = self.post_json("/api/providers/health", payload or {}, default=None)
         if not isinstance(result, dict):
@@ -409,35 +511,8 @@ class ServerBridge(QObject):
     def projects_select(self, name: str) -> Dict[str, Any]:
         return self.post_json(f"/projects/select/{name}", {})
 
-    def set_host(self, host: str) -> str:
-        if not host:
-            return self.base_url
-        candidate = host.strip()
-        if not candidate:
-            return self.base_url
-        if "://" not in candidate:
-            candidate = f"http://{candidate}"
-        parsed = urlparse(candidate)
-        if not parsed.scheme or not parsed.netloc:
-            logger.warning("Invalid host supplied to ServerBridge.set_host: %s", host)
-            return self.base_url
-        normalized = f"{parsed.scheme}://{parsed.netloc}"
-        if parsed.path and parsed.path != "/":
-            normalized += parsed.path.rstrip("/")
-        normalized = normalized.rstrip("/")
-        if normalized == self.base_url:
-            return self.base_url
-
-        logger.info("ServerBridge host updating from %s to %s", self.base_url, normalized)
-        self.base_url = normalized
-        self._latest = {}
-        self._warnings.clear()
-        self._seen_warning_ids.clear()
-
-        was_polling = self._thread is not None and self._thread.is_alive()
-        if was_polling:
-            self.stop_polling()
-            self.start_polling()
+    def set_host(self, host: str):
+        self.base_url = host
         return self.base_url
 
     @property

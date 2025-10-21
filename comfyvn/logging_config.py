@@ -29,20 +29,29 @@ def init_logging(
     base.mkdir(parents=True, exist_ok=True)
     log_path = base / filename
 
-    logger = logging.getLogger()
-    logger.setLevel(_coerce_level(level))
+    root_logger = logging.getLogger()
+    root_logger.setLevel(_coerce_level(level))
 
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
+    for handler in list(root_logger.handlers):
+        root_logger.removeHandler(handler)
+        try:
+            handler.close()
+        except Exception:
+            pass
 
-    handler = RotatingFileHandler(
+    file_handler = RotatingFileHandler(
         str(log_path),
         maxBytes=5 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
     )
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    logger.addHandler(handler)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    root_logger.addHandler(stream_handler)
 
     os.environ.setdefault("COMFYVN_LOG_FILE", str(log_path))
     return log_path

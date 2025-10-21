@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import importlib
 import json
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 import comfyvn.config.runtime_paths as runtime_paths
-from comfyvn.server.app import create_app
 import comfyvn.server.modules.export_api as export_api
+from comfyvn.server.app import create_app
 
 
 def _prepare_workspace(tmp_path: Path, monkeypatch):
@@ -54,20 +54,36 @@ def test_export_renpy_and_bundle(tmp_path, monkeypatch):
             "title": "Intro",
             "lines": [
                 {"type": "line", "speaker": "Hero", "text": "Welcome to ComfyVN!"},
-                {"type": "choice", "prompt": "Continue?", "options": [{"text": "Yes", "goto": "scene_outro"}]},
+                {
+                    "type": "choice",
+                    "prompt": "Continue?",
+                    "options": [{"text": "Yes", "goto": "scene_outro"}],
+                },
             ],
         }
         scene_outro = {
             "scene_id": "scene_outro",
             "title": "Outro",
-            "dialogue": [{"type": "line", "speaker": None, "text": "Thanks for playing."}],
+            "dialogue": [
+                {"type": "line", "speaker": None, "text": "Thanks for playing."}
+            ],
         }
 
-        (scenes_dir / "scene_intro.json").write_text(json.dumps(scene_intro, indent=2), encoding="utf-8")
-        (scenes_dir / "scene_outro.json").write_text(json.dumps(scene_outro, indent=2), encoding="utf-8")
+        (scenes_dir / "scene_intro.json").write_text(
+            json.dumps(scene_intro, indent=2), encoding="utf-8"
+        )
+        (scenes_dir / "scene_outro.json").write_text(
+            json.dumps(scene_outro, indent=2), encoding="utf-8"
+        )
 
-        character_payload = {"character_id": "hero", "name": "Hero", "meta": {"role": "protagonist"}}
-        (characters_dir / "hero.json").write_text(json.dumps(character_payload, indent=2), encoding="utf-8")
+        character_payload = {
+            "character_id": "hero",
+            "name": "Hero",
+            "meta": {"role": "protagonist"},
+        }
+        (characters_dir / "hero.json").write_text(
+            json.dumps(character_payload, indent=2), encoding="utf-8"
+        )
 
         asset_path = assets_dir / "bg1.png"
         asset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +95,9 @@ def test_export_renpy_and_bundle(tmp_path, monkeypatch):
             "scene_order": [{"scene_id": "scene_intro"}, {"scene_id": "scene_outro"}],
             "project_id": "demo",
         }
-        (timelines_dir / "main.json").write_text(json.dumps(timeline_payload, indent=2), encoding="utf-8")
+        (timelines_dir / "main.json").write_text(
+            json.dumps(timeline_payload, indent=2), encoding="utf-8"
+        )
 
         project_payload = {
             "name": "demo",
@@ -89,11 +107,17 @@ def test_export_renpy_and_bundle(tmp_path, monkeypatch):
             "assets": ["backgrounds/bg1.png"],
             "licenses": [{"name": "CC-BY", "scope": "backgrounds"}],
         }
-        (projects_dir / "demo.json").write_text(json.dumps(project_payload, indent=2), encoding="utf-8")
+        (projects_dir / "demo.json").write_text(
+            json.dumps(project_payload, indent=2), encoding="utf-8"
+        )
 
         client = TestClient(create_app())
+        ack_resp = client.post("/api/policy/ack", json={"user": "pytest"})
+        assert ack_resp.status_code == 200
 
-        renpy_resp = client.post("/api/export/renpy", params={"timeline_id": "main", "project_id": "demo"})
+        renpy_resp = client.post(
+            "/api/export/renpy", params={"timeline_id": "main", "project_id": "demo"}
+        )
         assert renpy_resp.status_code == 200
         data = renpy_resp.json()
         assert data["ok"] is True
@@ -105,7 +129,9 @@ def test_export_renpy_and_bundle(tmp_path, monkeypatch):
         assert "call scene_intro" in script_text
         assert "label scene_outro:" in script_text
 
-        bundle_resp = client.post("/api/export/bundle", params={"project_id": "demo", "timeline_id": "main"})
+        bundle_resp = client.post(
+            "/api/export/bundle", params={"project_id": "demo", "timeline_id": "main"}
+        )
         assert bundle_resp.status_code == 200
         bundle_data = bundle_resp.json()
         assert bundle_data["ok"] is True
@@ -128,7 +154,9 @@ def test_export_renpy_and_bundle(tmp_path, monkeypatch):
             assert manifest["id"] == "demo"
             assert manifest["timeline_id"] == "main"
 
-            exported_script = archive.read("renpy_project/game/script.rpy").decode("utf-8")
+            exported_script = archive.read("renpy_project/game/script.rpy").decode(
+                "utf-8"
+            )
             assert "label scene_intro:" in exported_script
             assert '"Hero" "Welcome to ComfyVN!"' in exported_script
 

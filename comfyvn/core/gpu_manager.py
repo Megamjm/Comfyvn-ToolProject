@@ -50,7 +50,12 @@ class GPUManager:
                 return data
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("GPU policy file corrupt (%s); resetting", exc)
-        return {"mode": "auto", "manual_device": "cpu", "sticky_device": None, "last_selected": None}
+        return {
+            "mode": "auto",
+            "manual_device": "cpu",
+            "sticky_device": None,
+            "last_selected": None,
+        }
 
     def _save_state(self) -> None:
         self.path.write_text(json.dumps(self._state, indent=2), encoding="utf-8")
@@ -117,7 +122,9 @@ class GPUManager:
                     stderr=subprocess.DEVNULL,
                 ).decode()
                 for line in out.strip().splitlines():
-                    idx, name, mem_total, mem_used, util, temp = [part.strip() for part in line.split(",")]
+                    idx, name, mem_total, mem_used, util, temp = [
+                        part.strip() for part in line.split(",")
+                    ]
                     gpus.append(
                         {
                             "id": f"cuda:{idx}",
@@ -167,18 +174,34 @@ class GPUManager:
             self.refresh()
         return list(self._devices)
 
+    def list_local(self, *, refresh: bool = False) -> List[Dict[str, Any]]:
+        """
+        Return only locally available devices (CPU + on-box GPUs).
+
+        Remote providers are filtered out so UI callers can present a quick
+        snapshot of hardware that is immediately accessible without network hops.
+        """
+        devices = self.list_all(refresh=refresh)
+        return [device for device in devices if device.get("kind") != "remote"]
+
     def get_policy(self) -> Dict[str, Any]:
         return dict(self._state)
 
     def set_policy(self, mode: str, device: Optional[str] = None) -> Dict[str, Any]:
         mode = (mode or "").lower().strip()
         if mode not in POLICY_MODES:
-            raise AssertionError(f"mode must be one of: {', '.join(sorted(POLICY_MODES))}")
+            raise AssertionError(
+                f"mode must be one of: {', '.join(sorted(POLICY_MODES))}"
+            )
         self._state["mode"] = mode
         if device:
             self._state["manual_device"] = device
         self._save_state()
-        LOGGER.info("GPU policy set -> mode=%s, device=%s", mode, device or self._state.get("manual_device"))
+        LOGGER.info(
+            "GPU policy set -> mode=%s, device=%s",
+            mode,
+            device or self._state.get("manual_device"),
+        )
         return self.get_policy()
 
     def set_manual_device(self, device: str) -> Dict[str, Any]:
@@ -214,23 +237,64 @@ class GPUManager:
             device = devices.get(device_id)
             return bool(device and device.get("available", True))
 
+        def finalize_choice(chosen_id: str, reason: str) -> Dict[str, Any]:
+            self.record_selection(chosen_id)
+            device_info = devices.get(chosen_id, {})
+            kind = device_info.get("kind")
+            if not kind:
+                if chosen_id.startswith("remote:"):
+                    kind = "remote"
+                elif chosen_id.startswith("cuda:"):
+                    kind = "gpu"
+                else:
+                    kind = "cpu"
+            selection: Dict[str, Any] = {
+                "id": chosen_id,
+                "device": chosen_id,
+                "policy": mode,
+                "reason": reason,
+                "kind": kind,
+                "name": device_info.get("name"),
+                "available": device_info.get("available", True),
+                "source": device_info.get("source"),
+            }
+            if (
+                "memory_total" in device_info
+                and device_info.get("memory_total") is not None
+            ):
+                selection["memory_total"] = device_info.get("memory_total")
+            if (
+                "memory_used" in device_info
+                and device_info.get("memory_used") is not None
+            ):
+                selection["memory_used"] = device_info.get("memory_used")
+            if (
+                "utilization" in device_info
+                and device_info.get("utilization") is not None
+            ):
+                selection["utilization"] = device_info.get("utilization")
+            if device_info.get("kind") == "remote" or chosen_id.startswith("remote:"):
+                segments = chosen_id.split(":", 1)
+                if len(segments) == 2:
+                    selection["provider_id"] = segments[1]
+                selection["meta"] = device_info.get("meta")
+                selection["last_health"] = device_info.get("last_health")
+            return selection
+
         # 1. Honour explicit preference
         if prefer and available(prefer):
-            self.record_selection(prefer)
-            return {"id": prefer, "device": prefer, "policy": mode, "reason": "preferred"}
+            return finalize_choice(prefer, "preferred")
 
         # 2. Policy-based selection
         if mode == "manual":
             manual_device = self._state.get("manual_device")
             chosen = manual_device if available(manual_device) else "cpu"
-            self.record_selection(chosen)
-            return {"id": chosen, "device": chosen, "policy": mode, "reason": "manual"}
+            return finalize_choice(chosen, "manual")
 
         if mode == "sticky":
             sticky = self._state.get("sticky_device")
             if available(sticky):
-                self.record_selection(sticky)
-                return {"id": sticky, "device": sticky, "policy": mode, "reason": "sticky"}
+                return finalize_choice(sticky, "sticky")
 
         # 3. Auto selection — prefer local GPUs, then remote, then CPU
         min_memory = float(requirements.get("memory_min_mb") or 0)
@@ -254,8 +318,7 @@ class GPUManager:
         else:
             candidates.sort()
             chosen = candidates[0][2]
-        self.record_selection(chosen)
-        return {"id": chosen, "device": chosen, "policy": mode, "reason": "auto"}
+        return finalize_choice(chosen, "auto")
 
     def annotate_payload(self, payload: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         selection = self.select_device(**kwargs)

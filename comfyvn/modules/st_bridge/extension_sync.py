@@ -20,6 +20,7 @@ from typing import Iterable, Sequence
 LOGGER = logging.getLogger(__name__)
 
 ENV_DEST_DIR = "COMFYVN_ST_EXTENSIONS_DIR"
+ENV_ST_ROOT = "SILLYTAVERN_PATH"
 DEFAULT_EXTENSION_NAME = "ComfyVN"
 DEFAULT_SOURCE_ROOT = Path("SillyTavern Extension") / "extension"
 
@@ -70,9 +71,12 @@ def _resolve_source(base: Path | None, extension_name: str) -> Path:
 
 def _env_destination() -> Path | None:
     raw = os.getenv(ENV_DEST_DIR)
-    if not raw:
+    if raw:
+        return Path(raw).expanduser()
+    st_root = os.getenv(ENV_ST_ROOT)
+    if not st_root:
         return None
-    return Path(raw).expanduser()
+    return Path(st_root).expanduser() / "public" / "scripts" / "extensions"
 
 
 def _resolve_destination(base: Path | None, extension_name: str) -> Path:
@@ -105,7 +109,9 @@ def _files_equal(src: Path, dst: Path) -> bool:
         return False
 
 
-def copy_extension_tree(source: Path, destination: Path, *, dry_run: bool = False) -> CopySummary:
+def copy_extension_tree(
+    source: Path, destination: Path, *, dry_run: bool = False
+) -> CopySummary:
     """Copy the extension bundle into place and return statistics."""
     summary = CopySummary(source=source, destination=destination)
     if not source.is_dir():
@@ -188,6 +194,26 @@ def main(argv: Sequence[str] | None = None) -> dict[str, str | int]:
         logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(message)s")
     else:
         logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if (
+        args.dest is None
+        and os.getenv(ENV_DEST_DIR) is None
+        and os.getenv(ENV_ST_ROOT) is None
+    ):
+        LOGGER.info(
+            "SILLYTAVERN_PATH environment variable is not set; skipping SillyTavern "
+            "extension sync. Export SILLYTAVERN_PATH or use --dest to enable syncing."
+        )
+        return {
+            "status": "skipped",
+            "reason": "SILLYTAVERN_PATH not set",
+            "destination": None,
+            "created": 0,
+            "updated": 0,
+            "skipped": 0,
+            "dirs_created": 0,
+            "files_processed": 0,
+        }
 
     source = _resolve_source(args.source, args.extension_name)
     destination = _resolve_destination(args.dest, args.extension_name)

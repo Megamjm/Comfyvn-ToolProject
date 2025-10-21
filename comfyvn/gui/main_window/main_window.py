@@ -2,61 +2,79 @@
 # 🎛️ ComfyVN Studio Main Window — modular, dynamic, efficient
 # -------------------------------------------------------------
 from __future__ import annotations
+
 import logging
-import sys, subprocess
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, QUrl, QSettings
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QMessageBox, QDockWidget, QWidget, QVBoxLayout, QLabel, QStatusBar, QFileDialog
-)
+from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices
+from PySide6.QtWidgets import (
+    QApplication,
+    QDockWidget,
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
+)
 
-# Core studio shell & mixins
-from .shell_studio import ShellStudio
-from .quick_access_toolbar import QuickAccessToolbarMixin
-from comfyvn.gui.core.dock_manager import DockManager
-from comfyvn.gui.core.workspace_controller import WorkspaceController
+from comfyvn.config import runtime_paths
+from comfyvn.core.extensions_discovery import ExtensionMetadata, load_extension_metadata
 
 # Dynamic systems
 from comfyvn.core.menu_runtime_bridge import menu_registry, reload_from_extensions
-from comfyvn.core.shortcut_registry import shortcut_registry, load_shortcuts_from_folder
-from comfyvn.core.extensions_discovery import ExtensionMetadata, load_extension_metadata
-
-# Services
-from comfyvn.gui.services.server_bridge import ServerBridge
-from comfyvn.core.theme_manager import apply_theme
-
-# Panels (lazy-instantiated)
-from comfyvn.gui.panels.studio_center import StudioCenter
-from comfyvn.gui.panels.asset_browser import AssetBrowser
-from comfyvn.gui.panels.playground_panel import PlaygroundPanel
-from comfyvn.gui.panels.timeline_panel import TimelinePanel
-from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
-from comfyvn.gui.panels.settings_panel import SettingsPanel
-from comfyvn.gui.panels.scenes_panel import ScenesPanel
-from comfyvn.gui.panels.characters_panel import CharactersPanel
-from comfyvn.gui.panels.imports_panel import ImportsPanel
-from comfyvn.gui.panels.audio_panel import AudioPanel
-from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
-from comfyvn.gui.panels.sprite_panel import SpritePanel
-from comfyvn.gui.panels.player_persona_panel import PlayerPersonaPanel
-from comfyvn.gui.widgets.log_hub import LogHub
-from comfyvn.gui.panels.notify_overlay import NotifyOverlay
 from comfyvn.core.notifier import notifier
+from comfyvn.core.shortcut_registry import load_shortcuts_from_folder, shortcut_registry
+from comfyvn.core.theme_manager import apply_theme
+from comfyvn.gui.core.dock_manager import DockManager
+from comfyvn.gui.core.workspace_controller import WorkspaceController
+
+# Menus
+from comfyvn.gui.main_window.menu_bar import (
+    ensure_menu_bar,
+    rebuild_menus_from_registry,
+    update_window_menu_state,
+)
+from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
+from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
+from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
+from comfyvn.gui.panels.asset_browser import AssetBrowser
+from comfyvn.gui.panels.audio_panel import AudioPanel
 
 # Central space
 from comfyvn.gui.panels.central_space import CentralSpace
+from comfyvn.gui.panels.characters_panel import CharactersPanel
+from comfyvn.gui.panels.imports_panel import ImportsPanel
+from comfyvn.gui.panels.notify_overlay import NotifyOverlay
+from comfyvn.gui.panels.player_persona_panel import PlayerPersonaPanel
+from comfyvn.gui.panels.playground_panel import PlaygroundPanel
+from comfyvn.gui.panels.scenes_panel import ScenesPanel
+from comfyvn.gui.panels.settings_panel import SettingsPanel
+from comfyvn.gui.panels.sprite_panel import SpritePanel
 
-# Menus
-from comfyvn.gui.main_window.menu_bar import ensure_menu_bar, update_window_menu_state, rebuild_menus_from_registry
-from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
-from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
-from comfyvn.studio.core import SceneRegistry, CharacterRegistry, TimelineRegistry
-from comfyvn.config import runtime_paths
+# Panels (lazy-instantiated)
+from comfyvn.gui.panels.studio_center import StudioCenter
+from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
+from comfyvn.gui.panels.timeline_panel import TimelinePanel
+
+# Services
+from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.gui.widgets.log_hub import LogHub
+from comfyvn.studio.core import CharacterRegistry, SceneRegistry, TimelineRegistry
+
+from .quick_access_toolbar import QuickAccessToolbarMixin
+
+# Core studio shell & mixins
+from .shell_studio import ShellStudio
 
 logger = logging.getLogger(__name__)
+
 
 def _detached_server():
     """Launch the backend as a detached process; return Popen or None."""
@@ -73,6 +91,7 @@ def _detached_server():
         print(f"[ComfyVN GUI] ❌ Failed to launch detached server: {e}")
         return None
 
+
 class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     def __init__(self):
         super().__init__()
@@ -81,6 +100,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
         # Services & controllers
         self.bridge = ServerBridge()
+        self.bridge.status_updated.connect(self._handle_bridge_status)
         self.dockman = DockManager(self)
         workspace_store = runtime_paths.workspace_dir()
         self.workspace = WorkspaceController(self, workspace_store)
@@ -104,6 +124,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self.setStatusBar(self._status)
         self._status_label = QLabel("🔴 Server: Unknown")
         self._status.addPermanentWidget(self._status_label, 1)
+        self._reconnect_button = QPushButton("Reconnect")
+        self._reconnect_button.setVisible(False)
+        self._reconnect_button.clicked.connect(self._manual_reconnect)
+        self._status.addPermanentWidget(self._reconnect_button, 0)
         self._script_status_label = QLabel("🟢 Scripts: Idle")
         self._script_status_label.setToolTip("Latest script execution status.")
         self._status.addPermanentWidget(self._script_status_label, 1)
@@ -126,9 +150,13 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self.reload_menus()
 
         # Background server: start if not reachable
+        self.bridge.start_polling()
+        self._update_server_status({"ok": False, "state": "waiting"})
         QTimer.singleShot(400, self._ensure_server_online)
         # Periodic server heartbeat to status bar
-        self._heartbeat = QTimer(self); self._heartbeat.timeout.connect(self._poll_server_status); self._heartbeat.start(2000)
+        self._heartbeat = QTimer(self)
+        self._heartbeat.timeout.connect(self._poll_server_status)
+        self._heartbeat.start(2500)
         self.bridge.warnings_updated.connect(self._handle_backend_warnings)
 
     # --------------------
@@ -136,12 +164,18 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     # --------------------
     def reload_menus(self):
         """Reload menus from the on-disk extensions folder -> menu registry -> menubar."""
+        if getattr(self, "_reloading_menus", False):
+            logger.debug("Menu reload already in progress; ignoring duplicate trigger")
+            return
+        self._reloading_menus = True
         try:
             menu_registry.clear()
             register_core_menu_items(menu_registry)
             base_folder = Path("extensions")
             self._extension_metadata = load_extension_metadata(base_folder)
-            active_metadata = [meta for meta in self._extension_metadata if meta.compatible]
+            active_metadata = [
+                meta for meta in self._extension_metadata if meta.compatible
+            ]
             reload_from_extensions(
                 menu_registry,
                 base_folder=base_folder,
@@ -164,13 +198,15 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         except Exception as e:
             print("[Menu] reload error:", e)
             logger.exception("Menu reload failed: %s", e)
-        menubar = self.menuBar()
-        if menubar is not None:
-            menubar.clear()
-        rebuild_menus_from_registry(self, menu_registry)
-        self._populate_extensions_menu()
-        self._menus_built = True
-        logger.debug("Menus rebuilt with %d items", len(menu_registry.items))
+        finally:
+            try:
+                menubar = self.menuBar()
+                rebuild_menus_from_registry(self, menu_registry)
+                self._populate_extensions_menu()
+                self._menus_built = True
+                logger.debug("Menus rebuilt with %d items", len(menu_registry.items))
+            finally:
+                self._reloading_menus = False
 
     def _rebuild_shortcuts_toolbar(self):
         """Rebuild Quick Access toolbar from shortcuts folder."""
@@ -304,7 +340,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             self._timeline = dock
             logger.debug("Timeline module created")
         elif isinstance(dock, TimelinePanel):
-            dock.set_registries(scene_registry=self._scene_registry, timeline_registry=self._timeline_registry)
+            dock.set_registries(
+                scene_registry=self._scene_registry,
+                timeline_registry=self._timeline_registry,
+            )
         dock.setVisible(True)
         dock.raise_()
 
@@ -379,20 +418,8 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     # --------------------
     # Project workflows
     # --------------------
-    def new_project(self) -> None:
-        logger.info("New project workflow started")
-        project_dir = QFileDialog.getExistingDirectory(self, "Select Project Directory", str(Path.cwd()))
-        if not project_dir:
-            logger.info("New project cancelled by user")
-            return
-        project_path = Path(project_dir).resolve()
-        project_path.mkdir(parents=True, exist_ok=True)
-        (project_path / "scenes").mkdir(exist_ok=True)
-        (project_path / "characters").mkdir(exist_ok=True)
-        metadata = project_path / "project.json"
-        if not metadata.exists():
-            metadata.write_text('{"name": "New Project"}', encoding="utf-8")
-        self._open_project(project_path)
+    def new_project(self):
+        print("[Studio] TODO: new_project()")
 
     def close_project(self) -> None:
         if not self._current_project_path:
@@ -401,21 +428,29 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         logger.info("Closing project %s", self._current_project_path)
         self._current_project_path = None
         self._initialize_registries("default")
-        self._info_label.setText("Project closed. Use File → New or Recent to open another project.")
+        self._info_label.setText(
+            "Project closed. Use File → New or Recent to open another project."
+        )
 
     def open_recent_projects(self) -> None:
         logger.info("Opening recent project list")
         if not self._recent_projects:
-            QMessageBox.information(self, "Recent Projects", "No recent projects recorded yet.")
+            QMessageBox.information(
+                self, "Recent Projects", "No recent projects recorded yet."
+            )
             return
-        project_dir = QFileDialog.getExistingDirectory(self, "Open Recent Project", self._recent_projects[0])
+        project_dir = QFileDialog.getExistingDirectory(
+            self, "Open Recent Project", self._recent_projects[0]
+        )
         if project_dir:
             self._open_project(Path(project_dir))
 
     def _open_project(self, project_path: Path) -> None:
         project_path = project_path.resolve()
         if not project_path.exists():
-            QMessageBox.warning(self, "Open Project", "Selected project path does not exist.")
+            QMessageBox.warning(
+                self, "Open Project", "Selected project path does not exist."
+            )
             return
         project_id = project_path.name
         logger.info("Opening project %s at %s", project_id, project_path)
@@ -463,18 +498,58 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     def _ensure_server_online(self):
         ok = self.bridge.ensure_online(autostart=True)
         if not ok:
-            logger.warning("Server auto-start attempted but did not report healthy status.")
+            logger.warning(
+                "Server auto-start attempted but did not report healthy status."
+            )
+
+    def _handle_bridge_status(self, payload: dict) -> None:
+        self._update_server_status(payload)
+
+    def _manual_reconnect(self) -> None:
+        logger.info("Manual reconnect triggered from status bar")
+        self.bridge.reconnect()
+        self._update_server_status({"ok": False, "state": "waiting", "retry_in": 0.0})
+
+    def manual_reconnect(self) -> None:
+        self._manual_reconnect()
 
     def _poll_server_status(self):
-        result = self.bridge.get_json("/system/status", default=None)
-        if not isinstance(result, dict):
-            self._status_label.setText("🔴 Server: Offline")
+        self._update_server_status()
+
+    def _update_server_status(self, payload: dict | None = None) -> None:
+        data = payload if isinstance(payload, dict) else self.bridge.latest()
+        if not isinstance(data, dict) or not data:
+            self._status_label.setText("🟡 Server: Waiting for server…")
+            self._reconnect_button.setVisible(True)
             return
-        healthy = bool(result.get("ok"))
-        data = result.get("data")
-        if isinstance(data, dict):
-            healthy = bool(data.get("ok") or data.get("healthy"))
-        self._status_label.setText(("🟢" if healthy else "🟠") + " Server: " + ("OK" if healthy else "Degraded"))
+
+        state = str(data.get("state") or "")
+        retry = data.get("retry_in")
+        error = data.get("error")
+
+        is_online = state == "online" and bool(data.get("ok"))
+        if is_online:
+            cpu = data.get("cpu")
+            mem = data.get("mem")
+            if isinstance(cpu, (int, float)) and isinstance(mem, (int, float)):
+                self._status_label.setText(
+                    f"🟢 Server: Online — CPU {int(cpu)}% | RAM {int(mem)}%"
+                )
+            else:
+                self._status_label.setText("🟢 Server: Online")
+            self._reconnect_button.setVisible(False)
+            return
+
+        if isinstance(error, str) and error:
+            logger.debug("Bridge error reported: %s", error)
+
+        if isinstance(retry, (int, float)) and retry > 0.05:
+            self._status_label.setText(
+                f"🟡 Server: Waiting for server… retry in {retry:.0f}s"
+            )
+        else:
+            self._status_label.setText("🟡 Server: Waiting for server…")
+        self._reconnect_button.setVisible(True)
 
     def _set_script_status(self, ok: bool, message: str) -> None:
         icon = "🟢" if ok else "🔴"
@@ -506,7 +581,9 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
     def _handle_backend_warnings(self, warnings: list[dict]) -> None:
         for payload in warnings:
-            message = str(payload.get("message") or payload.get("detail") or "Backend warning")
+            message = str(
+                payload.get("message") or payload.get("detail") or "Backend warning"
+            )
             level = str(payload.get("level") or "warning")
             meta = {
                 "source": payload.get("source"),
@@ -547,8 +624,14 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         if not self._extension_metadata:
             return
 
-        official = sorted((m for m in self._extension_metadata if m.official), key=lambda m: m.name.lower())
-        community = sorted((m for m in self._extension_metadata if not m.official), key=lambda m: m.name.lower())
+        official = sorted(
+            (m for m in self._extension_metadata if m.official),
+            key=lambda m: m.name.lower(),
+        )
+        community = sorted(
+            (m for m in self._extension_metadata if not m.official),
+            key=lambda m: m.name.lower(),
+        )
 
         def add_group(title: str, items: list[ExtensionMetadata]) -> None:
             if not items:
@@ -571,7 +654,9 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 elif meta.warnings:
                     tooltip_parts.append("Warnings: " + "; ".join(meta.warnings))
                 action.setToolTip("\n".join(tooltip_parts))
-                action.triggered.connect(lambda _, info=meta: self._show_extension_info(info))
+                action.triggered.connect(
+                    lambda _, info=meta: self._show_extension_info(info)
+                )
                 if not meta.compatible:
                     action.setEnabled(False)
                 target_menu.addAction(action)
@@ -654,7 +739,9 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 cwd=Path(__file__).resolve().parents[3],
             )
         except Exception as exc:
-            QMessageBox.critical(self, "Install Base Scripts", f"Failed to launch installer:\n{exc}")
+            QMessageBox.critical(
+                self, "Install Base Scripts", f"Failed to launch installer:\n{exc}"
+            )
             self._set_script_status(False, f"Installer launch failed: {exc}")
             return
 
@@ -674,21 +761,26 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 "Install Base Scripts",
                 f"Installer exited with code {proc.returncode}.\n\n{output}",
             )
-            self._set_script_status(False, f"Installer exited with code {proc.returncode}.")
+            self._set_script_status(
+                False, f"Installer exited with code {proc.returncode}."
+            )
 
 
 def main():
     app = QApplication(sys.argv)
     try:
-        apply_theme(app, 'default_dark')
+        apply_theme(app, "default_dark")
     except Exception:
         pass
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
     def new_project(self):
         logger.info("New project workflow started")
-        project_dir = QFileDialog.getExistingDirectory(self, "Select Project Directory", str(Path.cwd()))
+        project_dir = QFileDialog.getExistingDirectory(
+            self, "Select Project Directory", str(Path.cwd())
+        )
         if not project_dir:
             logger.info("New project cancelled by user")
             return
@@ -698,7 +790,7 @@ def main():
         (project_path / "characters").mkdir(exist_ok=True)
         metadata = project_path / "project.json"
         if not metadata.exists():
-            metadata.write_text("{\"name\": \"New Project\"}", encoding="utf-8")
+            metadata.write_text('{"name": "New Project"}', encoding="utf-8")
         logger.info("Project directory prepared at %s", project_path)
         self._open_project(project_path)
 
@@ -708,21 +800,29 @@ def main():
             return
         logger.info("Closing project %s", self._current_project_path)
         self._current_project_path = None
-        self._info_label.setText("Project closed. Use File → New or Recent to open another project.")
+        self._info_label.setText(
+            "Project closed. Use File → New or Recent to open another project."
+        )
 
     def open_recent_projects(self):
         logger.info("Opening recent project list")
         if not self._recent_projects:
-            QMessageBox.information(self, "Recent Projects", "No recent projects recorded yet.")
+            QMessageBox.information(
+                self, "Recent Projects", "No recent projects recorded yet."
+            )
             return
-        project_dir = QFileDialog.getExistingDirectory(self, "Open Recent Project", self._recent_projects[0])
+        project_dir = QFileDialog.getExistingDirectory(
+            self, "Open Recent Project", self._recent_projects[0]
+        )
         if project_dir:
             self._open_project(Path(project_dir))
 
     def _open_project(self, project_path: Path) -> None:
         project_path = project_path.resolve()
         if not project_path.exists():
-            QMessageBox.warning(self, "Open Project", "Selected project path does not exist.")
+            QMessageBox.warning(
+                self, "Open Project", "Selected project path does not exist."
+            )
             return
         logger.info("Opening project at %s", project_path)
 

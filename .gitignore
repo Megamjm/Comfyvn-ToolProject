@@ -73,3 +73,26 @@ renpy_project/
 .venv
 .bak
 tools/renpy/
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+logs/
+cache/
+data/imported_*/
+data/roleplay/*
+!comfyvn/data/templates/**
+
+# build artifacts
+dist/
+build/
+*.egg-info/
+tmp/
+.venv/
+logs/
+cache/
+data/imported_*/
+data/roleplay/*
+cache
+logs/

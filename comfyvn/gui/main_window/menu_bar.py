@@ -1,13 +1,23 @@
-
 from __future__ import annotations
+
+import textwrap
 
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
-import textwrap
 
 from comfyvn.core.settings_manager import SettingsManager
 
-SECTION_ORDER = ["File", "Modules", "Spaces", "Tools", "Extensions", "Settings", "GPU", "Window", "Help"]
+SECTION_ORDER = [
+    "File",
+    "Modules",
+    "Spaces",
+    "Tools",
+    "Extensions",
+    "Settings",
+    "GPU",
+    "Window",
+    "Help",
+]
 
 BEST_PRACTICE_SECTION_ITEMS = {
     "File": [
@@ -74,6 +84,7 @@ def _sort_items(items, section: str):
 
         enumerated.sort(key=key)
     else:  # load_order (default)
+
         def key(pair):
             idx, item = pair
             priority = item.order if item.order is not None else 1_000_000
@@ -86,6 +97,8 @@ def _sort_items(items, section: str):
 
 def rebuild_menus_from_registry(window, registry):
     menubar = window.menuBar()
+    if menubar is None:
+        return
     menubar.clear()
 
     sections = registry.by_section() if hasattr(registry, "by_section") else {}
@@ -112,6 +125,12 @@ def rebuild_menus_from_registry(window, registry):
                     action.triggered.connect(handler)
             menu.addAction(action)
             last_sep = getattr(item, "separator_before", False)
+
+    labels = [action.text().replace("&", "") for action in menubar.actions()]
+    if __debug__:
+        assert len(labels) == len(
+            set(labels)
+        ), f"Duplicate top-level menus detected: {labels}"
 
 
 def ensure_menu_bar(window):

@@ -10,7 +10,6 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-
 # Provide a minimal PySide6 stub so dynamic router imports do not fail in tests.
 if "PySide6" not in sys.modules:
     pyside6 = types.ModuleType("PySide6")
@@ -35,8 +34,20 @@ class _RegistryStub:
 class _GPUManagerStub:
     def __init__(self) -> None:
         self._devices = [
-            {"id": "cuda:0", "name": "Stub GPU", "kind": "gpu", "memory_total": 12288, "source": "stub"},
-            {"id": "cpu", "name": "CPU", "kind": "cpu", "memory_total": None, "source": "stub"},
+            {
+                "id": "cuda:0",
+                "name": "Stub GPU",
+                "kind": "gpu",
+                "memory_total": 12288,
+                "source": "stub",
+            },
+            {
+                "id": "cpu",
+                "name": "CPU",
+                "kind": "cpu",
+                "memory_total": None,
+                "source": "stub",
+            },
         ]
         self._policy = {"mode": "auto", "device": None}
         self.registry = _RegistryStub(
@@ -53,6 +64,9 @@ class _GPUManagerStub:
     def list_all(self, refresh: bool = False):
         return list(self._devices)
 
+    def list_local(self, refresh: bool = False):
+        return [d for d in self._devices if d.get("kind") != "remote"]
+
     def get_policy(self):
         return dict(self._policy)
 
@@ -61,9 +75,17 @@ class _GPUManagerStub:
         self._policy = {"mode": mode, "device": device}
         return self.get_policy()
 
-    def select_device(self, *, prefer: str | None = None, requirements: dict | None = None):
+    def select_device(
+        self, *, prefer: str | None = None, requirements: dict | None = None
+    ):
         if prefer == "cpu":
-            return {"id": "cpu", "kind": "cpu"}
+            return {
+                "id": "cpu",
+                "device": "cpu",
+                "policy": "manual",
+                "reason": "preferred",
+                "kind": "cpu",
+            }
         # Pick first GPU that meets simple VRAM requirement if provided
         min_vram = None
         if requirements:
@@ -71,12 +93,32 @@ class _GPUManagerStub:
         for d in self._devices:
             if d["kind"] == "gpu":
                 if min_vram is None:
-                    return d
+                    return {
+                        "id": d["id"],
+                        "device": d["id"],
+                        "policy": "auto",
+                        "reason": "auto",
+                        "kind": "gpu",
+                        "memory_total": d.get("memory_total"),
+                    }
                 mem = d.get("memory_total") or 0
                 mem_gb = mem / 1024 if mem > 256 else mem
                 if mem_gb >= float(min_vram):
-                    return d
-        return {"id": "cpu", "kind": "cpu"}
+                    return {
+                        "id": d["id"],
+                        "device": d["id"],
+                        "policy": "auto",
+                        "reason": "auto",
+                        "kind": "gpu",
+                        "memory_total": d.get("memory_total"),
+                    }
+        return {
+            "id": "cpu",
+            "device": "cpu",
+            "policy": "auto",
+            "reason": "fallback",
+            "kind": "cpu",
+        }
 
 
 @pytest.fixture()
@@ -103,12 +145,18 @@ def test_gpu_advise_local_candidate(client: TestClient):
     # Request a workload that fits the stub GPU; expect 'local' or a local candidate present
     resp = client.post(
         "/api/gpu/advise",
-        json={"workload": {"requirements": {"min_vram_gb": 8, "type": "voice_synthesis"}}},
+        json={
+            "workload": {"requirements": {"min_vram_gb": 8, "type": "voice_synthesis"}}
+        },
     )
     assert resp.status_code == 200, resp.text
     advice = resp.json()["advice"]
     assert advice["local_candidate"] is not None
-    assert advice["choice"] in {"local", "remote", "cpu"}  # choice depends on prefer_remote flag
+    assert advice["choice"] in {
+        "gpu",
+        "remote",
+        "cpu",
+    }  # choice depends on prefer_remote flag
 
 
 def test_gpu_select_device(client: TestClient):
@@ -120,4 +168,3 @@ def test_gpu_select_device(client: TestClient):
     data = resp.json()
     assert data["ok"] is True
     assert data["choice"]["kind"] in {"gpu", "cpu"}
-
