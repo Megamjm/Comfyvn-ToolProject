@@ -1,8 +1,15 @@
 import requests
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 
 class DashboardPanel(QWidget):
@@ -40,9 +47,8 @@ class DashboardPanel(QWidget):
         if self._poll_inflight:
             return
         self._poll_inflight = True
-        base = "http://127.0.0.1:8001"
         try:
-            r = requests.get(f"{base}/system/metrics", timeout=2.0)
+            r = requests.get(f"{default_base_url()}/system/metrics", timeout=2.0)
             if r.ok:
                 m = r.json()
                 self.lbl_health.setText("Server: ðŸŸ¢")

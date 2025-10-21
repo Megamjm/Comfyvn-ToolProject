@@ -19,83 +19,34 @@ _bootstrap_repo_cwd()
 
 import argparse
 import hashlib
-import json
 import logging
 import shutil
 import subprocess
 import venv
 from typing import Optional, Tuple
 
+from comfyvn.config.baseurl_authority import current_authority, write_runtime_authority
 from comfyvn.logging_config import init_logging as init_gui_logging
 from setup import install_defaults as defaults_install
 
 VENV_DIR = REPO_ROOT / ".venv"
 REQUIREMENTS_FILE = REPO_ROOT / "requirements.txt"
 REQUIREMENTS_HASH_FILE = VENV_DIR / ".requirements_hash"
-SETTINGS_PRIMARY_FILE = REPO_ROOT / "data" / "settings" / "config.json"
-SETTINGS_LEGACY_FILE = REPO_ROOT / "data" / "config.json"
 BOOTSTRAP_FLAG = "COMFYVN_BOOTSTRAPPED"
 LOGGER = logging.getLogger("comfyvn.launcher")
 
 
-DEFAULT_SERVER_HOST = os.environ.get("COMFYVN_SERVER_HOST", "127.0.0.1")
+AUTHORITY_DEFAULT = current_authority()
+DEFAULT_SERVER_HOST = os.environ.get(
+    "COMFYVN_SERVER_HOST", AUTHORITY_DEFAULT.host
+).strip()
+ENV_PORT = os.environ.get("COMFYVN_SERVER_PORT")
+try:
+    DEFAULT_SERVER_PORT = int(ENV_PORT) if ENV_PORT else AUTHORITY_DEFAULT.port
+except (TypeError, ValueError):
+    DEFAULT_SERVER_PORT = AUTHORITY_DEFAULT.port
 DEFAULT_SERVER_APP = os.environ.get("COMFYVN_SERVER_APP", "comfyvn.server.app:app")
 DEFAULT_SERVER_LOG_LEVEL = os.environ.get("COMFYVN_SERVER_LOG_LEVEL", "info")
-
-
-def _load_port_from_settings_file(path: Path) -> Optional[int]:
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-    candidates: list[int] = []
-
-    if isinstance(data, dict):
-        server_section = data.get("server")
-        if isinstance(server_section, dict):
-            for key in ("local_port", "port"):
-                value = server_section.get(key)
-                if value is not None:
-                    try:
-                        candidates.append(int(value))
-                    except (TypeError, ValueError):
-                        continue
-        for key in ("server_port", "port"):
-            value = data.get(key)
-            if value is not None:
-                try:
-                    candidates.append(int(value))
-                except (TypeError, ValueError):
-                    continue
-
-    for port in candidates:
-        if 0 < port < 65536:
-            return port
-    return None
-
-
-def _resolve_default_server_port() -> int:
-    env_port = os.environ.get("COMFYVN_SERVER_PORT")
-    if env_port is not None:
-        try:
-            port = int(env_port)
-            if 0 < port < 65536:
-                return port
-        except (TypeError, ValueError):
-            pass
-
-    for candidate in (SETTINGS_PRIMARY_FILE, SETTINGS_LEGACY_FILE):
-        port = _load_port_from_settings_file(candidate)
-        if port is not None:
-            return port
-
-    return 8001
-
-
-DEFAULT_SERVER_PORT = _resolve_default_server_port()
 
 
 def log(message: str) -> None:
@@ -228,13 +179,14 @@ def derive_server_base(host: str, port: int) -> str:
 
 def apply_launcher_environment(args: argparse.Namespace) -> None:
     if args.server_url:
-        os.environ["COMFYVN_SERVER_BASE"] = args.server_url.rstrip("/")
+        target_base = args.server_url.rstrip("/")
     else:
-        os.environ.setdefault(
-            "COMFYVN_SERVER_BASE",
-            derive_server_base(args.server_host, args.server_port),
-        )
+        target_base = derive_server_base(args.server_host, args.server_port)
+        write_runtime_authority(args.server_host, args.server_port)
+        current_authority(refresh=True)
 
+    os.environ["COMFYVN_SERVER_BASE"] = target_base
+    os.environ["COMFYVN_BASE_URL"] = target_base
     os.environ["COMFYVN_SERVER_HOST"] = args.server_host
     os.environ["COMFYVN_SERVER_PORT"] = str(args.server_port)
 

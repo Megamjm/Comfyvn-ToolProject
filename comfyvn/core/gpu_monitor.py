@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 import httpx
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.core.compute_registry import get_provider_registry
 
 LOGGER = logging.getLogger(__name__)
@@ -15,8 +16,8 @@ LOGGER = logging.getLogger(__name__)
 class GPUMonitor:
     """Background monitor polling local and remote GPU endpoints."""
 
-    def __init__(self, base: str = "http://127.0.0.1:8001", interval: float = 5.0):
-        self.base = base.rstrip("/")
+    def __init__(self, base: str | None = None, interval: float = 5.0):
+        self.base = (base or default_base_url()).rstrip("/")
         self.interval = float(interval)
         self.running = False
         self.data: Dict[str, Any] = {}

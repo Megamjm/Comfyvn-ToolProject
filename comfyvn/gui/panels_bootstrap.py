@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from PySide6.QtGui import QAction
 
+from comfyvn.config.baseurl_authority import default_base_url
 
-def install_panels(main_window, base_url: str = "http://127.0.0.1:8001"):
+
+def install_panels(main_window, base_url: str | None = None):
     # Lazy imports to avoid hard deps if Qt variant changes
     try:
         from comfyvn.gui.widgets.flow_selector import FlowSelectorDock
@@ -14,19 +16,20 @@ def install_panels(main_window, base_url: str = "http://127.0.0.1:8001"):
 
     # Create or find docks
     mw = main_window
+    resolved_base = (base_url or default_base_url()).rstrip("/")
     docks = {
         d.objectName(): d for d in mw.findChildren(type(mw), lambda _: False)
     }  # noop, keep type checker happy
 
     fs = getattr(mw, "_dock_flow_selector", None)
     if fs is None or getattr(fs, "parent", lambda: None)() is None:
-        fs = FlowSelectorDock(base_url, mw)
+        fs = FlowSelectorDock(resolved_base, mw)
         setattr(mw, "_dock_flow_selector", fs)
         mw.addDockWidget(0x1, fs)  # LeftDockWidgetArea
 
     op = getattr(mw, "_dock_ops_panel", None)
     if op is None or getattr(op, "parent", lambda: None)() is None:
-        op = OpsPanelDock(base_url, mw)
+        op = OpsPanelDock(resolved_base, mw)
         setattr(mw, "_dock_ops_panel", op)
         mw.addDockWidget(0x2, op)  # RightDockWidgetArea
 

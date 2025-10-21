@@ -15,7 +15,12 @@ from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE = os.getenv("COMFYVN_SERVER_BASE", "http://127.0.0.1:8001")
+from comfyvn.config.baseurl_authority import current_authority, default_base_url
+
+_AUTHORITY = current_authority()
+DEFAULT_BASE = (os.getenv("COMFYVN_SERVER_BASE") or default_base_url()).rstrip("/")
+SERVER_HOST = _AUTHORITY.host
+SERVER_PORT = _AUTHORITY.port
 _UNSET = object()
 
 

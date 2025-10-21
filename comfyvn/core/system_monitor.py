@@ -18,6 +18,8 @@ from datetime import datetime
 import psutil
 import requests
 
+from comfyvn.config.baseurl_authority import default_base_url
+
 try:
     import torch
 except ImportError:
@@ -27,8 +29,8 @@ except ImportError:
 class SystemMonitor:
     """Collects connection states + system hardware metrics and broadcasts to listeners."""
 
-    def __init__(self, api_base="http://127.0.0.1:8001", debug=False):
-        self.api_base = api_base.rstrip("/")
+    def __init__(self, api_base: str | None = None, debug: bool = False):
+        self.api_base = (api_base or default_base_url()).rstrip("/")
         self.debug = debug
         self.callbacks = []
         self._running = False

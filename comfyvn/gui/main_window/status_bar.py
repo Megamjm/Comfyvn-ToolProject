@@ -3,6 +3,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QLabel, QStatusBar
 
+from comfyvn.config.baseurl_authority import default_base_url
+
 
 class StatusBarMixin:
     def _init_status(self):
@@ -19,11 +21,11 @@ class StatusBarMixin:
         self._timer.setInterval(1500)
         self._timer.timeout.connect(self._poll_metrics)
         self._timer.start()
+        self._base_url = default_base_url().rstrip("/")
 
     def _poll_metrics(self):
-        base = "http://127.0.0.1:8001"
         try:
-            r = requests.get(f"{base}/system/metrics", timeout=1.0)
+            r = requests.get(f"{self._base_url}/system/metrics", timeout=1.0)
             if r.ok:
                 m = r.json()
                 self._lbl_server.setText("Server: ðŸŸ¢")

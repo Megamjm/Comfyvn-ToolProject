@@ -2,14 +2,23 @@ import json
 
 import requests
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QDialog, QLabel, QLineEdit, QMessageBox,
-                               QPushButton, QTextEdit, QVBoxLayout)
+from PySide6.QtWidgets import (
+    QDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 
 class OffloadDialog(QDialog):
-    def __init__(self, parent=None, base="http://127.0.0.1:8001"):
+    def __init__(self, parent=None, base: str | None = None):
         super().__init__(parent)
-        self.base = base
+        self.base = (base or default_base_url()).rstrip("/")
         self.setWindowTitle("Offload Job")
         self.setMinimumSize(400, 300)
         lay = QVBoxLayout(self)

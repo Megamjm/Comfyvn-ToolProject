@@ -7,9 +7,18 @@ from typing import List
 import requests
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QPushButton,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,9 +26,9 @@ LOGGER = logging.getLogger(__name__)
 class ImportsPanel(QWidget):
     """Displays recent importer jobs (VN/roleplay) using the task registry endpoints."""
 
-    def __init__(self, base: str = "http://127.0.0.1:8001") -> None:
+    def __init__(self, base: str | None = None) -> None:
         super().__init__()
-        self.base = base.rstrip("/")
+        self.base = (base or default_base_url()).rstrip("/")
 
         self.status_label = QLabel("Imports — loading", self)
         self.table = QTableWidget(0, 5)

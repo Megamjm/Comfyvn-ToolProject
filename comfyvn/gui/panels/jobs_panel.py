@@ -5,9 +5,15 @@ from datetime import datetime
 
 import requests
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (QLabel, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.gui.services.job_stream import JobStreamClient
 
 LOGGER = logging.getLogger(__name__)
@@ -24,9 +30,9 @@ def _friendly_ts(value: str | None) -> str:
 
 
 class JobsPanel(QWidget):
-    def __init__(self, base: str = "http://127.0.0.1:8001"):
+    def __init__(self, base: str | None = None):
         super().__init__()
-        self.base = base.rstrip("/")
+        self.base = (base or default_base_url()).rstrip("/")
         self.lbl = QLabel("Active Jobs")
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["ID", "Kind", "Status", "Updated"])

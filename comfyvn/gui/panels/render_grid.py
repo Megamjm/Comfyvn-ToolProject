@@ -4,15 +4,24 @@ import json
 
 import requests
 from PySide6.QtGui import QAction
+
 # comfyvn/gui/panels/render_grid.py
-from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QMessageBox,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 
 class RenderGridPanel(QWidget):
-    def __init__(self, base="http://127.0.0.1:8001", parent=None):
+    def __init__(self, base: str | None = None, parent=None):
         super().__init__(parent)
-        self.base = base
+        self.base = (base or default_base_url()).rstrip("/")
         self.setWindowTitle("Render Grid")
         self.layout = QVBoxLayout(self)
         self.btn_refresh = QPushButton("Refresh targets")

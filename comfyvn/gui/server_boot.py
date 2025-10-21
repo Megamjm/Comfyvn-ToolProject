@@ -7,6 +7,12 @@ import time
 import requests
 from PySide6.QtGui import QAction
 
+from comfyvn.config.baseurl_authority import (
+    current_authority,
+    default_base_url,
+    write_runtime_authority,
+)
+
 
 def _port_open(host: str, port: int) -> bool:
     s = socket.socket()
@@ -21,8 +27,9 @@ def _pick_bridge():
     try:
         from . import server_bridge as sb  # type: ignore
 
-        host = getattr(sb, "SERVER_HOST", "127.0.0.1")
-        port = int(getattr(sb, "SERVER_PORT", 8001))
+        authority = current_authority()
+        host = getattr(sb, "SERVER_HOST", authority.host)
+        port = int(getattr(sb, "SERVER_PORT", authority.port))
         for name in (
             "start_server_thread",
             "launch_server_thread",
@@ -68,15 +75,18 @@ def _ensure_started(host: str, port: int, starter):
 
 
 def wait_for_server(
-    base: str = "http://127.0.0.1:8001", autostart: bool = True, deadline: float = 12.0
+    base: str | None = None, autostart: bool = True, deadline: float = 12.0
 ) -> bool:
     host, port, starter = _pick_bridge()
+    target_base = (base or default_base_url()).rstrip("/")
     if autostart:
+        write_runtime_authority(host, port)
+        current_authority(refresh=True)
         _ensure_started(host, port, starter)
     t0 = time.time()
     while time.time() - t0 < deadline:
         try:
-            r = requests.get(base + "/system/ping", timeout=0.5)
+            r = requests.get(target_base + "/system/ping", timeout=0.5)
             if r.status_code == 200:
                 return True
         except Exception:

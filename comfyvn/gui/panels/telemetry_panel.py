@@ -5,16 +5,18 @@ import os
 import requests
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction
+
 # comfyvn/gui/panels/telemetry_panel.py
 from PySide6.QtWidgets import QLabel, QTextEdit, QVBoxLayout, QWidget
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.config.runtime_paths import logs_dir
 
 
 class TelemetryPanel(QWidget):
-    def __init__(self, base: str = "http://127.0.0.1:8001"):
+    def __init__(self, base: str | None = None):
         super().__init__()
-        self.base = base.rstrip("/")
+        self.base = (base or default_base_url()).rstrip("/")
         v = QVBoxLayout(self)
         self.lbl = QLabel("System Metrics", self)
         v.addWidget(self.lbl)

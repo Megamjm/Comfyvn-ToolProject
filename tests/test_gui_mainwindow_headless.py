@@ -6,6 +6,7 @@ import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.core.notifier import notifier
 
 
@@ -14,7 +15,7 @@ class _StubServerBridge(QObject):
 
     def __init__(self, base: str | None = None):
         super().__init__()
-        self.base = base or "http://127.0.0.1:8001"
+        self.base = (base or default_base_url()).rstrip("/")
 
     def start_polling(self) -> None:  # pragma: no cover - stubbed
         pass

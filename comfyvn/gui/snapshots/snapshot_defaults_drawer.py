@@ -6,16 +6,25 @@ import time
 import requests
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 logger = logging.getLogger(__name__)
 
 
 class SnapshotDefaultsDrawer(QWidget):
-    def __init__(self, parent=None, api_base="http://127.0.0.1:8001"):
+    def __init__(self, parent=None, api_base: str | None = None):
         super().__init__(parent)
-        self.api_base = api_base.rstrip("/")
+        self.api_base = (api_base or default_base_url()).rstrip("/")
 
         v = QVBoxLayout(self)
         v.setContentsMargins(6, 6, 6, 6)

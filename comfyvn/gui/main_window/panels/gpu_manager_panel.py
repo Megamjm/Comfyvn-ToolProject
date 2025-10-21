@@ -1,8 +1,18 @@
 import requests
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 
 class GPUMgrPanel(QWidget):
@@ -37,10 +47,9 @@ class GPUMgrPanel(QWidget):
         self.refresh()
 
     def refresh(self):
-        base = "http://127.0.0.1:8001"
         self.tbl.setRowCount(0)
         try:
-            r = requests.get(f"{base}/system/metrics", timeout=1.5)
+            r = requests.get(f"{default_base_url()}/system/metrics", timeout=1.5)
             if not r.ok:
                 raise RuntimeError("metrics not ok")
             m = r.json()
@@ -62,11 +71,10 @@ class GPUMgrPanel(QWidget):
             pass
 
     def apply_policy(self):
-        base = "http://127.0.0.1:8001"
         policy = self.cmb_policy.currentText()
         try:
             r = requests.post(
-                f"{base}/gpu/policy", json={"policy": policy}, timeout=2.5
+                f"{default_base_url()}/gpu/policy", json={"policy": policy}, timeout=2.5
             )
             if r.ok:
                 QMessageBox.information(

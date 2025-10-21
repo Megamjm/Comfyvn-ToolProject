@@ -15,10 +15,19 @@ import time
 import requests
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QSlider, QTextEdit, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.gui.widgets.progress_overlay import ProgressOverlay
 
 
@@ -92,6 +101,7 @@ class RoleplayPreviewUI(QWidget):
         self.btn_next.clicked.connect(self._advance)
         self.btn_render.clicked.connect(self._render_line)
         self.btn_batch.clicked.connect(self._batch_render)
+        self.api_base = default_base_url().rstrip("/")
 
     # ---------------- scene handling ----------------
     @Slot()
@@ -128,7 +138,7 @@ class RoleplayPreviewUI(QWidget):
 
         # try to load sprite or background
         sprite_path = f"./assets/characters/{speaker.lower()}.png"
-        bg_path = f"./assets/backgrounds/default.png"
+        bg_path = "./assets/backgrounds/default.png"
 
         if os.path.exists(bg_path):
             self.bg_label.setPixmap(
@@ -183,7 +193,7 @@ class RoleplayPreviewUI(QWidget):
         def worker():
             try:
                 r = requests.post(
-                    "http://127.0.0.1:8001/roleplay/render_line",
+                    f"{self.api_base}/roleplay/render_line",
                     json={
                         "scene_id": self.scene.get("scene_id", "adhoc"),
                         "line": line,
@@ -210,7 +220,9 @@ class RoleplayPreviewUI(QWidget):
                         0, lambda: self.status.setText(f"Render Error {r.status_code}")
                     )
             except Exception as e:
-                QTimer.singleShot(0, lambda: self.status.setText(f"Render Error: {e}"))
+                QTimer.singleShot(
+                    0, lambda err=e: self.status.setText(f"Render Error: {err}")
+                )
             finally:
                 QTimer.singleShot(0, self.overlay.stop)
 
@@ -229,7 +241,7 @@ class RoleplayPreviewUI(QWidget):
         def worker():
             try:
                 r = requests.post(
-                    "http://127.0.0.1:8001/roleplay/render_scene",
+                    f"{self.api_base}/roleplay/render_scene",
                     json={
                         "scene_id": self.scene.get("scene_id", "adhoc"),
                         "lines": self.lines,
@@ -249,7 +261,8 @@ class RoleplayPreviewUI(QWidget):
                     )
             except Exception as e:
                 QTimer.singleShot(
-                    0, lambda: self.status.setText(f"Batch render error: {e}")
+                    0,
+                    lambda err=e: self.status.setText(f"Batch render error: {err}"),
                 )
             finally:
                 QTimer.singleShot(2000, self.overlay.stop)

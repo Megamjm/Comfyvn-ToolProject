@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.config.runtime_paths import settings_file
 
 try:
@@ -21,7 +22,7 @@ DEFAULTS = {
         "sillytavern": {
             "base_url": "http://127.0.0.1:8000",
             "plugin_base": "/api/plugins/comfyvn-data-exporter",
-            "endpoint": "http://127.0.0.1:8001/st/import",
+            "endpoint": f"{default_base_url().rstrip('/')}/st/import",
             "token": None,
             "user_id": None,
         }

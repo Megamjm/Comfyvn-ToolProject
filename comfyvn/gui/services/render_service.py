@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import random
 import time
+
 # comfyvn/gui/services/render_service.py
 from pathlib import Path
 
 from PySide6.QtGui import QAction
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 DB = Path("data/jobs.json")
 DB.parent.mkdir(parents=True, exist_ok=True)
@@ -26,8 +29,8 @@ def _save(rows):
 
 
 class RenderService:
-    def __init__(self, base: str = "http://127.0.0.1:8001"):
-        self.base = base
+    def __init__(self, base: str | None = None):
+        self.base = (base or default_base_url()).rstrip("/")
 
     def submit_dummy(self) -> dict:
         rows = _load()

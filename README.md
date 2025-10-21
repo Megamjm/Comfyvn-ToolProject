@@ -162,7 +162,7 @@ Testing	Added pytest stubs for API endpoints.
 
 `python run_comfyvn.py [options]` bootstraps the virtualenv, installs requirements, and then launches either the GUI or the FastAPI server depending on the flags you pass. Handy commands:
 
-- `python run_comfyvn.py` – launch the GUI and auto-start a local backend on the default port.
+- `python run_comfyvn.py` – launch the GUI and auto-start a local backend on the resolved default port.
 - `python run_comfyvn.py --server-only --server-host 0.0.0.0 --server-port 9001` – start only the FastAPI server (headless) listening on an alternate interface/port.
 - `python run_comfyvn.py --server-url http://remote-host:8001 --no-server-autostart` – open the GUI but connect to an already-running remote server without spawning a local instance.
 - `python run_comfyvn.py --server-only --server-reload` – headless development loop with uvicorn’s auto-reload.
@@ -170,10 +170,11 @@ Testing	Added pytest stubs for API endpoints.
 
 Environment variables honour the same knobs:
 
-- `COMFYVN_SERVER_BASE` – default base URL for the GUI and CLI helpers (set automatically from `--server-url` or the derived host/port).
+- `COMFYVN_SERVER_BASE` / `COMFYVN_BASE_URL` – default authority for the GUI, CLI helpers, and background workers (populated automatically from `--server-url` or the derived host/port).
 - `COMFYVN_SERVER_AUTOSTART=0` – disable GUI auto-start of a local server.
 - `COMFYVN_SERVER_HOST`, `COMFYVN_SERVER_PORT`, `COMFYVN_SERVER_APP`, `COMFYVN_SERVER_LOG_LEVEL` – default values consumed by the launcher when flags are omitted.
-- The launcher resolves the default port in this order: `--server-port` flag → `COMFYVN_SERVER_PORT` env var → the user config file (`settings/config.json`, see **Runtime Storage**) → fallback `8001`. Once resolved it writes `COMFYVN_SERVER_PORT` for child processes so the GUI, smoke checks, and detached helpers stay in sync.
+- Base URL authority lives in `comfyvn/config/baseurl_authority.py`. Resolution order: explicit `COMFYVN_BASE_URL` → runtime state file (`config/runtime_state.json` or cache override) → persisted settings (`settings/config.json`) → `comfyvn.json` fallback → default `http://127.0.0.1:8001`. The launcher writes the resolved host/port back to `config/runtime_state.json` after binding so parallel launchers, the GUI, and helper scripts stay aligned.
+- When no `--server-url` is provided the launcher derives a connectable URL from the chosen host/port (coercing `0.0.0.0` to `127.0.0.1` etc.), persists it via the base URL authority, and exports `COMFYVN_SERVER_BASE`/`COMFYVN_BASE_URL`/`COMFYVN_SERVER_PORT` for child processes.
 - GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
 - The Settings panel also exposes a local backend port selector with a “Find Open Port” helper so you can avoid clashes with other services; the selection is saved to the user config directory (`settings/config.json`), mirrored to the current environment, and honoured by the next launcher run.
 - Backend `/settings/{get,set,save}` endpoints now use the shared settings manager with deep-merge semantics, so GUI updates and CLI edits land in the same file without clobbering unrelated sections.
@@ -226,10 +227,12 @@ Currently the file covers `libegl1`, `libxkbcommon0`, and `libdbus-1-3`; add new
 
 ## Health & Smoke Checks
 
-- `curl http://127.0.0.1:8001/health` validates the FastAPI wiring from `comfyvn.server.app`.
-- `curl http://127.0.0.1:8001/healthz` remains available for legacy tooling expecting the older probe.
-- `python smoke_checks.py` performs REST + WebSocket checks against a locally running server and prints any failures alongside connection debug information.
-- `python scripts/smoke_test.py --base-url http://127.0.0.1:8001` hits `/health` and `/system/metrics` (with an optional roleplay upload) and serves as the required pre-PR smoke test.
+Use the resolved base URL from `config/runtime_state.json` (written by the launcher) or by calling `comfyvn.config.baseurl_authority.default_base_url()` if you've changed ports.
+
+- `curl "$BASE_URL/health"` validates the FastAPI wiring from `comfyvn.server.app`.
+- `curl "$BASE_URL/healthz"` remains available for legacy tooling expecting the older probe.
+- `python smoke_checks.py` performs REST + WebSocket checks against the current authority and prints any failures alongside connection debug information.
+- `python scripts/smoke_test.py --base-url "$BASE_URL"` hits `/health` and `/system/metrics` (with an optional roleplay upload) and serves as the required pre-PR smoke test.
 
 ## Extension Development
 

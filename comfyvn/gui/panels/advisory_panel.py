@@ -4,10 +4,24 @@ import logging
 from typing import Optional
 
 import requests
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox,
-                               QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-                               QMessageBox, QPushButton, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 LOGGER = logging.getLogger(__name__)
 
@@ -15,9 +29,9 @@ LOGGER = logging.getLogger(__name__)
 class AdvisoryPanel(QWidget):
     """Displays advisory, policy gate, and filter status."""
 
-    def __init__(self, base: str = "http://127.0.0.1:8001") -> None:
+    def __init__(self, base: str | None = None) -> None:
         super().__init__()
-        self.base = base.rstrip("/")
+        self.base = (base or default_base_url()).rstrip("/")
 
         # Advisory log controls
         self.filter_box = QComboBox(self)

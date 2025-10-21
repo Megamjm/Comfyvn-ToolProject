@@ -5,13 +5,30 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
-# comfyvn/gui/panels/settings_panel.py  [Studio-090]
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDockWidget, QFileDialog,
-                               QFormLayout, QGroupBox, QHBoxLayout,
-                               QInputDialog, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QPushButton,
-                               QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
+# comfyvn/gui/panels/settings_panel.py  [Studio-090]
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDockWidget,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import current_authority, default_base_url
 from comfyvn.core.compute_registry import ComputeProviderRegistry
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.gui.services.server_bridge import ServerBridge
@@ -36,9 +53,12 @@ class SettingsPanel(QDockWidget):
         form = QFormLayout(basics_widget)
         cfg_snapshot = self.settings_manager.load()
         server_cfg = cfg_snapshot.get("server", {})
+        authority = current_authority()
         self.api = QLineEdit(self.bridge.base)
         self.remote_list = QLineEdit(
-            self.bridge.get("REMOTE_GPU_LIST", default="http://127.0.0.1:8001")
+            self.bridge.get(
+                "REMOTE_GPU_LIST", default=default_base_url()  # legacy remote fallback
+            )
         )
         self.menu_sort = QComboBox()
         self.menu_sort.addItem("Load order (default)", "load_order")
@@ -48,14 +68,7 @@ class SettingsPanel(QDockWidget):
         index = self.menu_sort.findData(current_mode)
         if index != -1:
             self.menu_sort.setCurrentIndex(index)
-        default_port = 8001
-        env_port = os.environ.get("COMFYVN_SERVER_PORT")
-        try:
-            if env_port:
-                default_port = int(env_port)
-        except ValueError:
-            default_port = 8001
-        default_port = int(server_cfg.get("local_port", default_port))
+        default_port = int(server_cfg.get("local_port", authority.port))
         self.local_port = QSpinBox()
         self.local_port.setRange(1024, 65535)
         self.local_port.setValue(default_port)

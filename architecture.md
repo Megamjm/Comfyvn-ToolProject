@@ -129,7 +129,7 @@ Outputs:
 Acceptance: ~~curl /health returns {status:"ok"}; /status lists routes and version.~~ ✅ Verified 2025-10-20
 
 Notes: Ensure python-multipart in requirements.  
-2025-10-21 — Launcher (`run_comfyvn.py`) derives the default port from `COMFYVN_SERVER_PORT` or the shared settings file (`data/settings/config.json`) and writes the resolved value back to the environment so the GUI and backend stay aligned across restarts.
+2025-10-24 — Base URL authority (`comfyvn/config/baseurl_authority.py`) now owns host/port resolution for the launcher, GUI, and helper tools. Precedence: explicit `COMFYVN_BASE_URL` → runtime state file → persisted settings (`settings/config.json`) → `comfyvn.json` → default `http://127.0.0.1:8001`. The launcher refreshes the authority after binding and writes the resolved values to `config/runtime_state.json`, keeping parallel launchers and detached helpers in sync.
 
 Part B — GUI shell & metrics
 

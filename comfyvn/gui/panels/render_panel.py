@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction
-# comfyvn/gui/panels/render_panel.py
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
-                               QListWidgetItem, QPushButton, QVBoxLayout,
-                               QWidget)
 
+# comfyvn/gui/panels/render_panel.py
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.gui.services.render_service import RenderService
 
 
@@ -29,10 +37,10 @@ class _PollWorker(QObject):
 class RenderPanel(QWidget):
     """Render Queue with live polling. Thumbnails stub."""
 
-    def __init__(self, base: str = "http://127.0.0.1:8001"):
+    def __init__(self, base: str | None = None):
         super().__init__()
-        self.base = base
-        self.service = RenderService(base=base)
+        self.base = (base or default_base_url()).rstrip("/")
+        self.service = RenderService(base=self.base)
         v = QVBoxLayout(self)
 
         hb = QHBoxLayout()

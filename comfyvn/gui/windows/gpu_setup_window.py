@@ -6,10 +6,19 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+
 # comfyvn/gui/windows/gpu_setup_window.py
-from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QPushButton,
-                               QTextBrowser, QVBoxLayout)
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QTextBrowser,
+    QVBoxLayout,
+)
 
 from comfyvn.config.runtime_paths import config_dir
 from comfyvn.core.compute_registry import ComputeProviderRegistry
@@ -44,7 +53,7 @@ PROVIDERS = [
 
 
 class GPUSetupWindow(QDialog):
-    def __init__(self, parent=None, base="http://127.0.0.1:8001"):
+    def __init__(self, parent=None, base: str | None = None):
         super().__init__(parent)
         self.setWindowTitle("GPU Setup")
         self.resize(760, 520)

@@ -1,15 +1,24 @@
 import requests
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
+
 # comfyvn/gui/panels/gpu_local_panel.py  [Studio-090]
-from PySide6.QtWidgets import (QDockWidget, QLabel, QPushButton, QTextEdit,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QDockWidget,
+    QLabel,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from comfyvn.config.baseurl_authority import default_base_url
 
 
 class GPULocalPanel(QDockWidget):
-    def __init__(self, base="http://127.0.0.1:8001"):
+    def __init__(self, base: str | None = None):
         super().__init__("GPU / Local")
-        self.base = base
+        self.base = (base or default_base_url()).rstrip("/")
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
         w = QWidget()
         lay = QVBoxLayout(w)

@@ -12,17 +12,27 @@ import threading
 from typing import Any, Dict, Mapping, Optional
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtWidgets import (QAction, QHBoxLayout, QInputDialog, QLabel,
-                               QListWidget, QListWidgetItem, QMainWindow,
-                               QStackedWidget, QStatusBar, QStyle, QToolBar,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QAction,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QStackedWidget,
+    QStatusBar,
+    QStyle,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 from comfyvn.gui.panels.characters_panel import CharactersPanel
 from comfyvn.gui.panels.scenes_panel import ScenesPanel
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.gui.statusbar_metrics import StatusBarMetrics
-from comfyvn.gui.views import (AssetSummaryView, ImportsJobsView,
-                               TimelineSummaryView)
+from comfyvn.gui.views import AssetSummaryView, ImportsJobsView, TimelineSummaryView
 from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
 from comfyvn.studio.core.asset_registry import AssetRegistry
 from comfyvn.studio.core.character_registry import CharacterRegistry
@@ -43,7 +53,7 @@ class StudioWindow(QMainWindow):
         self.setWindowTitle("ComfyVN Studio Shell")
         self.resize(1280, 820)
 
-        self.bridge = bridge or ServerBridge("http://127.0.0.1:8001")
+        self.bridge = bridge or ServerBridge()
         self.bridge.status_updated.connect(self._on_metrics)
 
         self._autostart_enabled = self._resolve_autostart_flag()
@@ -366,7 +376,9 @@ class StudioWindow(QMainWindow):
         )
         self._update_status_indicator(health_ok or ok)
         if hasattr(self, "_metrics_display"):
-            self._metrics_display.update_payload(payload if isinstance(payload, dict) else None)
+            self._metrics_display.update_payload(
+                payload if isinstance(payload, dict) else None
+            )
 
         if ok or health_ok:
             self._handle_server_online()

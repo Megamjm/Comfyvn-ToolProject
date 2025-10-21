@@ -6,10 +6,13 @@ import logging
 import requests
 from PySide6.QtGui import QAction
 
+from comfyvn.config.baseurl_authority import default_base_url
+
 log = logging.getLogger(__name__)
 
 
-def ensure_server_alive(base: str = "http://127.0.0.1:8001"):
+def ensure_server_alive(base: str | None = None):
+    base = (base or default_base_url()).rstrip("/")
     try:
         r = requests.get(f"{base}/health", timeout=2)
         if r.status_code == 200:
@@ -19,11 +22,12 @@ def ensure_server_alive(base: str = "http://127.0.0.1:8001"):
     return False
 
 
-def offload_job_local(job: dict, base: str = "http://127.0.0.1:8001"):
-    if not ensure_server_alive(base):
+def offload_job_local(job: dict, base: str | None = None):
+    base_url = (base or default_base_url()).rstrip("/")
+    if not ensure_server_alive(base_url):
         return {"ok": False, "error": "Server offline"}
     try:
-        r = requests.post(f"{base}/jobs/enqueue", json=job, timeout=10)
+        r = requests.post(f"{base_url}/jobs/enqueue", json=job, timeout=10)
         return r.json() if r.status_code < 400 else {"ok": False, "error": r.text}
     except Exception as e:
         log.error(f"Local job offload failed: {e}")

@@ -9,6 +9,8 @@ import httpx
 from fastapi import APIRouter, Request
 from PySide6.QtGui import QAction
 
+from comfyvn.config.baseurl_authority import default_base_url
+
 router = APIRouter(prefix="/meta", tags=["meta"])
 
 
@@ -55,7 +57,7 @@ def _probe_one(c: httpx.Client, url: str) -> Dict[str, Any]:
 
 @router.get("/checks")
 def checks(base: str | None = None, timeout_s: float = 2.0):
-    base = base or "http://127.0.0.1:8001"
+    base = (base or default_base_url()).rstrip("/")
     paths = {
         "system": ["/system/health", "/v1/system/health"],
         "render": ["/render/health", "/v1/render/health"],

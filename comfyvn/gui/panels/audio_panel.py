@@ -7,11 +7,22 @@ from typing import Any, Dict, Optional
 import requests
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QLineEdit, QPushButton, QSpinBox,
-                               QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from comfyvn.assets.character_manager import CharacterManager
+from comfyvn.config.baseurl_authority import default_base_url
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,9 +30,9 @@ LOGGER = logging.getLogger(__name__)
 class AudioPanel(QWidget):
     """TTS and music utilities with character-aware `/api/tts/speak` tester."""
 
-    def __init__(self, base: str = "http://127.0.0.1:8001") -> None:
+    def __init__(self, base: str | None = None) -> None:
         super().__init__()
-        self.base = base.rstrip("/")
+        self.base = (base or default_base_url()).rstrip("/")
         self._character_manager = CharacterManager()
         self._characters: Dict[str, Dict[str, Any]] = {}
         self._selected_character_id: Optional[str] = None

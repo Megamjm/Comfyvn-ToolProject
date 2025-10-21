@@ -7,7 +7,9 @@ from typing import Any, Mapping
 
 import httpx
 
-DEFAULT_BASE = "http://127.0.0.1:8001"
+from comfyvn.config.baseurl_authority import default_base_url
+
+DEFAULT_BASE = default_base_url()
 
 
 def _normalise_base(url: str) -> str:

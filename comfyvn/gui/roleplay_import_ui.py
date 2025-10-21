@@ -12,20 +12,32 @@ import os
 import threading
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout,
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QMessageBox, QPushButton, QTableWidget,
-                               QTableWidgetItem, QTextEdit, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
+from comfyvn.config.baseurl_authority import default_base_url
 from comfyvn.gui.services.server_bridge import ServerBridge
 
 
 class RoleplayImportUI(QWidget):
-    def __init__(self, parent=None, api_base="http://127.0.0.1:8001"):
+    def __init__(self, parent=None, api_base: str | None = None):
         super().__init__(parent)
-        self.api_base = api_base.rstrip("/")
-        self.server = ServerBridge(base_url=self.api_base)
+        self.api_base = (api_base or default_base_url()).rstrip("/")
+        self.server = ServerBridge(base=self.api_base)
         self.current_scene = None
         self.character_meta = {}
 
@@ -269,11 +281,11 @@ class RoleplayImportUI(QWidget):
 
         # build character meta from desc_box
         meta = {}
-        txt = self.desc_box.toPlainText().strip()
-        if txt:
-            for l in txt.splitlines():
-                if ":" in l:
-                    n, d = l.split(":", 1)
+        description_text = self.desc_box.toPlainText().strip()
+        if description_text:
+            for line in description_text.splitlines():
+                if ":" in line:
+                    n, d = line.split(":", 1)
                     meta[n.strip()] = d.strip()
 
         def worker():
