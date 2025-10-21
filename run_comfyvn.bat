@@ -19,7 +19,7 @@ if %ERRORLEVEL%==0 (
     if %ERRORLEVEL%==0 (
         set "PYTHON_CMD=python"
     )
-) 
+)
 
 if not defined PYTHON_CMD (
     echo [ComfyVN] Python 3 interpreter not found on PATH.
