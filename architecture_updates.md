@@ -5,19 +5,23 @@ Scope: Snapshot of recent local changes and alignment tasks against `ARCHITECTUR
 
 - Phase 6 progression: audio cache manager (`comfyvn/core/audio_cache.py`), `/api/music/remix` stub, GUI audio panel hooked to new endpoints, and ComfyUI workflow guide (`docs/comfyui_music_workflow.md`) for real pipelines.
 - Phase 7 progression: policy gate + filter endpoints (`policy_api.py`), settings-backed acknowledgements, and advisory-friendly filter previews documented for debugging.
+- Runtime storage overhaul: `comfyvn/config/runtime_paths.py` centralises log/config/cache/data directories via `platformdirs`, relocates mutable assets to user-space folders, exposes overrides (`COMFYVN_RUNTIME_ROOT`, `COMFYVN_LOG_DIR`, etc.), and provisions optional symlink shims for legacy `logs/` / `data/settings` references.
+- Extension compatibility enforcement: `extensions_discovery` validates `extension.json` manifests (semantic `requires`, entrypoints, API hints), `menu_runtime_bridge` now supports callable callbacks, and GUI reloads surface incompatibilities via the new warning toast log.
 
 Recent Changes Observed
 ----------------------
 - CLI (`comfyvn/cli.py`) unified under Typer with `bundle`, `manifest`, `check`, `login`, and `scenes` commands; logging initialised per subcommand.
 - Scene bundle workflow is now tracked: `comfyvn/scene_bundle.py`, `docs/scene_bundle.md`, and `tests/test_scene_bundle.py` landed with schema validation hooks.
 - `run_comfyvn.py` enhanced with logging normalization (launcher/gui/server log separation) and venv bootstrap. Logging aligns with Phase 1 Part C requirement.
+- Launcher now resolves the default server port from `COMFYVN_SERVER_PORT` or `data/settings/config.json` and rewrites the environment so GUI + CLI share the same target; `/settings/{set,save}` now routes through `SettingsManager` with deep-merge semantics.
+- Asset registry thumbnail generation now happens via a shared background worker so large image imports stop blocking the registration path, and audio/voice assets embed provenance markers when Mutagen is available (MP3/OGG/FLAC/WAV).
 - GUI shell updates: menu rebuilt under “Modules” top-level, ServerBridge polling 3s cadence, dock tabification to prevent module overlap. This satisfies Phase 1 Part B acceptance criteria from the architecture doc.
 - Server bootstrap repaired: `comfyvn/server/app.py` now exposes `create_app()`, enables CORS, configures logging, and registers `/health` + `/status`, fulfilling Phase 1 Part A.
 - Legacy entrypoint aligned: `comfyvn/app.py` delegates to the canonical factory, preserves `/healthz` for legacy probes, and documents the logging/debug flow.
-- GUI detached-server helper updated to launch `python comfyvn/app.py`, matching the new entrypoint behaviour and writing to `logs/server_detached.log`.
+- GUI detached-server helper updated to launch `python comfyvn/app.py`, matching the new entrypoint behaviour and writing to `server_detached.log` in the user log directory.
 - Phase 2 migration script expanded (`setup/apply_phase06_rebuild.py`) adding project-aware columns and registry tables (variables, templates, providers, settings). Asset registry exposes `register_file` with sidecar output.
 - Phase 5 compute span landed: `comfyvn/core/gpu_manager.py`, `/api/gpu/*`, `/api/providers/*`, and `/compute/advise` expose policy-aware device selection, provider health checks, and advisor rationale. Job metadata now includes the selected compute target, and registry/logging emits debug messages for troubleshooting.
-- Phase 5 metrics/job queue completed: `/jobs/ws` streams registry updates via FastAPI WebSocket; `JobsPanel` consumes the stream with auto-reconnect + HTTP fallback, writing state changes to `logs/gui.log` for diagnosis.
+- Phase 5 metrics/job queue completed: `/jobs/ws` streams registry updates via FastAPI WebSocket; `JobsPanel` consumes the stream with auto-reconnect + HTTP fallback, writing state changes to `gui.log` in the user log directory for diagnosis.
 - VN importer pipeline landed: `comfyvn/server/core/vn_importer.py`, `/vn/import` API, GUI VN importer wiring, TaskRegistry-backed jobs (`/jobs/status/:id`), `GET /vn/import/{job_id}`, and per-import summaries archived under `data/imports/vn/*` for provenance/debugging. GUI follow-ups captured in `docs/gui_followups.md`.
 - Arc/unpacker support: `/vn/tools/*` endpoints manage external extractor registrations with legal warnings, importer detects `.arc/.xp3` via registered binaries, and `extensions/tool_installer` surfaces installer docs for GUI integration.
 - Documentation: `docs/importer_engine_matrix.md` outlines engine detection signatures + hook expectations; `docs/remote_gpu_services.md` captures provider catalog and advisor inputs for importer-driven GPU recommendations; `docs/tool_installers.md` expanded with config notes.
@@ -25,7 +29,7 @@ Recent Changes Observed
 - `/api/gpu/advise` leverages new compute advisor heuristics to balance local VRAM vs. curated remote providers; recommendations include cost hints and provider notes for RunPod/Vast.ai/Lambda/AWS/Azure/Paperspace/unRAID.
 - Extractor catalog expanded to top 20 community tools (Light.vnTools mirrors, GARbro, KrkrExtract, XP3 tools, CatSystem2/BGI/RealLive utilities, Unity asset rippers). `/vn/tools/catalog` lists metadata; `/vn/tools/install` downloads with license warnings and auto-registration.
 - Studio API stubs (`comfyvn/server/modules/studio_api.py`) provide `/api/studio/open_project`, `/switch_view`, `/export_bundle`; `comfyvn/gui/studio_window.py` prototype consumes them via `ServerBridge.post`.
-- Roleplay importer endpoints (`POST /roleplay/import`, `GET /roleplay/imports/{job_id}`) hardened: jobs/import rows now created via studio registries, scenes/characters persisted, transcripts registered as assets, and debug logs stored in `logs/imports/`.
+- Roleplay importer endpoints (`POST /roleplay/import`, `GET /roleplay/imports/{job_id}`) hardened: jobs/import rows now created via studio registries, scenes/characters persisted, transcripts registered as assets, and debug logs stored under the imports subfolder of the user log directory.
 - Import observability expanded with `/roleplay/imports` listing and `/roleplay/imports/{job_id}/log` streaming so Studio panels can surface queues + logs without touching disk.
 - Studio `RoleplayImportView` now binds to the importer endpoints, auto-refreshing every 10s and offering inline log viewing for rapid debugging.
 - Studio main window now persists geometry/layout via `QSettings`, and File menu includes New/Close/Recent project actions above the folder shortcuts.
@@ -37,7 +41,7 @@ Recent Changes Observed
 Gaps vs. Architecture Plan
 --------------------------
 - `architecture.md` expects StudioShell module (`gui/studio_window.py`) with sidebar/toolbar layout; prototype exists but the primary launcher still favours `main_window`. Decide on migration strategy or update documentation to reflect dual shells.
-- Asset registry background thumbnail worker still pending; audio/voice provenance markers require additional ID3 tooling.
+- Asset pipeline follow-up: wire UI/CLI progress indicators to the async thumbnail worker and document optional Mutagen installation so audio provenance tagging is predictable across environments.
 - Importer and compute pipelines lack end-to-end regression tests; add fixtures that exercise `/vn/import`, `/roleplay/import` (list/log), and GPU advisor flows.
 - Scripts location mismatch: architecture baseline lists `scripts/run_comfyvn.py`; repo keeps launcher at root. Decide whether to relocate or adjust documentation.
 
@@ -53,5 +57,10 @@ Immediate Repair / Follow-up Tasks
    - Add pytest flows covering `/vn/import`, `/roleplay/import` (list/log/GUI), and GPU advisor endpoints to catch regressions.
 4. **Docs alignment (started)**
    - `ARCHITECTURE.md` updated to clarify primary shell; launcher remains `comfyvn.gui.main_window` via `run_comfyvn.py`.
+5. **Server API polish (resolved 2025-10-23)**
+   - Renamed `RegisterAssetRequest.copy` → `copy_file` (kept alias) to silence the Pydantic warning without breaking callers.
+   - Added `tests/test_settings_api.py::test_settings_save_deep_merge` to lock deep-merge semantics and `tests/test_launcher_smoke.py` to exercise the launcher `/health` + `/status` smoke path.
+   - Documentation touch-up: `docs/studio_assets.md` now explains the new `copy_file` request flag (legacy `copy` still accepted).
+  - Roleplay importer responses now include `logs_path`, tests read the runtime log location instead of assuming the legacy `logs/imports/` folder, and async VN import polling waits for the returned summary to avoid flakes.
 
 Use this document as a working checklist while bringing the repo back in sync with the architectural intent.

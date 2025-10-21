@@ -9,7 +9,7 @@ Subsystem Components
 --------------------
 - Core logic in `comfyvn/core/advisory.py` manages findings, resolution tracking, and log storage.
 - API layer in `comfyvn/server/modules/advisory_api.py` exposes scan, log, and resolve endpoints.
-- Advisory logs are intended for `logs/advisory.log` once a dedicated handler is added; for now they flow into `logs/server.log`.
+- Advisory logs are intended for `advisory.log` once a dedicated handler is added; for now they flow into `system.log` in the user log directory.
 - GUI advisory view will consume `/api/advisory/logs` and surface resolution workflows.
 
 API Hooks
@@ -81,7 +81,7 @@ Logging & Debugging
   3. `curl -X POST http://localhost:8000/api/policy/evaluate -H 'Content-Type: application/json' -d '{"action":"export.bundle","override":true}'`
 - Content filter test:
   1. `curl -X POST http://localhost:8000/api/policy/filter-preview -H 'Content-Type: application/json' -d '{"items":[{"id":"asset:1","meta":{"nsfw":true}},{"id":"asset:2","meta":{"tags":["safe"]}}],"mode":"sfw"}'`
-  2. Inspect `logs/server.log` for WARN entries referencing `filter_mode`.
+  2. Inspect `system.log` in the user log directory for WARN entries referencing `filter_mode`.
 
 Integration Notes
 -----------------

@@ -7,16 +7,19 @@ logger = logging.getLogger(__name__)
 # [⚙️ 3. Server Core Production Chat]
 
 import os, json, time
+from pathlib import Path
 from typing import Optional, Dict, Any
+from comfyvn.config.runtime_paths import cache_dir
 
 
 class CacheManager:
     """Caches sprites and scene data for reuse and performance."""
 
     def __init__(
-        self, cache_path: str = "./cache/sprites", index_file: str = "cache_index.json"
+        self, cache_path: str | os.PathLike[str] | None = None, index_file: str = "cache_index.json"
     ):
-        self.cache_path = os.path.abspath(cache_path)
+        base = cache_dir("sprites") if cache_path is None else Path(cache_path)
+        self.cache_path = os.path.abspath(str(base))
         self.index_path = os.path.join(self.cache_path, index_file)
         os.makedirs(self.cache_path, exist_ok=True)
         self.cache_index: Dict[str, Dict[str, Any]] = {}

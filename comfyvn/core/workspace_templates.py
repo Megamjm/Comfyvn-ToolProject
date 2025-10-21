@@ -4,10 +4,12 @@ from PySide6.QtGui import QAction
 import os, json
 from typing import Optional
 from PySide6.QtWidgets import QFileDialog
+from comfyvn.config.runtime_paths import workspace_dir
 
-DIR = "data/workspaces"
 def _dir():
-    os.makedirs(DIR, exist_ok=True); return DIR
+    path = workspace_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 def list_templates():
     _dir(); return [f[:-5] for f in os.listdir(DIR) if f.endswith(".json")]

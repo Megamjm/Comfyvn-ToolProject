@@ -18,6 +18,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
+from comfyvn.config.runtime_paths import logs_dir
+from comfyvn.core.warning_bus import warning_bus
 from comfyvn.server.core.logging_ex import setup_logging
 
 try:
@@ -37,7 +39,7 @@ LOGGER = logging.getLogger(__name__)
 APP_VERSION = os.getenv("COMFYVN_VERSION", "0.8.0")
 MODULE_PACKAGE = "comfyvn.server.modules"
 MODULE_PATH = Path(__file__).resolve().parent / "modules"
-LOG_PATH = Path(__file__).resolve().parents[2] / "logs" / "server.log"
+LOG_PATH = logs_dir("server.log")
 
 
 def _configure_logging() -> None:
@@ -45,6 +47,7 @@ def _configure_logging() -> None:
     # Preserve user override but ensure default path exists
     os.environ.setdefault("COMFYVN_LOG_FILE", str(LOG_PATH))
     setup_logging()
+    warning_bus.attach_logging_handler()
     LOGGER.info("Server logging configured -> %s", os.environ.get("COMFYVN_LOG_FILE"))
 
 

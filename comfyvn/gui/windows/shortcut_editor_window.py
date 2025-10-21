@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
 from comfyvn.core.shortcut_registry import shortcut_registry, DEFAULTS
+from comfyvn.config.runtime_paths import config_dir
 from comfyvn.gui.widgets.shortcut_capture import ShortcutCapture
 
 class ShortcutEditorWindow(QDialog):
@@ -155,4 +156,5 @@ class ShortcutEditorWindow(QDialog):
     def on_save(self):
         self.on_apply()
         shortcut_registry.save_to_file()
-        QMessageBox.information(self, "Shortcuts", "Saved to comfyvn/data/settings.json.")
+        target = config_dir("settings")
+        QMessageBox.information(self, "Shortcuts", f"Saved to user settings directory:\n{target}")

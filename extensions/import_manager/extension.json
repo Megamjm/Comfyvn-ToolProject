@@ -4,5 +4,9 @@
   "version": "0.1.0",
   "official": true,
   "author": "ComfyVN Team",
-  "description": "Provides bulk asset import helpers for the Studio."
+  "description": "Provides bulk asset import helpers for the Studio.",
+  "entrypoint": "extension.py",
+  "requires": {
+    "comfyvn": ">=1.0.0"
+  }
 }

@@ -1,30 +1,4 @@
-"""Utilities for importing packaged visual novels (.zip/.cvnpack/.pak).
-
-This module is owned by the Importer chat (Phase 3) and is responsible for
-unpacking VN bundles, copying their contents into the local data registry, and
-emitting a structured summary that other systems (GUI, job queue, docs) can
-consume.  The default behaviour writes into ``./data`` but honours the
-``COMFYVN_DATA_ROOT`` override so tests and ephemeral runs can isolate their
-artifacts.
-
-The importer keeps the process intentionally defensive:
-
-* all filesystem writes are gated through safe path checks to avoid zip-slip
-  attacks;
-* duplicate files are skipped (unless ``overwrite=True``) and reported;
-* rich logging is emitted at INFO/DEBUG levels for troubleshooting;
-* optional external extractors (arc_unpacker, etc.) can be registered and
-  invoked when processing proprietary VN archive formats;
-* a JSON summary is persisted alongside the unpacked archive for auditability.
-
-Example::
-
-    from comfyvn.server.core.vn_importer import import_vn_package
-
-    result = import_vn_package("~/Downloads/demo.cvnpack")
-    print(result["scenes"])  # ["demo_intro"]
-
-"""
+"""Utilities for importing packaged visual novels (.zip/.cvnpack/.pak)."""
 
 from __future__ import annotations
 
@@ -39,7 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from comfyvn.core.normalizer import NormalizerResult, normalize_tree
+from comfyvn.importers import ALL_IMPORTERS, get_importer
 from comfyvn.server.core.external_extractors import extractor_manager
+from comfyvn.server.core.translation_pipeline import build_translation_bundle, plan_remix_tasks
 
 logger = logging.getLogger(__name__)
 _ALLOWED_ROOTS = {"scenes", "characters", "assets", "timelines", "licenses"}
@@ -67,6 +44,11 @@ class ImportSummary:
     warnings: List[str] = field(default_factory=list)
     data_root: str = field(default="")
     summary_path: Optional[str] = None
+    pack_path: Optional[str] = None
+    normalizer: Dict[str, object] = field(default_factory=dict)
+    detections: List[Dict[str, object]] = field(default_factory=list)
+    translation: Dict[str, object] = field(default_factory=dict)
+    remix: Dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -84,6 +66,11 @@ class ImportSummary:
             "warnings": self.warnings,
             "data_root": self.data_root,
             "summary_path": self.summary_path,
+            "pack_path": self.pack_path,
+            "normalizer": self.normalizer,
+            "detections": self.detections,
+            "translation": self.translation,
+            "remix": self.remix,
         }
 
 
@@ -98,6 +85,14 @@ def _resolve_data_root(explicit: Optional[Path] = None) -> Path:
     return root
 
 
+def _sanitize_member(path: str) -> Optional[Path]:
+    raw = Path(path)
+    parts = [p for p in raw.parts if p not in {"", ".", "./"}]
+    if not parts or any(part == ".." for part in parts):
+        return None
+    return Path(*parts)
+
+
 def _normalise_member(path: str) -> Optional[Path]:
     """Normalise archive member names and drop leading package folders."""
 
@@ -108,9 +103,12 @@ def _normalise_member(path: str) -> Optional[Path]:
     if any(p == ".." for p in parts):
         return None
 
-    # peel off arbitrary top-level folders until we hit an allowed root
     idx = 0
-    while idx < len(parts) - 1 and parts[idx].lower() not in _ALLOWED_ROOTS and parts[idx].lower() != "manifest.json":
+    while (
+        idx < len(parts) - 1
+        and parts[idx].lower() not in _ALLOWED_ROOTS
+        and parts[idx].lower() != "manifest.json"
+    ):
         idx += 1
     trimmed = parts[idx:]
     if not trimmed:
@@ -133,6 +131,47 @@ def _infer_adapter(manifest: Optional[Dict[str, object]], members: Iterable[str]
     return "generic"
 
 
+def _detect_importer(stage_root: Path, manifest: Optional[Dict[str, object]]):
+    detections: List[Dict[str, object]] = []
+    engine_hint = str(manifest.get("engine") or "").lower() if manifest else ""
+    if engine_hint:
+        try:
+            importer = get_importer(engine_hint)
+            detections.append(
+                {"id": importer.id, "label": importer.label, "confidence": 1.0, "reasons": ["manifest hint"]}
+            )
+            return importer, detections
+        except KeyError:
+            detections.append(
+                {"id": engine_hint, "label": engine_hint, "confidence": 0.0, "reasons": ["unknown manifest engine"]}
+            )
+
+    for importer in ALL_IMPORTERS:
+        try:
+            det = importer.detect(stage_root)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Engine detect failed for %s: %s", importer.id, exc)
+            continue
+        detections.append(
+            {
+                "id": importer.id,
+                "label": importer.label,
+                "confidence": det.confidence,
+                "reasons": det.reasons,
+            }
+        )
+
+    detections.sort(key=lambda item: item.get("confidence", 0.0), reverse=True)
+    if detections and detections[0].get("confidence", 0.0) > 0:
+        best_id = detections[0]["id"]
+        try:
+            importer = get_importer(best_id)
+            return importer, detections
+        except KeyError:
+            pass
+    return None, detections
+
+
 def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -150,11 +189,6 @@ def _load_json_bytes(content: bytes, *, source: str, warnings: List[str]) -> Opt
 def _write_json(dest: Path, payload: Dict[str, object]) -> None:
     _ensure_parent(dest)
     dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-def _write_binary(dest: Path, payload: bytes) -> None:
-    _ensure_parent(dest)
-    dest.write_bytes(payload)
 
 
 def _disallow_overwrite(dest: Path, *, warnings: List[str]) -> bool:
@@ -215,24 +249,7 @@ def import_vn_package(
     overwrite: bool = False,
     tool: Optional[str] = None,
 ) -> Dict[str, object]:
-    """Import a packaged VN archive (.cvnpack/.zip/.pak) into the workspace.
-
-    Parameters
-    ----------
-    package:
-        Path to the archive on disk.
-    data_root:
-        Base directory for data writes. Defaults to ``./data`` (or
-        ``COMFYVN_DATA_ROOT``). Tests can override this to avoid polluting the
-        real workspace.
-    overwrite:
-        When ``True`` existing files will be replaced. Otherwise they are left
-        untouched and a warning is emitted.
-    tool:
-        Optional extractor name to force usage of a registered external tool
-        (e.g., ``arc_unpacker``). When omitted we auto-detect based on file
-        extension and fall back to native zip handling.
-    """
+    """Import a packaged VN archive (.cvnpack/.zip/.pak) into the workspace."""
 
     package_path = Path(package).expanduser().resolve()
     if not package_path.exists():
@@ -244,54 +261,66 @@ def import_vn_package(
     import_root = root / "imports" / "vn" / import_id
     import_root.mkdir(parents=True, exist_ok=True)
 
-    summary = ImportSummary(
-        import_id=import_id,
-        package_path=str(package_path),
-        data_root=str(root),
-    )
+    summary = ImportSummary(import_id=import_id, package_path=str(package_path), data_root=str(root))
 
     logger.info("Starting VN import '%s' from %s", import_id, package_path)
 
     archive_copy = import_root / package_path.name
     shutil.copy2(package_path, archive_copy)
 
+    stage_root = import_root / "stage"
+    stage_root.mkdir(parents=True, exist_ok=True)
+
+    staged_entries: List[tuple[Path, Path]] = []
+    for raw_name, payload in entries:
+        safe_rel = _sanitize_member(raw_name)
+        if safe_rel is None:
+            summary.warnings.append(f"ignored unsafe member: {raw_name}")
+            logger.debug("Skipping unsafe archive member %s", raw_name)
+            continue
+        stage_path = stage_root / safe_rel
+        stage_path.parent.mkdir(parents=True, exist_ok=True)
+        stage_path.write_bytes(payload)
+        staged_entries.append((safe_rel, stage_path))
+
     scenes_dir = root / "scenes"
     characters_dir = root / "characters"
     timelines_dir = root / "timelines"
     assets_dir = root / "assets"
     licenses_dir = import_root / "licenses"
-
     manifest_path = import_root / "manifest.json"
 
     seen_member_names: List[str] = []
+    original_manifest: Optional[Dict[str, object]] = None
 
-    for raw_name, payload in entries:
-        normalised = _normalise_member(raw_name)
+    for safe_rel, stage_path in staged_entries:
+        normalised = _normalise_member(safe_rel.as_posix())
         if normalised is None:
-            summary.warnings.append(f"ignored path: {raw_name}")
-            logger.debug("Ignoring archive member %s", raw_name)
+            summary.warnings.append(f"ignored path: {safe_rel.as_posix()}")
+            logger.debug("Ignoring archive member %s", safe_rel)
             continue
 
         head = normalised.parts[0]
-        seen_member_names.append(raw_name)
+        seen_member_names.append(safe_rel.as_posix())
 
         if head == "manifest.json":
-            manifest = _load_json_bytes(payload, source=raw_name, warnings=summary.warnings)
+            manifest = _load_json_bytes(stage_path.read_bytes(), source=safe_rel.as_posix(), warnings=summary.warnings)
             if manifest:
+                original_manifest = manifest
                 summary.manifest = manifest
                 summary.licenses = list(manifest.get("licenses", [])) if isinstance(manifest.get("licenses"), list) else []
                 _write_json(manifest_path, manifest)
-                logger.debug("Loaded manifest from %s", raw_name)
+                logger.debug("Loaded manifest from %s", safe_rel)
             continue
 
         if head == "scenes":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(raw_name).with_suffix("")
+            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel).with_suffix("")
             dest = scenes_dir / rel
             if dest.suffix.lower() != ".json":
                 dest = dest.with_suffix(".json")
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            data = _load_json_bytes(payload, source=str(normalised), warnings=summary.warnings)
+            data = _load_json_bytes(stage_path.read_bytes(), source=str(normalised), warnings=summary.warnings)
             if data is None:
                 continue
             _write_json(dest, data)
@@ -300,13 +329,13 @@ def import_vn_package(
             continue
 
         if head == "characters":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(raw_name).with_suffix("")
+            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel).with_suffix("")
             dest = characters_dir / rel
             if dest.suffix.lower() != ".json":
                 dest = dest.with_suffix(".json")
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            data = _load_json_bytes(payload, source=str(normalised), warnings=summary.warnings)
+            data = _load_json_bytes(stage_path.read_bytes(), source=str(normalised), warnings=summary.warnings)
             if data is None:
                 continue
             _write_json(dest, data)
@@ -315,13 +344,13 @@ def import_vn_package(
             continue
 
         if head == "timelines":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(raw_name).with_suffix("")
+            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel).with_suffix("")
             dest = timelines_dir / rel
             if dest.suffix.lower() != ".json":
                 dest = dest.with_suffix(".json")
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            data = _load_json_bytes(payload, source=str(normalised), warnings=summary.warnings)
+            data = _load_json_bytes(stage_path.read_bytes(), source=str(normalised), warnings=summary.warnings)
             if data is None:
                 continue
             _write_json(dest, data)
@@ -334,30 +363,95 @@ def import_vn_package(
             dest = assets_dir / rel
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            _write_binary(dest, payload)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(stage_path, dest)
             summary.assets.append(str(rel))
             logger.debug("Imported asset %s -> %s", rel, dest)
             continue
 
         if head == "licenses":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(raw_name)
+            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel)
             dest = licenses_dir / rel
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            _write_binary(dest, payload)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(stage_path, dest)
             logger.debug("Stored license artifact %s -> %s", rel, dest)
             continue
 
-        summary.warnings.append(f"unhandled member: {raw_name}")
-        logger.debug("Unhandled archive member %s", raw_name)
+        summary.warnings.append(f"unhandled member: {safe_rel.as_posix()}")
+        logger.debug("Unhandled archive member %s", safe_rel)
 
-    summary_path = import_root / "summary.json"
-    summary.summary_path = summary_path.as_posix()
-    summary.adapter = _infer_adapter(summary.manifest, seen_member_names)
     summary.extractor = extractor_name
     if extractor_warning:
         summary.extractor_warning = extractor_warning
         summary.warnings.append(extractor_warning)
+
+    importer, detections = _detect_importer(stage_root, original_manifest or summary.manifest)
+    summary.detections = detections
+    normalizer_result: Optional[NormalizerResult] = None
+    adapter_id: Optional[str] = importer.id if importer else None
+
+    try:
+        if importer:
+            logger.info("Running %s importer for %s", importer.id, import_id)
+            normalizer_result = importer.import_pack(stage_root, import_root)
+        else:
+            fallback_adapter = _infer_adapter(original_manifest, seen_member_names)
+            adapter_id = fallback_adapter
+            fallback_engine = fallback_adapter if fallback_adapter != "generic" else "Generic"
+            fallback_patch: Dict[str, object] = {
+                "sources": {"root": str(stage_root)},
+                "notes": ["Generic normalizer fallback"],
+            }
+            if original_manifest:
+                fallback_patch["original_manifest"] = original_manifest
+            normalizer_result = normalize_tree(stage_root, import_root, engine=fallback_engine, manifest_patch=fallback_patch)
+    except Exception as exc:
+        summary.warnings.append(f"normalizer failed: {exc}")
+        logger.warning("Normalizer execution failed during import %s: %s", import_id, exc, exc_info=True)
+        normalizer_result = None
+
+    if normalizer_result:
+        summary.pack_path = normalizer_result.pack_root.as_posix()
+        summary.normalizer = {
+            "manifest_path": normalizer_result.manifest_path.as_posix(),
+            "thumbnails": normalizer_result.thumbnails,
+            "sidecars": normalizer_result.sidecars,
+        }
+        summary.warnings.extend(normalizer_result.warnings)
+        merged_manifest = dict(normalizer_result.manifest)
+        if original_manifest:
+            merged_manifest.setdefault("original_manifest", original_manifest)
+            for key in ("id", "title", "licenses"):
+                if key in original_manifest and key not in merged_manifest:
+                    merged_manifest[key] = original_manifest[key]
+        summary.manifest = merged_manifest
+        if isinstance(merged_manifest.get("licenses"), list):
+            summary.licenses = list(merged_manifest["licenses"])
+    else:
+        adapter_id = adapter_id or _infer_adapter(summary.manifest, seen_member_names)
+
+    summary.adapter = adapter_id or "generic"
+    if summary.manifest is None:
+        summary.manifest = {"engine": summary.adapter}
+
+    try:
+        scene_paths = [scenes_dir / f"{scene}.json" for scene in summary.scenes]
+        summary.translation = build_translation_bundle(scene_paths, import_root)
+    except Exception as exc:
+        summary.warnings.append(f"translation bundle failed: {exc}")
+        logger.warning("Translation bundle failed for %s: %s", import_id, exc)
+
+    try:
+        manifest_for_remix = summary.manifest or {}
+        summary.remix = plan_remix_tasks(manifest_for_remix, summary.scenes, import_root)
+    except Exception as exc:
+        summary.warnings.append(f"remix planning failed: {exc}")
+        logger.warning("Remix planning failed for %s: %s", import_id, exc)
+
+    summary_path = import_root / "summary.json"
+    summary.summary_path = summary_path.as_posix()
     _write_json(summary_path, summary.to_dict())
     logger.info(
         "VN import '%s' complete (%d scenes, %d characters, %d assets)",
@@ -367,7 +461,6 @@ def import_vn_package(
         len(summary.assets),
     )
 
-    # Soft fail if reindexing is unavailable to keep imports usable in minimal installs.
     try:  # pragma: no cover - optional integration
         from comfyvn.server.core import indexer
 

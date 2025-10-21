@@ -15,6 +15,6 @@
 
 ### Debugging Checklist
 1. Run `python setup/apply_phase06_rebuild.py --recreate-all` to refresh schema.
-2. Start server via `python -m comfyvn.server.app`. Tail `logs/server.log`.
+2. Start server via `python -m comfyvn.server.app`. Tail `system.log` in the user log directory.
 3. Launch GUI (`python run_comfyvn.py`) or instantiate `StudioWindow` from another PySide6 harness.
 4. Use `pytest -q` to run Studio API tests (skips if `httpx` unavailable).

@@ -8,7 +8,7 @@ These scaffolding utilities prepare the repository for the incoming Studio shell
 python setup/apply_phase06_rebuild.py --recreate-all
 ```
 
-This creates the canonical directories under `data/`, `cache/`, and `logs/`, and ensures the SQLite database at `comfyvn/data/comfyvn.db` contains the required v0.6 tables (all tagged with `project_id`).
+This initialises placeholder directories under `data/`, `cache/`, and `logs/` for backwards compatibility. At runtime, mutable data is redirected to the platform-specific locations exposed by `comfyvn.config.runtime_paths`, while the setup script ensures the legacy symlinks or empty folders exist for tooling that still references the repo paths. The SQLite database at `comfyvn/data/comfyvn.db` contains the required v0.6 tables (all tagged with `project_id`).
 
 ### 2. Registry access
 

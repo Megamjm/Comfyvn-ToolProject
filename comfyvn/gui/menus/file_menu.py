@@ -4,8 +4,9 @@ logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/file_menu.py
 from PySide6.QtWidgets import QMenu
 from comfyvn.gui.menus.menu_utils import make_action
-import json, os
+import json
 from PySide6.QtWidgets import QMessageBox
+from comfyvn.config.runtime_paths import recent_projects_file
 
 
 def register_menu(window, menubar):
@@ -25,12 +26,15 @@ def register_menu(window, menubar):
     # --- Recent Projects ---
     recent = QMenu("Open Recent", window)
     menu.addMenu(recent)
-    recents_path = "./logs/recent_projects.json"
+    recents_path = recent_projects_file()
 
     def refresh_recent():
         recent.clear()
-        if os.path.exists(recents_path):
-            data = json.load(open(recents_path))
+        if recents_path.exists():
+            try:
+                data = json.loads(recents_path.read_text(encoding="utf-8"))
+            except Exception:
+                data = []
             for path in data[-10:]:
                 recent.addAction(
                     make_action(

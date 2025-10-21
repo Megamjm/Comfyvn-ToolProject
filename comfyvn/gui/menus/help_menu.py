@@ -2,8 +2,11 @@ from PySide6.QtGui import QAction
 import logging
 logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/help_menu.py
-import webbrowser, os
+import webbrowser
 from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from comfyvn.config.runtime_paths import diagnostics_dir
 from comfyvn.gui.menus.menu_utils import make_action
 
 
@@ -18,11 +21,11 @@ def register_menu(window, menubar):
             ),
         )
     )
-    menu.addAction(
-        make_action(
-            "🧾 Diagnostics Folder", window, lambda: os.startfile("./logs/diagnostics")
-        )
-    )
+    def _open_diagnostics():
+        target = diagnostics_dir()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    menu.addAction(make_action("🧾 Diagnostics Folder", window, _open_diagnostics))
     about_act = make_action(
         "ℹ️ About",
         window,

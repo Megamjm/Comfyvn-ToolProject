@@ -48,7 +48,7 @@ class TyranoImporter:
         out_dir: Path | str,
         *,
         hooks: Optional[Dict[str, str]] = None,
-    ) -> Path:
+    ):
         root_path = Path(root)
         out_path = Path(out_dir)
         manifest = {
@@ -57,7 +57,7 @@ class TyranoImporter:
             "notes": ["Tyrano importer executed"],
         }
         LOGGER.info("Normalizing Tyrano project from %s -> %s", root_path, out_path)
-        return normalize_tree(
+        result = normalize_tree(
             root_path,
             out_path,
             engine=self.label,
@@ -65,6 +65,9 @@ class TyranoImporter:
             hooks=hooks or {},
             include_dirs=["data"],
         )
+        if result.warnings:
+            LOGGER.warning("Tyrano normalizer warnings:\n%s", "\n".join(result.warnings))
+        return result
 
 
 __all__ = ["TyranoImporter"]

@@ -1,0 +1,133 @@
+{
+  "providers": [
+    {
+      "id": "local",
+      "name": "Local ComfyUI",
+      "kind": "local",
+      "service": "comfyui",
+      "base_url": "http://127.0.0.1:8188",
+      "active": true,
+      "priority": 0,
+      "meta": {
+        "min_vram_gb": null,
+        "cost": {
+          "hourly_usd": 0.0,
+          "billing_increment_minutes": 0
+        },
+        "supports_large_assets": true,
+        "supports_persistent_storage": true,
+        "supports_long_running": true,
+        "supports_short_burst": true,
+        "cost_tier": 0,
+        "gpu": "auto",
+        "auth_fields": [],
+        "policy_hints": {
+          "voice_synthesis": "Use local GPU when latency sensitive and VRAM requirements fit available hardware.",
+          "cg_batch": "Validate local VRAM/utilization before committing long CG batches.",
+          "translation": "Local CPU fallback acceptable for translation-only pipelines."
+        },
+        "preferred_workloads": [
+          "voice_synthesis",
+          "translation"
+        ]
+      },
+      "config": {},
+      "last_health": {
+        "ok": true,
+        "ts": null
+      },
+      "created_at": null,
+      "updated_at": null
+    },
+    {
+      "id": "runpod",
+      "name": "RunPod",
+      "kind": "remote",
+      "service": "runpod",
+      "base_url": "https://api.runpod.io/v2/",
+      "active": true,
+      "priority": 10,
+      "meta": {
+        "min_vram_gb": 12,
+        "max_vram_gb": 24,
+        "cost": {
+          "hourly_usd": 0.46,
+          "billing_increment_minutes": 1
+        },
+        "supports_large_assets": false,
+        "supports_persistent_storage": false,
+        "supports_long_running": true,
+        "supports_short_burst": true,
+        "regions": [
+          "us-west",
+          "eu-central"
+        ],
+        "cost_tier": 2,
+        "gpu": "A10G",
+        "auth_fields": [
+          "api_key"
+        ],
+        "policy_hints": {
+          "voice_synthesis": "Burst voice or TTS imports spin up quickly; use serverless pods with auto-stop.",
+          "cg_batch": "Select dedicated pods for long renders to avoid eviction from community nodes.",
+          "translation": "Pair with CPU-friendly pod types; GPU optional unless TTS models requested."
+        },
+        "preferred_workloads": [
+          "voice_synthesis"
+        ]
+      },
+      "config": {},
+      "last_health": {
+        "ok": null,
+        "ts": null
+      },
+      "created_at": null,
+      "updated_at": null
+    },
+    {
+      "id": "lambda",
+      "name": "Lambda Labs",
+      "kind": "remote",
+      "service": "lambda",
+      "base_url": "https://cloud.lambdalabs.com/api/v1/",
+      "active": true,
+      "priority": 20,
+      "meta": {
+        "min_vram_gb": 24,
+        "max_vram_gb": 80,
+        "cost": {
+          "hourly_usd": 1.1,
+          "billing_increment_minutes": 60
+        },
+        "supports_large_assets": true,
+        "supports_persistent_storage": true,
+        "supports_long_running": true,
+        "supports_short_burst": false,
+        "regions": [
+          "us-east",
+          "us-west"
+        ],
+        "cost_tier": 3,
+        "gpu": "A100",
+        "auth_fields": [
+          "api_key"
+        ],
+        "policy_hints": {
+          "cg_batch": "High VRAM nodes handle multi-hour CG baking and diffusion upscales.",
+          "voice_synthesis": "Overkill for short TTS workloads; consider RunPod or local first.",
+          "translation": "GPU optional; use if translation requires transformer fine-tuning."
+        },
+        "preferred_workloads": [
+          "cg_batch"
+        ]
+      },
+      "config": {},
+      "last_health": {
+        "ok": null,
+        "ts": null
+      },
+      "created_at": null,
+      "updated_at": null
+    }
+  ]
+}

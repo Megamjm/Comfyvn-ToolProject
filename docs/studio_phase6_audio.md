@@ -3,11 +3,11 @@ ComfyVN — Studio Phase 6 (Audio & Music)
 
 Scope
 -----
-Phase 6 establishes the audio subsystem for speech synthesis, adaptive music, and cache controls. The initial implementation focuses on API scaffolding and logging so downstream teams can swap in real engines without breaking contracts.
+Phase 6 establishes the audio subsystem for speech synthesis, adaptive music, and cache controls. The pipelines now delegate to ComfyUI workflows when available, while retaining deterministic local fallbacks so automated tests and offline work remain stable.
 
 Subsystem Components
 --------------------
-- Core stubs in `comfyvn/core/audio_stub.py` generate deterministic artifacts and sidecars.
+- Core pipelines in `comfyvn/core/audio_stub.py` and `comfyvn/core/music_remix.py` drive ComfyUI workflows (TTS + MusicGen) when configured, with deterministic synthetic fallbacks if the server/workflows are unavailable.
 - API layer exposes `/api/tts/*` for synthesis and `/voice/*` for GUI voice management.
 - Asset registry integrations store generated files under `exports/tts/` with JSON metadata.
 - Future music remix endpoints will piggyback on the same logging and provenance patterns.
@@ -36,22 +36,30 @@ API Hooks
 Data & Cache Flow
 -----------------
 1. Incoming synth requests funnel through `comfyvn/server/modules/tts_api.py`.
-2. `synth_voice()` hashes `{voice|text|scene|character|lang|style|model_hash}` to produce a deterministic filename.
-3. The audio cache manager (`comfyvn/core/audio_cache.py`) checks `cache/audio_cache.json` to reuse prior renders.
-4. On cache hit, responses set `cached=true` without touching the artifact; cache miss writes the artifact + updates the registry.
+2. `synth_voice()` hashes `{voice|text|scene|character|lang|style|model_hash}` to produce a deterministic filename and cache key.
+3. When the active provider is `ComfyUI`, the workflow JSON (default: `workflows/tts_comfy.json`) receives templated inputs before being submitted to the running server. Generated audio is copied from the ComfyUI output directory into `exports/tts/`, preserving metadata in the sidecar.
+4. If the workflow or server is missing, the synthetic fallback generates a WAV with the same cache key, ensuring repeatability.
+5. The audio cache manager (`comfyvn/core/audio_cache.py`) checks `cache/audio_cache.json` to reuse prior renders.
 5. JSON sidecars describe inputs (`scene_id`, `character_id`, language, style). Asset registration consumes artifact + sidecar.
 6. Music remix requests follow the same artifact + sidecar pattern under `exports/music/`.
 
 Logging & Debugging
 -------------------
 - Logger names: `comfyvn.api.tts`, `comfyvn.api.voice`, `comfyvn.audio.pipeline`.
-- Default log file: `logs/server.log`; add a rotating handler for `logs/audio.log` if deeper tracing is needed.
+- Default log file: `system.log` in the user log directory; add a rotating handler for `audio.log` (same folder) if deeper tracing is needed.
 - Debug checklist:
   1. `curl -X POST http://localhost:8000/api/tts/synthesize -d '{"text":"Line","voice":"neutral"}' -H 'Content-Type: application/json'`
-  2. Inspect `exports/tts/<voice>_<hash>.txt` and `<voice>_<hash>.json` for matching metadata.
-  3. Tail `logs/server.log` and confirm INFO lines show `cached=True` on the second request.
+2. Inspect `exports/tts/<voice>_<hash>.wav` and `<voice>_<hash>.json` for matching metadata. When ComfyUI is active, the sidecar includes `provider`, `source_file`, and `workflow` fields for traceability.
+  3. Tail `system.log` in the user log directory and confirm INFO lines show `cached=True` on the second request.
   4. For cache inspection, view `cache/audio_cache.json` and confirm the `key` matches `{voice|text_hash|lang|character|style|model_hash}`.
-  5. Test music remix with `curl -X POST http://localhost:8000/api/music/remix -H 'Content-Type: application/json' -d '{"scene_id":"scene.demo","target_style":"lofi","mood_tags":["calm"]}'` and check `exports/music/`.
+  5. Test music remix with `curl -X POST http://localhost:8000/api/music/remix -H 'Content-Type: application/json' -d '{"scene_id":"scene.demo","target_style":"lofi","mood_tags":["calm"]}'` and check `exports/music/` for the rendered `.wav` plus sidecar. With ComfyUI enabled the sidecar will include `provider=comfyui_local` and a `source_file` pointing at the workflow output.
+
+Audio Provider Settings
+-----------------------
+- The Settings panel now exposes dedicated sections for Text-to-Speech and Music Remix services.
+- Open-source, freemium, and paid providers are listed with quick notes and portal links (Bark, Coqui XTTS, ElevenLabs, Azure Speech, Meta AudioCraft, Suno AI, Soundraw, AIVA, etc.).
+- Selecting the ComfyUI option unlocks editable fields for the base URL, workflow JSON, and output directory so the studio can target local or remote ComfyUI hosts.
+- Settings persist to `data/settings/config.json` under the `audio.tts` and `audio.music` keys; the runtime reads these values to decide whether to call ComfyUI or fall back to the synthetic generator.
 - Errors raise HTTP 400 for empty text and HTTP 500 for unexpected synthesis failures; both cases record WARN/ERROR entries in the log.
 
 Future Hooks

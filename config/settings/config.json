@@ -1,0 +1,21 @@
+{
+  "developer": {
+    "verbose": true,
+    "toasts": true,
+    "file_only": false
+  },
+  "ui": {
+    "menu_sort_mode": "load_order"
+  },
+  "server": {
+    "local_port": 8001
+  },
+  "policy": {
+    "ack_legal_v1": false,
+    "ack_timestamp": null,
+    "warn_override_enabled": true
+  },
+  "filters": {
+    "content_mode": "sfw"
+  }
+}

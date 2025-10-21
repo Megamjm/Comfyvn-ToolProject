@@ -5,8 +5,9 @@ from PySide6.QtGui import QAction
 import json, os
 from pathlib import Path
 from typing import List, Dict, Any
+from comfyvn.config.runtime_paths import settings_file
 
-WS_FILE = Path("data/settings/workspace.json")
+WS_FILE = settings_file("workspace.json")
 
 DEFAULTS = {
     "open_panels": [],    # ["timeline_view","lore_view"]

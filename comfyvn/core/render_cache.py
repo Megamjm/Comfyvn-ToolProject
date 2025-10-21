@@ -3,8 +3,9 @@ from PySide6.QtGui import QAction
 import json, time
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+from comfyvn.config.runtime_paths import render_cache_dir
 
-DEFAULT_DIR = Path("./data/cache/renders")
+DEFAULT_DIR = render_cache_dir()
 
 class RenderCache:
     def __init__(self, root: str|Path = DEFAULT_DIR):

@@ -11,6 +11,7 @@ import subprocess
 import threading
 import datetime
 from pathlib import Path
+from comfyvn.config.runtime_paths import logs_dir
 
 
 class LoRATrainingJob:
@@ -25,7 +26,7 @@ class LoRATrainingJob:
         self.steps = steps
         self.learning_rate = learning_rate
         self.status = "pending"
-        self.log_path = Path("./logs/lora_training")
+        self.log_path = logs_dir("lora_training")
         self.log_path.mkdir(parents=True, exist_ok=True)
         self.log_file = (
             self.log_path

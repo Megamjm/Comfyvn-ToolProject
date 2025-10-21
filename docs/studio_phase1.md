@@ -6,7 +6,8 @@
   Status: ✅ (2025-10-20)  
   - `comfyvn/server/app.py` exposes `create_app()` factory.  
   - `/health` and `/status` endpoints registered.  
-  - Logging initialised to `logs/server.log`; CORS enabled.
+  - Logging initialised to `system.log` in the user log directory; CORS enabled.
+  - Launcher resolves the FastAPI port via `--server-port` → `COMFYVN_SERVER_PORT` → `data/settings/config.json` (`server.local_port`) → fallback `8001`, keeping GUI + backend aligned.
 
 - **Part B — GUI shell & metrics**  
   Status: ✅ (2025-10-20)  
@@ -23,4 +24,4 @@
 - Phase 2 migration extensions (`setup/apply_phase06_rebuild.py`).  
 - Studio registries expansion (`comfyvn/studio/core`).  
 - CLI consolidation for bundle/manifest workflows.
-
+- ~~Silence the `RegisterAssetRequest.copy` Pydantic warning and add regression coverage for `/settings/save` deep-merge semantics.~~ ✅ 2025-10-23 — Field renamed to `copy_file` and regression tests added for settings deep-merge and launcher smoke checks.

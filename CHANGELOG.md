@@ -1,6 +1,8 @@
 ### 2025-10-23 — Audio Remix & Policy Gate (chat: Audio & Policy)
-- Introduced `comfyvn/core/audio_cache.py` and expanded TTS stub to incorporate style/model hashes, returning deterministic cache hits and writing metadata to `cache/audio_cache.json`.
-- Added `/api/music/remix` FastAPI endpoint backed by `comfyvn/core/music_remix.py`, enabling stubbed scene/style remix artifacts with sidecars under `exports/music/`.
+- TTS and music remix pipelines now submit templated workflows to ComfyUI when available, automatically falling back to deterministic synthetic generation if the server or workflow is missing.
+- Introduced `comfyvn/core/audio_cache.py` and upgraded the TTS pipeline to emit deterministic WAV voice lines with cache-backed dedupe and structured provenance sidecars.
+- Added `/api/music/remix` FastAPI endpoint backed by `comfyvn/core/music_remix.py`, generating cached remix WAVs plus JSON metadata in `exports/music/`.
+- Settings panel gained dedicated TTS and Music sections listing open-source, freemium, and paid providers (ComfyUI, Bark, Coqui XTTS, ElevenLabs, Azure Speech, AudioCraft, Suno, Soundraw, AIVA) with editable ComfyUI connection fields.
 - Delivered liability gate + filter controls via `/api/policy/{status,ack,evaluate,filters,filter-preview}`, ensuring legal warnings surface while preserving user choice.
 - Content filter modes (`sfw|warn|unrestricted`) route through `comfyvn/core/content_filter.py`, log advisory warnings, and expose preview responses for GUI panels.
 - Documentation updates: refreshed `docs/studio_phase6_audio.md`, `docs/studio_phase7_advisory.md`, and `architecture.md` with new API hooks and debugging steps.

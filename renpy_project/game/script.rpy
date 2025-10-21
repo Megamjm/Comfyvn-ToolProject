@@ -2,4 +2,12 @@
 label start:
     scene black
     "Project initialized. Use the exporter to add scenes."
+    call comfyvn_sample_scene
+    return
+
+
+label comfyvn_sample_scene:
+    "Welcome to the ComfyVN sample scene."
+    "Ren'Py auto-setup is complete, so you can extend this project right away."
+    "Edit this label or add new ones under game/ to build out your visual novel."
     return

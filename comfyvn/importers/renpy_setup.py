@@ -165,6 +165,31 @@ def _write_metadata(target_dir: Path, *, version: str, archive_name: str) -> Non
     metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _chmod_x(path: Path) -> None:
+    try:
+        mode = path.stat().st_mode
+        path.chmod(mode | 0o111)
+    except Exception as exc:  # pragma: no cover - permissions vary per platform
+        LOGGER.debug("Failed to set executable bit on %s: %s", path, exc)
+
+
+def _ensure_exec_bits(home: Path) -> None:
+    candidates = [
+        home / "renpy.sh",
+        home / "renpy",
+        home / "renpy.exe",
+        home / "launcher" / "Renpy.exe",
+    ]
+    lib_dir = home / "lib"
+    if lib_dir.exists():
+        for root in lib_dir.rglob("renpy"):
+            if root.is_file():
+                candidates.append(root)
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            _chmod_x(candidate)
+
+
 def ensure_renpy_sdk(
     version: Optional[str] = None,
     *,
@@ -193,13 +218,8 @@ def ensure_renpy_sdk(
             installed_dir = _extract_archive(archive_path, target_dir)
 
         _write_metadata(target_dir, version=resolved_version, archive_name=archive_path.name)
+        _ensure_exec_bits(installed_dir)
         executable = get_renpy_executable(installed_dir)
-        if executable and executable.suffix not in (".exe",):
-            try:
-                executable.chmod(executable.stat().st_mode | 0o111)
-            except Exception as exc:  # pragma: no cover - permission issues
-                LOGGER.debug("Failed to mark %s executable: %s", executable, exc)
-
         LOGGER.info("Ren'Py SDK ready at %s (version %s)", installed_dir, resolved_version)
         return installed_dir
     finally:

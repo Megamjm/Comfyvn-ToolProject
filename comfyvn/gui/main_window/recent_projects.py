@@ -1,9 +1,10 @@
 import json
 import logging
-from pathlib import Path
 from typing import List
 
-RECENT_PATH = Path("logs/recent_projects.json")
+from comfyvn.config.runtime_paths import recent_projects_file
+
+RECENT_PATH = recent_projects_file()
 logger = logging.getLogger(__name__)
 
 

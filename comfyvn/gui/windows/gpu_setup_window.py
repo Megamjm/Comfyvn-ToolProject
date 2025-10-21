@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineE
 from PySide6.QtCore import Qt
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.core.compute_registry import ComputeProviderRegistry
+from comfyvn.config.runtime_paths import config_dir
 import json, os
 from pathlib import Path
 
@@ -85,9 +86,7 @@ class GPUSetupWindow(QDialog):
 
     # ---- config I/O (local, decoupled from server) ----
     def _cfg_path(self) -> Path:
-        p = Path("data/settings_gpu.json")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        return p
+        return config_dir("settings", "gpu_setup.json")
 
     def _load_local_cfg(self):
         try:

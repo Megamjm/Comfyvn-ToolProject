@@ -57,7 +57,7 @@ class KiriKiriImporter:
         out_dir: Path | str,
         *,
         hooks: Optional[Dict[str, str]] = None,
-    ) -> Path:
+    ):
         root_path = Path(root)
         out_path = Path(out_dir)
         manifest = {
@@ -66,13 +66,16 @@ class KiriKiriImporter:
             "notes": ["KiriKiri importer executed"],
         }
         LOGGER.info("Normalizing KiriKiri project from %s -> %s", root_path, out_path)
-        return normalize_tree(
+        result = normalize_tree(
             root_path,
             out_path,
             engine=self.label,
             manifest_patch=manifest,
             hooks=hooks or {},
         )
+        if result.warnings:
+            LOGGER.warning("KiriKiri normalizer warnings:\n%s", "\n".join(result.warnings))
+        return result
 
 
 __all__ = ["KiriKiriImporter"]

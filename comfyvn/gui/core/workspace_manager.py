@@ -2,11 +2,13 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMainWindow
 import json, os
 from pathlib import Path
+from comfyvn.config.runtime_paths import workspace_dir
 
 class WorkspaceManager:
     def __init__(self, window: QMainWindow):
         self.window = window
-        self.dir = Path("data/workspaces"); self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir = workspace_dir()
+        self.dir.mkdir(parents=True, exist_ok=True)
         self.current = "default_space"
 
     def save(self, name=None):

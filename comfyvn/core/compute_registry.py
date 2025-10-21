@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+from comfyvn.config.runtime_paths import settings_file
+from comfyvn.core.provider_profiles import CURATED_PROVIDER_PROFILES, ProviderProfile
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,109 +26,34 @@ class ProviderTemplate:
     gpu: str
     fields: Iterable[str]
     priority: int
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    policy_hints: Dict[str, str] = field(default_factory=dict)
+    preferred_workloads: Iterable[str] = field(default_factory=tuple)
+
+
+def _template_from_profile(profile: ProviderProfile) -> ProviderTemplate:
+    metadata = dict(profile.metadata)
+    metadata.setdefault("gpu", profile.default_gpu)
+    metadata.setdefault("auth_fields", list(profile.auth_fields))
+    metadata.setdefault("policy_hints", dict(profile.policy_hints))
+    metadata.setdefault("preferred_workloads", list(profile.preferred_workloads))
+    return ProviderTemplate(
+        id=profile.id,
+        name=profile.name,
+        kind=profile.kind,
+        service=profile.service,
+        base_url=profile.base_url,
+        gpu=profile.default_gpu,
+        fields=list(profile.auth_fields),
+        priority=profile.priority,
+        metadata=metadata,
+        policy_hints=dict(profile.policy_hints),
+        preferred_workloads=list(profile.preferred_workloads),
+    )
 
 
 DEFAULT_PROVIDER_TEMPLATES: List[ProviderTemplate] = [
-    ProviderTemplate(
-        id="local",
-        name="Local ComfyUI",
-        kind="local",
-        service="comfyui",
-        base_url="http://127.0.0.1:8188",
-        gpu="auto",
-        fields=[],
-        priority=0,
-    ),
-    ProviderTemplate(
-        id="runpod",
-        name="RunPod",
-        kind="remote",
-        service="runpod",
-        base_url="https://api.runpod.io/v2/",
-        gpu="A10G",
-        fields=["api_key"],
-        priority=10,
-    ),
-    ProviderTemplate(
-        id="vast",
-        name="Vast.ai",
-        kind="remote",
-        service="vast.ai",
-        base_url="https://api.vast.ai/v0/",
-        gpu="RTX4090",
-        fields=["api_key"],
-        priority=20,
-    ),
-    ProviderTemplate(
-        id="lambda",
-        name="Lambda Labs",
-        kind="remote",
-        service="lambda",
-        base_url="https://cloud.lambdalabs.com/api/v1/",
-        gpu="A100",
-        fields=["api_key"],
-        priority=30,
-    ),
-    ProviderTemplate(
-        id="paperspace",
-        name="Paperspace Gradient",
-        kind="remote",
-        service="paperspace",
-        base_url="https://api.paperspace.io",
-        gpu="RTX3090",
-        fields=["api_key"],
-        priority=40,
-    ),
-    ProviderTemplate(
-        id="coreweave",
-        name="CoreWeave",
-        kind="remote",
-        service="coreweave",
-        base_url="https://api.coreweave.com",
-        gpu="A40",
-        fields=["username", "password"],
-        priority=50,
-    ),
-    ProviderTemplate(
-        id="google",
-        name="Google Cloud",
-        kind="remote",
-        service="gcp",
-        base_url="https://compute.googleapis.com",
-        gpu="L4",
-        fields=["service_account_json"],
-        priority=60,
-    ),
-    ProviderTemplate(
-        id="azure",
-        name="Microsoft Azure",
-        kind="remote",
-        service="azure",
-        base_url="https://management.azure.com",
-        gpu="A10",
-        fields=["tenant_id", "client_id", "client_secret"],
-        priority=70,
-    ),
-    ProviderTemplate(
-        id="aws",
-        name="AWS EC2",
-        kind="remote",
-        service="aws",
-        base_url="https://ec2.amazonaws.com",
-        gpu="A10G",
-        fields=["access_key", "secret_key"],
-        priority=80,
-    ),
-    ProviderTemplate(
-        id="unraid",
-        name="Unraid / LAN Node",
-        kind="remote",
-        service="lan",
-        base_url="http://unraid.local:8001",
-        gpu="Local GPU",
-        fields=["endpoint"],
-        priority=90,
-    ),
+    _template_from_profile(profile) for profile in CURATED_PROVIDER_PROFILES
 ]
 
 
@@ -147,7 +75,7 @@ class ComputeProviderRegistry:
 
     def __init__(
         self,
-        path: str | Path = "data/settings/providers.json",
+        path: str | Path = settings_file("providers.json"),
         templates: Optional[Iterable[ProviderTemplate]] = None,
     ):
         self.path = Path(path)
@@ -160,6 +88,33 @@ class ComputeProviderRegistry:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _template_for(
+        self,
+        *,
+        provider_id: Optional[str] = None,
+        service: Optional[str] = None,
+    ) -> Optional[ProviderTemplate]:
+        provider_id = (provider_id or "").lower() or None
+        service = (service or "").lower() or None
+        for template in self.templates:
+            if provider_id and template.id == provider_id:
+                return template
+            if service and template.service == service:
+                return template
+        return None
+
+    def _template_meta(self, template: Optional[ProviderTemplate]) -> Dict[str, Any]:
+        if not template:
+            return {}
+        meta = json.loads(json.dumps(template.metadata))
+        meta.setdefault("gpu", template.gpu)
+        if template.policy_hints:
+            meta.setdefault("policy_hints", dict(template.policy_hints))
+        if template.preferred_workloads:
+            meta.setdefault("preferred_workloads", list(template.preferred_workloads))
+        meta.setdefault("auth_fields", list(template.fields))
+        return meta
+
     def _load(self) -> None:
         with self._lock:
             if self.path.exists():
@@ -183,17 +138,20 @@ class ComputeProviderRegistry:
     def _ensure_local_locked(self) -> None:
         providers = self._data.get("providers", [])
         if not any(p.get("id") == "local" for p in providers):
-            template = next((t for t in self.templates if t.id == "local"), None)
+            template = self._template_for(provider_id="local")
+            meta = self._template_meta(template)
+            if not meta:
+                meta = {"gpu": "auto"}
             providers.append(
                 {
                     "id": "local",
                     "name": template.name if template else "Local GPU",
-                    "kind": "local",
-                    "service": "comfyui",
+                    "kind": template.kind if template else "local",
+                    "service": template.service if template else "comfyui",
                     "base_url": template.base_url if template else "http://127.0.0.1:8188",
                     "active": True,
                     "priority": 0,
-                    "meta": {"gpu": "auto"},
+                    "meta": meta,
                     "config": {},
                     "last_health": {"ok": True, "ts": None},
                     "created_at": None,
@@ -212,10 +170,26 @@ class ComputeProviderRegistry:
     def _mask(self, value: Any, key: str) -> Any:
         if not isinstance(value, str):
             return value
-        lowered = key.lower()
-        if any(token in lowered for token in ("key", "secret", "token", "password")):
+        if self._is_secret_key(key):
             return "*" * len(value) if value else value
         return value
+
+    def _is_secret_key(self, key: str) -> bool:
+        lowered = (key or "").lower()
+        return any(token in lowered for token in ("key", "secret", "token", "password"))
+
+    def _generate_unique_id(self, base: str) -> str:
+        with self._lock:
+            slug = _slugify(base or "provider")
+            existing = {row.get("id") for row in self._data.get("providers", [])}
+            if slug not in existing:
+                return slug
+            suffix = 2
+            while True:
+                candidate = f"{slug}-{suffix}"
+                if candidate not in existing:
+                    return candidate
+                suffix += 1
 
     # ------------------------------------------------------------------
     # Public API
@@ -231,6 +205,9 @@ class ComputeProviderRegistry:
                 "gpu": t.gpu,
                 "fields": list(t.fields),
                 "priority": t.priority,
+                "metadata": json.loads(json.dumps(t.metadata)),
+                "policy_hints": dict(t.policy_hints),
+                "preferred_workloads": list(t.preferred_workloads),
             }
             for t in self.templates
         ]
@@ -272,6 +249,12 @@ class ComputeProviderRegistry:
         config = payload.get("config") or {}
         meta = payload.get("meta") or {}
         active = bool(payload.get("active", True))
+        template = self._template_for(provider_id=provider_id, service=service)
+        template_meta = self._template_meta(template)
+        if template_meta:
+            merged_meta = dict(template_meta)
+            merged_meta.update(meta)
+            meta = merged_meta
 
         with self._lock:
             idx = self._find_index_locked(provider_id)
@@ -318,6 +301,132 @@ class ComputeProviderRegistry:
             self._save_locked()
             LOGGER.debug("Provider registry updated: %s", provider_id)
             return json.loads(json.dumps(entry))
+
+    def create_from_template(
+        self,
+        template_id: str,
+        *,
+        provider_id: Optional[str] = None,
+        name: Optional[str] = None,
+        base_url: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+        meta_overrides: Optional[Dict[str, Any]] = None,
+        priority: Optional[int] = None,
+        active: bool = True,
+    ) -> Dict[str, Any]:
+        template = self._template_for(provider_id=template_id, service=template_id)
+        if template is None:
+            raise ValueError(f"template '{template_id}' not found")
+
+        with self._lock:
+            if provider_id:
+                candidate = _slugify(provider_id)
+                if self._find_index_locked(candidate) is not None:
+                    raise ValueError(f"provider '{candidate}' already exists")
+                final_id = candidate
+            else:
+                base_name = name or template.name or template.id
+                final_id = self._generate_unique_id(base_name)
+
+        payload = {
+            "id": final_id,
+            "name": name or template.name,
+            "kind": template.kind,
+            "service": template.service,
+            "base_url": base_url or template.base_url,
+            "config": config or {},
+            "meta": meta_overrides or {},
+            "priority": priority if priority is not None else template.priority,
+            "active": active,
+        }
+        return self.register(payload)
+
+    def export_all(self, *, mask_secrets: bool = True) -> Dict[str, Any]:
+        with self._lock:
+            providers = json.loads(json.dumps(self._data.get("providers", [])))
+            if mask_secrets:
+                for entry in providers:
+                    config = entry.get("config") or {}
+                    entry["config"] = {
+                        key: value
+                        for key, value in config.items()
+                        if not self._is_secret_key(key)
+                    }
+            return {
+                "version": 1,
+                "exported_at": int(time.time() * 1000),
+                "providers": providers,
+            }
+
+    def import_data(
+        self,
+        data: Dict[str, Any] | Sequence[Dict[str, Any]],
+        *,
+        replace: bool = False,
+        overwrite: bool = True,
+    ) -> List[Dict[str, Any]]:
+        providers: Optional[List[Dict[str, Any]]] = None
+        if isinstance(data, dict):
+            raw = data.get("providers")
+            if raw is not None and not isinstance(raw, list):
+                raise TypeError("payload.providers must be a list")
+            providers = raw
+        elif isinstance(data, Sequence) and not isinstance(data, (str, bytes)):
+            providers = list(data)  # type: ignore[arg-type]
+        if providers is None:
+            raise TypeError("import payload must contain a list of providers")
+
+        imported: List[Dict[str, Any]] = []
+        last_health_updates: List[tuple[str, Dict[str, Any]]] = []
+
+        with self._lock:
+            if replace:
+                self._data["providers"] = []
+
+            for entry in providers:
+                if not isinstance(entry, dict):
+                    continue
+                provider_id = entry.get("id")
+                base_url = entry.get("base_url")
+                if not provider_id or not base_url:
+                    LOGGER.debug("Skipping provider import missing id/base_url: %s", entry)
+                    continue
+                if (
+                    not overwrite
+                    and self._find_index_locked(provider_id) is not None
+                ):
+                    LOGGER.debug("Skipping provider '%s' (exists and overwrite disabled)", provider_id)
+                    continue
+
+                payload = {
+                    "id": provider_id,
+                    "name": entry.get("name"),
+                    "kind": entry.get("kind"),
+                    "service": entry.get("service"),
+                    "base_url": base_url,
+                    "config": entry.get("config") or {},
+                    "meta": entry.get("meta") or {},
+                    "priority": entry.get("priority"),
+                    "active": entry.get("active", True),
+                    "ts": entry.get("updated_at") or entry.get("ts"),
+                }
+
+                registered = self.register(payload)
+                imported.append(registered)
+                last_health = entry.get("last_health")
+                if isinstance(last_health, dict):
+                    last_health_updates.append((registered["id"], last_health))
+
+            for provider_id, status in last_health_updates:
+                idx = self._find_index_locked(provider_id)
+                if idx is None:
+                    continue
+                row = self._data["providers"][idx]
+                row["last_health"] = status
+
+            self._ensure_local_locked()
+            self._save_locked()
+            return imported
 
     def remove(self, provider_id: str) -> bool:
         if provider_id == "local":

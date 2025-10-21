@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys, subprocess
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, QUrl, QSettings
 from PySide6.QtWidgets import (
@@ -40,6 +41,8 @@ from comfyvn.gui.panels.imports_panel import ImportsPanel
 from comfyvn.gui.panels.audio_panel import AudioPanel
 from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
 from comfyvn.gui.widgets.log_hub import LogHub
+from comfyvn.gui.panels.notify_overlay import NotifyOverlay
+from comfyvn.core.notifier import notifier
 
 # Central space
 from comfyvn.gui.panels.central_space import CentralSpace
@@ -49,6 +52,7 @@ from comfyvn.gui.main_window.menu_bar import ensure_menu_bar, update_window_menu
 from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
 from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
 from comfyvn.studio.core import SceneRegistry, CharacterRegistry
+from comfyvn.config import runtime_paths
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +61,7 @@ def _detached_server():
     try:
         exe = sys.executable
         script = Path("comfyvn/app.py").resolve()
-        log_path = Path("logs/server_detached.log")
+        log_path = runtime_paths.logs_dir("server_detached.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log:
             proc = subprocess.Popen([exe, str(script)], stdout=log, stderr=log)
@@ -76,7 +80,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         # Services & controllers
         self.bridge = ServerBridge()
         self.dockman = DockManager(self)
-        workspace_store = Path("data/workspaces")
+        workspace_store = runtime_paths.workspace_dir()
         self.workspace = WorkspaceController(self, workspace_store)
         self._recent_projects = load_recent()
         self._current_project_path: Path | None = None
@@ -102,6 +106,12 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._status.addPermanentWidget(self._script_status_label, 1)
         self._set_script_status(True, "No scripts executed yet.")
 
+        self._notify_overlay = NotifyOverlay(self)
+        self._notify_overlay.attach(self)
+        self._warning_log: list[dict[str, Any]] = []
+        self._extension_messages_seen: set[str] = set()
+        notifier.attach(self._on_notifier_event)
+
         # Toolbars (Quick Access) are dynamic via shortcut registry
         self._rebuild_shortcuts_toolbar()
         self._restore_layout()
@@ -114,6 +124,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         QTimer.singleShot(400, self._ensure_server_online)
         # Periodic server heartbeat to status bar
         self._heartbeat = QTimer(self); self._heartbeat.timeout.connect(self._poll_server_status); self._heartbeat.start(2000)
+        self.bridge.warnings_updated.connect(self._handle_backend_warnings)
 
     # --------------------
     # Dynamic systems
@@ -123,8 +134,28 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         try:
             menu_registry.clear()
             register_core_menu_items(menu_registry)
-            self._extension_metadata = load_extension_metadata(Path("extensions"))
-            reload_from_extensions(menu_registry, base_folder=Path("extensions"), clear=False)
+            base_folder = Path("extensions")
+            self._extension_metadata = load_extension_metadata(base_folder)
+            active_metadata = [meta for meta in self._extension_metadata if meta.compatible]
+            reload_from_extensions(
+                menu_registry,
+                base_folder=base_folder,
+                clear=False,
+                metadata=active_metadata,
+            )
+            for meta in self._extension_metadata:
+                for warning in meta.warnings:
+                    logger.warning("Extension %s: %s", meta.id, warning)
+                    key = f"{meta.id}:{warning}"
+                    if key not in self._extension_messages_seen:
+                        self._extension_messages_seen.add(key)
+                        notifier.toast("warn", f"Extension {meta.name}: {warning}")
+                for error in meta.errors:
+                    logger.error("Extension %s: %s", meta.id, error)
+                    key = f"{meta.id}:{error}"
+                    if key not in self._extension_messages_seen:
+                        self._extension_messages_seen.add(key)
+                        notifier.toast("error", f"Extension {meta.name}: {error}")
         except Exception as e:
             print("[Menu] reload error:", e)
             logger.exception("Menu reload failed: %s", e)
@@ -157,7 +188,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     def open_asset_browser(self):
         dock = getattr(self, "_asset_browser", None)
         if dock is None:
-            dock = AssetBrowser("data/assets")
+            dock = AssetBrowser(str(runtime_paths.data_dir("assets")))
             self.dockman.dock(dock, "Assets")
             self._asset_browser = dock
             logger.debug("Asset Browser module created")
@@ -298,7 +329,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._open_folder(Path("data"))
 
     def open_logs_folder(self):
-        self._open_folder(Path("logs"))
+        self._open_folder(runtime_paths.logs_dir())
 
     def open_extensions_folder(self):
         self._open_folder(Path("extensions"))
@@ -411,6 +442,48 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         else:
             logger.warning("Script sequence failed: %s", message)
 
+    # --------------------
+    # Notifications
+    # --------------------
+    def _on_notifier_event(self, event: dict) -> None:
+        msg = str(event.get("msg") or "")
+        level = str(event.get("level") or "info")
+        if not msg:
+            return
+        icon = {
+            "error": "❗",
+            "warn": "⚠",
+            "warning": "⚠",
+            "success": "✅",
+            "info": "ℹ️",
+        }.get(level.lower(), "ℹ️")
+        if hasattr(self, "_notify_overlay") and self._notify_overlay:
+            self._notify_overlay.toast(f"{icon} {msg}", level=level)
+
+    def _handle_backend_warnings(self, warnings: list[dict]) -> None:
+        for payload in warnings:
+            message = str(payload.get("message") or payload.get("detail") or "Backend warning")
+            level = str(payload.get("level") or "warning")
+            meta = {
+                "source": payload.get("source"),
+                "details": payload.get("details"),
+                "timestamp": payload.get("timestamp"),
+                "id": payload.get("id"),
+            }
+            self._warning_log.append(meta)
+            self._warning_log = self._warning_log[-100:]
+            notifier.toast(level, message, meta={"warning": meta})
+
+    def resizeEvent(self, event):  # type: ignore[override]
+        super().resizeEvent(event)
+        if hasattr(self, "_notify_overlay") and self._notify_overlay:
+            self._notify_overlay._reposition()
+
+    def moveEvent(self, event):  # type: ignore[override]
+        super().moveEvent(event)
+        if hasattr(self, "_notify_overlay") and self._notify_overlay:
+            self._notify_overlay._reposition()
+
     def _populate_extensions_menu(self) -> None:
         menubar = self.menuBar()
         target_menu = None
@@ -442,14 +515,21 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             header.setProperty("extensionEntry", True)
             target_menu.addAction(header)
             for meta in items:
-                action = QAction(meta.name, self)
+                label_text = meta.name if meta.compatible else f"⚠ {meta.name}"
+                action = QAction(label_text, self)
                 action.setProperty("extensionEntry", True)
                 tooltip_parts = []
                 if meta.description:
                     tooltip_parts.append(meta.description)
                 tooltip_parts.append(str(meta.path))
+                if meta.errors:
+                    tooltip_parts.append("Errors: " + "; ".join(meta.errors))
+                elif meta.warnings:
+                    tooltip_parts.append("Warnings: " + "; ".join(meta.warnings))
                 action.setToolTip("\n".join(tooltip_parts))
                 action.triggered.connect(lambda _, info=meta: self._show_extension_info(info))
+                if not meta.compatible:
+                    action.setEnabled(False)
                 target_menu.addAction(action)
 
         add_group("Official Extensions", official)
@@ -469,6 +549,20 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         if meta.description:
             lines.append("")
             lines.append(meta.description)
+        if meta.required_spec:
+            lines.append(f"Requires: {meta.required_spec}")
+        if meta.api_version:
+            lines.append(f"Studio API: {meta.api_version}")
+        if meta.errors:
+            lines.append("")
+            lines.append("Compatibility Issues:")
+            for err in meta.errors:
+                lines.append(f"  • {err}")
+        elif meta.warnings:
+            lines.append("")
+            lines.append("Warnings:")
+            for warn in meta.warnings:
+                lines.append(f"  • {warn}")
         if meta.hooks:
             lines.append("")
             lines.append("Menu Hooks:")

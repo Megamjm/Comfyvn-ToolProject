@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol, runtime_checkable
 
+from comfyvn.core.normalizer import NormalizerResult
+
 
 @dataclass
 class DetectResult:
@@ -44,7 +46,7 @@ class Importer(Protocol):
         out_dir: Path | str,
         *,
         hooks: Optional[Dict[str, str]] = None,
-    ) -> Path:
+    ) -> NormalizerResult:
         ...
 
 

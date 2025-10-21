@@ -100,9 +100,12 @@ def rebuild_menus_from_registry(window, registry):
             if getattr(item, "separator_before", False) and not last_sep:
                 menu.addSeparator()
             action = QAction(item.label, window)
-            handler = getattr(window, item.handler, None)
-            if callable(handler):
-                action.triggered.connect(handler)
+            if item.callback is not None:
+                action.triggered.connect(lambda _, cb=item.callback: cb(window))
+            else:
+                handler = getattr(window, item.handler, None) if item.handler else None
+                if callable(handler):
+                    action.triggered.connect(handler)
             menu.addAction(action)
             last_sep = getattr(item, "separator_before", False)
 

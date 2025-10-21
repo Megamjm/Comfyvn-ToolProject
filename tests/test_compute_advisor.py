@@ -39,19 +39,39 @@ def test_compute_advise_local(tmp_path):
     )
     assert advice["choice"] == "local"
     assert advice["local_candidate"] is not None
+    assert advice["analysis"]["workload_type"] == "voice_synthesis"
+    assert advice["job_summary"]["choice"] == "local"
 
 
 def test_compute_advise_remote(tmp_path):
     manager = _dummy_manager(tmp_path)
+    manager.registry.register(
+        {
+            "id": "lambda",
+            "name": "Lambda Labs",
+            "kind": "remote",
+            "service": "lambda",
+            "base_url": "https://cloud.lambdalabs.com/api/v1/",
+        }
+    )
     manager._devices = []
     manager.list_all = lambda refresh=False: list(manager._devices)  # type: ignore
     advice = advise(
         manager,
-        workload={"requirements": {"min_vram_gb": 20}},
+        workload={
+            "requirements": {"min_vram_gb": 24, "type": "cg_batch"},
+            "assets": [{"size_mb": 2500}],
+            "estimate": {"duration_minutes": 180},
+        },
         prefer_remote=True,
     )
-    assert advice["choice"] in {"remote", "cpu"}
-    assert advice["reason"]
+    assert advice["choice"] == "remote"
+    assert advice["remote_candidate"]
+    assert advice["remote_candidate"]["id"] == "lambda"
+    assert advice["remote_candidate"]["policy_hint"]
+    assert advice["estimated_cost"]
+    assert advice["analysis"]["total_asset_mb"] > 0
+    assert advice["job_summary"]["estimated_cost"] == advice["estimated_cost"]
 
 
 def test_compute_advise_hardware_override(tmp_path):
@@ -65,3 +85,4 @@ def test_compute_advise_hardware_override(tmp_path):
     )
     assert advice["choice"] == "cpu"
     assert advice.get("override") == "cpu"
+    assert advice["job_summary"]["choice"] == "cpu"

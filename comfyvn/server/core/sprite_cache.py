@@ -2,8 +2,9 @@ from __future__ import annotations
 from PySide6.QtGui import QAction
 from pathlib import Path
 import json, hashlib
+from comfyvn.config.runtime_paths import cache_dir
 
-CACHE_DIR = Path("data/cache/sprites"); CACHE_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR = cache_dir("sprites"); CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 def _key(d: dict) -> str:
     j = json.dumps(d, sort_keys=True, ensure_ascii=False)

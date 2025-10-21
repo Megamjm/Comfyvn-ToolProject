@@ -4,5 +4,9 @@
   "version": "0.1.0",
   "official": true,
   "author": "ComfyVN Team",
-  "description": "Bridge utilities for SillyTavern integrations and menu hooks."
+  "description": "Bridge utilities for SillyTavern integrations and menu hooks.",
+  "entrypoint": "extension.py",
+  "requires": {
+    "comfyvn": ">=1.0.0"
+  }
 }

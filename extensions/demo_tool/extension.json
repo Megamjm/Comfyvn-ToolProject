@@ -4,5 +4,9 @@
   "version": "0.1.0",
   "official": true,
   "author": "ComfyVN Team",
-  "description": "Sample utility extension that adds a demo action to the Tools menu."
+  "description": "Sample utility extension that adds a demo action to the Tools menu.",
+  "entrypoint": "extension.py",
+  "requires": {
+    "comfyvn": ">=1.0.0"
+  }
 }

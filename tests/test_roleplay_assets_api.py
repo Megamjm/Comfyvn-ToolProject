@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import time
 
 import pytest
 
@@ -12,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from comfyvn.server.app import create_app
 from setup.apply_phase06_rebuild import ensure_db, ensure_dirs
-
 # Ensure required folders/tables exist before exercising APIs.
 ensure_dirs()
 ensure_db()
@@ -32,6 +32,7 @@ def test_roleplay_import_persists_scene(client: TestClient):
         "title": "Importer Test",
         "world": "demo-world",
         "metadata": {"genre": "slice-of-life"},
+        "blocking": True,
     }
     resp = client.post("/roleplay/import", json=payload)
     assert resp.status_code == 200, resp.text
@@ -47,7 +48,7 @@ def test_roleplay_import_persists_scene(client: TestClient):
     asset_path = Path("data/assets") / asset["path"]
     assert asset_path.exists()
 
-    log_path = Path(f"logs/imports/roleplay_{data['job_id']}.log")
+    log_path = Path(data["logs_path"])
     assert log_path.exists()
 
     status = client.get(f"/roleplay/imports/{data['job_id']}")
@@ -63,6 +64,41 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert any(job["id"] == data["job_id"] for job in jobs)
 
     log_resp = client.get(f"/roleplay/imports/{data['job_id']}/log")
+    assert log_resp.status_code == 200
+    assert "scene_id=" in log_resp.text
+
+
+def test_roleplay_import_async_background(client: TestClient):
+    payload = {
+        "text": "Alice: Testing asyncio.\nBob: Background job run!",
+        "title": "Async Import",
+        "world": "async-world",
+        "metadata": {"genre": "demo"},
+    }
+    resp = client.post("/roleplay/import", json=payload)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["status"] == "queued"
+    queued_log_path = Path(data["logs_path"])
+    assert queued_log_path.exists()
+    job_id = data["job_id"]
+
+    for _ in range(50):
+        status_resp = client.get(f"/roleplay/imports/{job_id}")
+        assert status_resp.status_code == 200
+        job_payload = status_resp.json()["job"]
+        if job_payload["status"] == "completed":
+            output = job_payload["output"]
+            assert output["scene_id"]
+            break
+        if job_payload["status"] == "failed":
+            pytest.fail(f"roleplay import failed: {job_payload['output']}")
+        time.sleep(0.02)
+    else:
+        pytest.fail("roleplay import did not complete in time")
+
+    log_resp = client.get(f"/roleplay/imports/{job_id}/log")
     assert log_resp.status_code == 200
     assert "scene_id=" in log_resp.text
 

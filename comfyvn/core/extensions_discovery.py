@@ -26,6 +26,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
+from comfyvn import __version__
+
+try:  # normalise the application version for compatibility checks
+    _APP_VERSION = Version(__version__)
+except InvalidVersion:
+    _APP_VERSION = Version("0")
+
 
 @dataclass
 class ExtensionMetadata:
@@ -41,6 +51,12 @@ class ExtensionMetadata:
     homepage: Optional[str] = None
     manifest_path: Optional[Path] = None
     hooks: List[Dict[str, Any]] = field(default_factory=list)
+    entrypoint: Optional[Path] = None
+    compatible: bool = True
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    required_spec: Optional[str] = None
+    api_version: Optional[str] = None
 
 
 def _safe_read_json(path: Path) -> Any:
@@ -79,6 +95,69 @@ def _build_metadata_from_folder(ext_dir: Path) -> ExtensionMetadata:
     author = data.get("author")
     homepage = data.get("homepage")
     official = bool(data.get("official", False))
+    entrypoint: Optional[Path] = None
+    errors: List[str] = []
+    warnings: List[str] = []
+    compatible = True
+    api_version = None
+
+    if not manifest_file.exists():
+        warnings.append("Missing extension.json manifest; using best-effort defaults.")
+
+    entrypoint_decl = data.get("entrypoint")
+    if isinstance(entrypoint_decl, str) and entrypoint_decl:
+        candidate = ext_dir / entrypoint_decl
+        if candidate.is_file():
+            entrypoint = candidate
+        else:
+            errors.append(f"entrypoint '{entrypoint_decl}' not found")
+            compatible = False
+    if entrypoint is None:
+        for fallback in ("extension.py", "main.py", "__init__.py"):
+            candidate = ext_dir / fallback
+            if candidate.is_file():
+                entrypoint = candidate
+                break
+    if entrypoint is None:
+        warnings.append("No Python entrypoint discovered; extension will not be loaded.")
+        compatible = False
+
+    requires = data.get("requires")
+    required_spec = None
+    if isinstance(requires, dict):
+        required_spec = requires.get("comfyvn") or requires.get("app")
+    elif isinstance(requires, str):
+        required_spec = requires
+
+    min_app = data.get("min_app_version")
+    max_app = data.get("max_app_version")
+    spec_tokens: List[str] = []
+    if required_spec:
+        spec_tokens.append(str(required_spec))
+    if isinstance(min_app, str) and min_app:
+        spec_tokens.append(f">={min_app}")
+    if isinstance(max_app, str) and max_app:
+        spec_tokens.append(f"<={max_app}")
+
+    resolved_spec = None
+    if spec_tokens:
+        spec_expr = ",".join(spec_tokens)
+        try:
+            spec = SpecifierSet(spec_expr)
+            resolved_spec = str(spec)
+            if _APP_VERSION not in spec:
+                compatible = False
+                errors.append(
+                    f"Requires ComfyVN {resolved_spec}; current version is {_APP_VERSION}"
+                )
+        except (InvalidSpecifier, InvalidVersion) as exc:
+            compatible = False
+            errors.append(f"Invalid version specifier '{spec_expr}': {exc}")
+
+    api_version = data.get("api_version") or data.get("studio_api")
+    if api_version is not None and not isinstance(api_version, (int, str)):
+        warnings.append("api_version should be a string or integer; ignoring value")
+        api_version = None
 
     hooks_manifest = ext_dir / "manifest.json"
     hooks = _hooks_from_manifest(hooks_manifest) if hooks_manifest.exists() else []
@@ -94,6 +173,12 @@ def _build_metadata_from_folder(ext_dir: Path) -> ExtensionMetadata:
         homepage=homepage,
         manifest_path=manifest_file if manifest_file.exists() else None,
         hooks=hooks,
+        entrypoint=entrypoint,
+        compatible=compatible,
+        errors=errors,
+        warnings=warnings,
+        required_spec=resolved_spec,
+        api_version=str(api_version) if api_version is not None else None,
     )
 
 
@@ -106,6 +191,8 @@ def _build_metadata_from_file(py_file: Path) -> ExtensionMetadata:
         path=py_file,
         official=False,
         description="Imported single-file extension.",
+        entrypoint=py_file,
+        warnings=["Single-file extensions are loaded without manifest metadata."],
     )
 
 

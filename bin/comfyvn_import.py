@@ -80,8 +80,13 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
-    pack_path = chosen.import_pack(root, out, hooks=hooks)
-    print(f"[done] comfyvn-pack created at {pack_path}")
+    result = chosen.import_pack(root, out, hooks=hooks)
+    print(f"[done] comfyvn-pack created at {result.pack_root}")
+    print(f"[manifest] {result.manifest_path}")
+    if result.warnings:
+        print("[normalizer-warnings]")
+        for warn in result.warnings:
+            print(f" ! {warn}")
     return 0
 
 

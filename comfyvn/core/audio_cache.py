@@ -7,9 +7,10 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Optional
+from comfyvn.config.runtime_paths import audio_cache_file
 
 LOGGER = logging.getLogger("comfyvn.audio.cache")
-CACHE_PATH = Path("cache/audio_cache.json")
+CACHE_PATH = audio_cache_file()
 
 
 @dataclass

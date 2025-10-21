@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from comfyvn.config.runtime_paths import settings_file
+
 try:  # torch is optional at runtime
     import torch  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
@@ -24,7 +26,7 @@ class GPUManager:
 
     def __init__(
         self,
-        config_path: str | Path = "data/settings/gpu_policy.json",
+        config_path: str | Path = settings_file("gpu_policy.json"),
         provider_registry: Optional[ComputeProviderRegistry] = None,
     ):
         self.path = Path(config_path)

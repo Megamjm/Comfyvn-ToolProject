@@ -17,7 +17,7 @@ print(info)
 ```
 
 The helper performs the following actions:
-1. Copies the source file into the project assets directory (unless `copy=False`).
+1. Copies the source file into the project assets directory (set `copy_file=false` or legacy `copy=false` to skip copying).
 2. Computes a SHA-256 hash to derive a stable asset `uid`.
 3. Writes/updates the `assets_registry` table with the file metadata and byte size.
 4. Records a provenance row (`provenance` table) capturing the source workflow, inputs, and commit hash.

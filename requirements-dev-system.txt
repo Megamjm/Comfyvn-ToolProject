@@ -1,0 +1,4 @@
+# System packages needed for GUI test runs (Debian/Ubuntu)
+libegl1
+libxkbcommon0
+libdbus-1-3

@@ -3,7 +3,8 @@ from PySide6.QtGui import QAction
 # comfyvn/core/space_manager.py
 import json, time
 from pathlib import Path
-SPACES_DIR = Path("data/settings/spaces")
+from comfyvn.config.runtime_paths import config_dir
+SPACES_DIR = config_dir("settings", "spaces")
 SPACES_DIR.mkdir(parents=True, exist_ok=True)
 
 def _file(name: str) -> Path: return SPACES_DIR / f"{name}.json"

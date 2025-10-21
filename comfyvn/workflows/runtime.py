@@ -121,12 +121,19 @@ class WorkflowRuntime:
     def _eval_inputs(self, n: NodeSpec) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         for port, src in (n.inputs or {}).items():
+            if not src:
+                raise ValueError(f"input '{port}' missing source reference")
             if src.startswith("$input."):
                 key = src.split(".",1)[1]; out[port] = self.inputs.get(key)
             else:
                 if "." not in src: raise ValueError(f"bad source '{src}'")
                 snode, sport = src.split(".",1)
-                out[port] = self.values.get(snode, {}).get(sport)
+                if snode not in self.values:
+                    raise ValueError(f"node '{snode}' has not produced outputs for '{src}'")
+                node_outputs = self.values[snode]
+                if sport not in node_outputs:
+                    raise ValueError(f"node '{snode}' missing output '{sport}' for '{src}'")
+                out[port] = node_outputs[sport]
         return out
 
     def _coerce_params(self, params: Dict[str, Any]) -> Dict[str, Any]:

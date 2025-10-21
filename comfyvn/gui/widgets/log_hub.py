@@ -5,13 +5,14 @@ import threading, time
 from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPushButton, QLabel
+from comfyvn.config.runtime_paths import logs_dir
 
 class LogHub(QWidget):
-    """Aggregates logs from ./logs/*.log and updates live."""
-    def __init__(self, folder="logs", parent=None):
+    """Aggregates logs from the user log directory and updates live."""
+    def __init__(self, folder=None, parent=None):
         super().__init__(parent)
-        self.folder = Path(folder)
-        self.folder.mkdir(exist_ok=True)
+        self.folder = Path(folder) if folder else logs_dir()
+        self.folder.mkdir(parents=True, exist_ok=True)
         v = QVBoxLayout(self)
         self.label = QLabel("System Log Stream"); self.label.setProperty("accent", True)
         v.addWidget(self.label)

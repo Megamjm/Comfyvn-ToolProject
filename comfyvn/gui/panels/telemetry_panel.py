@@ -3,7 +3,8 @@ from PySide6.QtGui import QAction
 # comfyvn/gui/panels/telemetry_panel.py
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLabel
 from PySide6.QtCore import QTimer
-import requests, glob, os
+import requests, os
+from comfyvn.config.runtime_paths import logs_dir
 
 class TelemetryPanel(QWidget):
     def __init__(self, base: str = "http://127.0.0.1:8001"):
@@ -26,10 +27,13 @@ class TelemetryPanel(QWidget):
             self.lbl.setText("System Metrics (offline)")
         # tail logs
         parts=[]
-        for fn in sorted(glob.glob("logs/*.log"))[-3:]:
-            try:
-                with open(fn,"r",encoding="utf-8",errors="ignore") as f:
-                    tail = "".join(f.readlines()[-20:])
-                parts.append(f"--- {os.path.basename(fn)} ---\n{tail}")
-            except Exception: pass
+        root = logs_dir()
+        if root.exists():
+            files = sorted(root.glob("*.log"), key=lambda p: p.name)[-3:]
+            for fn in files:
+                try:
+                    tail = "".join(fn.read_text(encoding="utf-8", errors="ignore").splitlines(keepends=True)[-20:])
+                    parts.append(f"--- {fn.name} ---\n{tail}")
+                except Exception:
+                    pass
         self.text.setPlainText("\n".join(parts))

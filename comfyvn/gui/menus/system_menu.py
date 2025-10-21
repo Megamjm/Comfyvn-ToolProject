@@ -4,7 +4,9 @@ logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/system_menu.py
 from comfyvn.gui.menus.menu_utils import make_action
 from PySide6.QtWidgets import QFileDialog, QMessageBox
-import os  # <-- added
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
+from comfyvn.config.runtime_paths import diagnostics_dir
 
 
 def register_menu(window, menubar):
@@ -27,11 +29,11 @@ def register_menu(window, menubar):
     menu.addSeparator()
 
     def open_diagnostics():
-        diag = "./logs/diagnostics/startup_report.json"
-        if not os.path.exists(diag):
+        diag = diagnostics_dir("startup_report.json")
+        if not diag.exists():
             QMessageBox.warning(window, "Diagnostics", "No startup diagnostics found.")
             return
-        os.startfile(diag)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(diag)))
 
     menu.addAction(
         make_action("🧾 Diagnostics Viewer", window, open_diagnostics, "text-x-generic")

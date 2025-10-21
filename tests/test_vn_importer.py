@@ -195,6 +195,14 @@ def test_import_vn_package(tmp_path: Path):
     assert summary["licenses"] == [{"name": "CC-BY", "scope": "backgrounds"}]
     assert summary["adapter"] == "generic"
     assert summary["summary_path"]
+    assert summary["pack_path"]
+    assert Path(summary["pack_path"]).exists()
+    assert Path(summary["normalizer"]["manifest_path"]).exists()
+    translation = summary["translation"]
+    assert Path(translation["bundle_path"]).exists()
+    assert translation["segments"] == 0
+    remix = summary["remix"]
+    assert Path(remix["plan_path"]).exists()
 
     assert (data_root / "scenes" / "demo_scene.json").exists()
     assert (data_root / "characters" / "hero.json").exists()
@@ -211,6 +219,7 @@ def test_import_vn_adapter_detection(tmp_path: Path):
     summary = import_vn_package(package_path, data_root=data_root)
 
     assert summary["adapter"] == "renpy"
+    assert summary["pack_path"]
     assert (data_root / "scenes" / "start.json").exists()
 
 
@@ -245,6 +254,7 @@ def test_import_with_external_tool(tmp_path: Path):
     assert summary["extractor"] == "arc_unpacker"
     assert summary["adapter"] == "generic"
     assert (data_root / "scenes" / "demo_scene.json").exists()
+    assert Path(summary["translation"]["bundle_path"]).exists()
 
 
 def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
@@ -259,6 +269,8 @@ def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
     assert summary["characters"] == ["hero"]
     assert summary["adapter"] == "generic"
     assert Path(summary["summary_path"]).exists()
+    assert Path(summary["translation"]["bundle_path"]).exists()
+    assert Path(summary["remix"]["plan_path"]).exists()
     assert (data_root / "scenes" / "demo_scene.json").exists()
 
     status_payload = asyncio.run(vn_import_api.import_status(payload["job"]["id"], True))
@@ -277,27 +289,29 @@ def test_import_vn_api_job(tmp_path: Path, monkeypatch):
     job_id = payload["job"]["id"]
 
     summary = None
-    for _ in range(40):
+    for _ in range(120):
         status_payload = asyncio.run(vn_import_api.import_status(job_id, True))
         job_payload = status_payload["job"]
-        if job_payload["status"] == "done":
-            summary = (job_payload.get("meta") or {}).get("result")
+        summary = status_payload.get("summary") or (job_payload.get("meta") or {}).get("result")
+        if summary:
             break
         if job_payload["status"] == "error":
             error_message = job_payload.get("message") or job_payload.get("meta", {}).get("error")
             pytest.fail(f"job errored: {error_message}")
-        time.sleep(0.01)
+        time.sleep(0.02)
 
     assert summary is not None
     assert summary["scenes"] == ["demo_scene"]
     assert summary["adapter"] in {"generic", "renpy"}
     assert (data_root / "scenes" / "demo_scene.json").exists()
+    assert Path(summary["translation"]["bundle_path"]).exists()
 
     detail_payload = asyncio.run(vn_import_api.import_status(job_id, True))
     assert detail_payload["job"]["status"] in {"done", "error"}
     if detail_payload["summary"]:
         assert detail_payload["summary"]["scenes"] == ["demo_scene"]
         assert "adapter" in detail_payload["summary"]
+        assert "translation" in detail_payload["summary"]
 
 
 def test_import_history_endpoint(tmp_path: Path, monkeypatch):

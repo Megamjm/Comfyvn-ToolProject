@@ -10,7 +10,7 @@ from importlib.util import find_spec
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from comfyvn.server.core.trash import move_to_trash
 from comfyvn.server.modules.auth import require_scope
@@ -162,11 +162,17 @@ else:
 
 
 class RegisterAssetRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     path: str = Field(..., description="Absolute or relative path to the source file.")
     asset_type: str = Field("generic", description="Logical asset type bucket.")
     dest_path: Optional[str] = Field(None, description="Optional relative destination path inside assets.")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata dictionary or JSON string.")
-    copy: bool = Field(True, description="Copy the file into the assets directory.")
+    copy_file: bool = Field(
+        True,
+        alias="copy",
+        description="Copy the file into the assets directory (accepts legacy 'copy' JSON field).",
+    )
 
 
 @router.post("/register")
@@ -184,7 +190,7 @@ def register_existing_asset(
     if dest_relative and not dest_relative.suffix:
         dest_relative = dest_relative / source.name
     meta = _parse_metadata(payload.metadata)
-    copy = payload.copy
+    copy = payload.copy_file
     provenance_payload = {
         "source": meta.get("source") or "api.register_existing",
         "inputs": {

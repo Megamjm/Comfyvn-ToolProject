@@ -17,14 +17,18 @@ from PySide6.QtWidgets import (
     QLabel,
     QCheckBox,
     QSpinBox,
+    QFileDialog,
+    QInputDialog,
 )
 from PySide6.QtCore import Qt
 
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.core.compute_registry import ComputeProviderRegistry
+from typing import Optional
 import os
 import socket
+import json
 
 
 class SettingsPanel(QDockWidget):
@@ -36,6 +40,7 @@ class SettingsPanel(QDockWidget):
         self.provider_registry = ComputeProviderRegistry()
         self._editing_provider_id: str | None = None
         self._providers_cache: dict[str, dict] = {}
+        self._templates_cache: list[dict] = []
 
         w = QWidget()
         root = QVBoxLayout(w)
@@ -82,6 +87,9 @@ class SettingsPanel(QDockWidget):
 
         self.server_group = self._build_server_controls()
         root.addWidget(self.server_group)
+
+        self.audio_group = self._build_audio_settings(cfg_snapshot)
+        root.addWidget(self.audio_group)
         root.addStretch(1)
         self.setWidget(w)
 
@@ -101,6 +109,16 @@ class SettingsPanel(QDockWidget):
         self.server_list.currentItemChanged.connect(self._on_server_selected)
         left.addWidget(self.server_list)
 
+        template_row = QHBoxLayout()
+        self.template_combo = QComboBox()
+        self.template_combo.setEditable(False)
+        self.template_combo.addItem("Template: Select…", "")
+        self.btn_server_create_template = QPushButton("Create From Template")
+        template_row.addWidget(self.template_combo)
+        template_row.addWidget(self.btn_server_create_template)
+        template_row.addStretch(1)
+        left.addLayout(template_row)
+
         btn_row = QHBoxLayout()
         self.btn_server_refresh = QPushButton("Refresh")
         self.btn_server_discover = QPushButton("Discover Local")
@@ -112,6 +130,14 @@ class SettingsPanel(QDockWidget):
         btn_row.addWidget(self.btn_server_remove)
         btn_row.addStretch(1)
         left.addLayout(btn_row)
+
+        import_row = QHBoxLayout()
+        self.btn_server_import = QPushButton("Import…")
+        self.btn_server_export = QPushButton("Export…")
+        import_row.addWidget(self.btn_server_import)
+        import_row.addWidget(self.btn_server_export)
+        import_row.addStretch(1)
+        left.addLayout(import_row)
 
         layout.addLayout(left, 1)
 
@@ -155,8 +181,218 @@ class SettingsPanel(QDockWidget):
         self.btn_server_remove.clicked.connect(self._remove_selected_server)
         self.btn_server_save.clicked.connect(self._save_server_entry)
         self.btn_server_probe.clicked.connect(self._probe_selected_server)
+        self.btn_server_create_template.clicked.connect(self._create_provider_from_template)
+        self.btn_server_export.clicked.connect(self._export_providers)
+        self.btn_server_import.clicked.connect(self._import_providers)
 
         return group
+
+    def _build_audio_settings(self, cfg_snapshot: dict) -> QGroupBox:
+        group = QGroupBox("Audio & Music Pipelines")
+        layout = QVBoxLayout(group)
+
+        audio_cfg = cfg_snapshot.get("audio", {})
+        tts_cfg = audio_cfg.get("tts", {})
+        music_cfg = audio_cfg.get("music", {})
+
+        # Clone provider definitions so we can mutate safely before save
+        self._tts_providers = [dict(provider) for provider in tts_cfg.get("providers", [])]
+        self._music_providers = [dict(provider) for provider in music_cfg.get("providers", [])]
+
+        layout.addWidget(self._build_tts_settings(tts_cfg))
+        layout.addWidget(self._build_music_settings(music_cfg))
+
+        save_row = QHBoxLayout()
+        save_row.addStretch(1)
+        self.btn_audio_save = QPushButton("Save Audio Settings")
+        self.btn_audio_save.clicked.connect(self._save_audio_settings)
+        save_row.addWidget(self.btn_audio_save)
+        layout.addLayout(save_row)
+
+        return group
+
+    def _build_tts_settings(self, tts_cfg: dict) -> QGroupBox:
+        group = QGroupBox("Text-to-Speech Services")
+        layout = QVBoxLayout(group)
+
+        self.tts_provider_combo = QComboBox()
+        for provider in self._tts_providers:
+            label = provider.get("label") or provider.get("id") or "provider"
+            kind = (provider.get("kind") or "unknown").replace("_", " ")
+            self.tts_provider_combo.addItem(f"{label} ({kind})", provider.get("id"))
+        active_id = tts_cfg.get("active_provider")
+        index = self.tts_provider_combo.findData(active_id)
+        if index != -1:
+            self.tts_provider_combo.setCurrentIndex(index)
+
+        layout.addWidget(QLabel("Active Provider:"))
+        layout.addWidget(self.tts_provider_combo)
+
+        self.tts_provider_details = QLabel()
+        self.tts_provider_details.setWordWrap(True)
+        layout.addWidget(self.tts_provider_details)
+
+        self.tts_base_url = QLineEdit()
+        self.tts_workflow_path = QLineEdit()
+        self.tts_output_dir = QLineEdit()
+
+        form = QFormLayout()
+        form.addRow("ComfyUI Base URL:", self.tts_base_url)
+        form.addRow("Workflow JSON:", self.tts_workflow_path)
+        form.addRow("Output Directory:", self.tts_output_dir)
+        layout.addLayout(form)
+
+        self.tts_provider_combo.currentIndexChanged.connect(self._on_tts_provider_changed)
+        self._on_tts_provider_changed()
+
+        return group
+
+    def _build_music_settings(self, music_cfg: dict) -> QGroupBox:
+        group = QGroupBox("Music Remix Services")
+        layout = QVBoxLayout(group)
+
+        self.music_provider_combo = QComboBox()
+        for provider in self._music_providers:
+            label = provider.get("label") or provider.get("id") or "provider"
+            kind = (provider.get("kind") or "unknown").replace("_", " ")
+            self.music_provider_combo.addItem(f"{label} ({kind})", provider.get("id"))
+        active_id = music_cfg.get("active_provider")
+        index = self.music_provider_combo.findData(active_id)
+        if index != -1:
+            self.music_provider_combo.setCurrentIndex(index)
+
+        layout.addWidget(QLabel("Active Provider:"))
+        layout.addWidget(self.music_provider_combo)
+
+        self.music_provider_details = QLabel()
+        self.music_provider_details.setWordWrap(True)
+        layout.addWidget(self.music_provider_details)
+
+        self.music_base_url = QLineEdit()
+        self.music_workflow_path = QLineEdit()
+        self.music_output_dir = QLineEdit()
+
+        form = QFormLayout()
+        form.addRow("ComfyUI Base URL:", self.music_base_url)
+        form.addRow("Workflow JSON:", self.music_workflow_path)
+        form.addRow("Output Directory:", self.music_output_dir)
+        layout.addLayout(form)
+
+        self.music_provider_combo.currentIndexChanged.connect(self._on_music_provider_changed)
+        self._on_music_provider_changed()
+
+        return group
+
+    # --------------------
+    # Audio helpers
+    # --------------------
+    @staticmethod
+    def _get_provider(providers: list[dict], provider_id: Optional[str]) -> Optional[dict]:
+        for provider in providers:
+            if provider.get("id") == provider_id:
+                return provider
+        return None
+
+    def _on_tts_provider_changed(self) -> None:
+        provider_id = self.tts_provider_combo.currentData()
+        provider = self._get_provider(self._tts_providers, provider_id)
+        details_lines: list[str] = []
+        if provider:
+            label = provider.get("label") or provider.get("id") or "provider"
+            kind = provider.get("kind") or "unknown"
+            details_lines.append(label)
+            details_lines.append(f"Kind: {kind}")
+            portal = provider.get("portal")
+            if portal:
+                details_lines.append(f"Portal: {portal}")
+            notes = provider.get("notes")
+            if notes:
+                details_lines.append(notes)
+        else:
+            details_lines.append("Select a provider to view details.")
+        self.tts_provider_details.setText("\n".join(details_lines))
+
+        is_comfyui = provider is not None and str(provider.get("id", "")).startswith("comfyui")
+        self.tts_base_url.setEnabled(is_comfyui)
+        self.tts_workflow_path.setEnabled(is_comfyui)
+        self.tts_output_dir.setEnabled(is_comfyui)
+        if provider and is_comfyui:
+            self.tts_base_url.setText(provider.get("base_url", ""))
+            self.tts_workflow_path.setText(provider.get("workflow", ""))
+            self.tts_output_dir.setText(provider.get("output_dir", ""))
+        elif provider:
+            self.tts_base_url.setText(provider.get("portal", ""))
+            self.tts_workflow_path.clear()
+            self.tts_output_dir.clear()
+        else:
+            self.tts_base_url.clear()
+            self.tts_workflow_path.clear()
+            self.tts_output_dir.clear()
+
+    def _on_music_provider_changed(self) -> None:
+        provider_id = self.music_provider_combo.currentData()
+        provider = self._get_provider(self._music_providers, provider_id)
+        details_lines: list[str] = []
+        if provider:
+            label = provider.get("label") or provider.get("id") or "provider"
+            kind = provider.get("kind") or "unknown"
+            details_lines.append(label)
+            details_lines.append(f"Kind: {kind}")
+            portal = provider.get("portal")
+            if portal:
+                details_lines.append(f"Portal: {portal}")
+            notes = provider.get("notes")
+            if notes:
+                details_lines.append(notes)
+        else:
+            details_lines.append("Select a provider to view details.")
+        self.music_provider_details.setText("\n".join(details_lines))
+
+        is_comfyui = provider is not None and str(provider.get("id", "")).startswith("comfyui")
+        self.music_base_url.setEnabled(is_comfyui)
+        self.music_workflow_path.setEnabled(is_comfyui)
+        self.music_output_dir.setEnabled(is_comfyui)
+        if provider and is_comfyui:
+            self.music_base_url.setText(provider.get("base_url", ""))
+            self.music_workflow_path.setText(provider.get("workflow", ""))
+            self.music_output_dir.setText(provider.get("output_dir", ""))
+        elif provider:
+            self.music_base_url.setText(provider.get("portal", ""))
+            self.music_workflow_path.clear()
+            self.music_output_dir.clear()
+        else:
+            self.music_base_url.clear()
+            self.music_workflow_path.clear()
+            self.music_output_dir.clear()
+
+    def _save_audio_settings(self) -> None:
+        cfg = self.settings_manager.load()
+        audio_cfg = cfg.setdefault("audio", {})
+
+        tts_cfg = audio_cfg.setdefault("tts", {})
+        tts_cfg["active_provider"] = self.tts_provider_combo.currentData()
+        updated_tts = []
+        for provider in self._tts_providers:
+            if provider.get("id") == "comfyui_local":
+                provider["base_url"] = self.tts_base_url.text().strip()
+                provider["workflow"] = self.tts_workflow_path.text().strip()
+                provider["output_dir"] = self.tts_output_dir.text().strip()
+            updated_tts.append(dict(provider))
+        tts_cfg["providers"] = updated_tts
+
+        music_cfg = audio_cfg.setdefault("music", {})
+        music_cfg["active_provider"] = self.music_provider_combo.currentData()
+        updated_music = []
+        for provider in self._music_providers:
+            if provider.get("id") == "comfyui_local":
+                provider["base_url"] = self.music_base_url.text().strip()
+                provider["workflow"] = self.music_workflow_path.text().strip()
+                provider["output_dir"] = self.music_output_dir.text().strip()
+            updated_music.append(dict(provider))
+        music_cfg["providers"] = updated_music
+
+        self.settings_manager.save(cfg)
+        QMessageBox.information(self, "Audio Settings", "Audio pipeline settings saved.")
 
     # --------------------
     # UI callbacks
@@ -205,6 +441,204 @@ class SettingsPanel(QDockWidget):
         self.server_service_combo.setCurrentText("lan")
         self.server_priority_spin.setValue(50)
         self.server_active_check.setChecked(True)
+
+    def _get_template(self, template_id: str) -> dict | None:
+        for template in self._templates_cache:
+            if template.get("id") == template_id:
+                return template
+        return None
+
+    def _create_provider_from_template(self) -> None:
+        template_id = self.template_combo.currentData()
+        if not template_id:
+            QMessageBox.information(self, "Provider Templates", "Select a template first.")
+            return
+        template = self._get_template(template_id)
+        if not template:
+            QMessageBox.warning(self, "Provider Templates", f"Template '{template_id}' unavailable.")
+            return
+
+        default_name = template.get("name", template_id)
+        name, ok = QInputDialog.getText(
+            self,
+            "Provider Name",
+            "Display name:",
+            text=default_name,
+        )
+        if not ok:
+            return
+        name = name.strip() or default_name
+
+        base_default = template.get("base_url", "")
+        base_url, ok = QInputDialog.getText(
+            self,
+            "Provider Base URL",
+            "Base URL (override if needed):",
+            text=base_default,
+        )
+        if not ok:
+            return
+        base_url = base_url.strip()
+        if not base_url:
+            QMessageBox.warning(self, "Provider Templates", "Base URL is required.")
+            return
+
+        config: dict[str, str] = {}
+        fields = template.get("fields") or template.get("metadata", {}).get("auth_fields") or []
+        for field in fields:
+            value, ok = QInputDialog.getText(
+                self,
+                "Provider Credential",
+                f"Enter value for '{field}':",
+            )
+            if not ok:
+                return
+            value = value.strip()
+            if value:
+                config[field] = value
+
+        try:
+            entry = self.provider_registry.create_from_template(
+                template_id,
+                name=name,
+                base_url=base_url,
+                config=config,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Provider Templates", f"Failed to create provider: {exc}")
+            return
+
+        payload = {
+            "template_id": template_id,
+            "id": entry.get("id"),
+            "name": name,
+            "base_url": base_url,
+            "config": config,
+        }
+
+        try:
+            self.bridge.providers_create(payload)
+        except Exception:
+            # Server may be offline; local registry already updated.
+            pass
+
+        QMessageBox.information(
+            self,
+            "Provider Templates",
+            f"Provider '{entry.get('id')}' created from template.",
+        )
+        self._refresh_servers(select_id=entry.get("id"))
+
+    def _export_providers(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Providers",
+            "",
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not path:
+            return
+        include_secrets = (
+            QMessageBox.question(
+                self,
+                "Export Providers",
+                "Include secrets (API keys, tokens)?\nSelect 'No' for safe sharing.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            == QMessageBox.Yes
+        )
+        try:
+            export = self.provider_registry.export_all(mask_secrets=not include_secrets)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Providers", f"Failed to build export: {exc}")
+            return
+
+        try:
+            api_result = self.bridge.providers_export(include_secrets=include_secrets)
+            if api_result and isinstance(api_result.get("export"), dict):
+                export = api_result["export"]
+        except Exception:
+            pass
+
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(export, handle, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Providers", f"Failed to write file: {exc}")
+            return
+
+        QMessageBox.information(self, "Export Providers", f"Providers exported to:\n{path}")
+
+    def _import_providers(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Providers",
+            "",
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Providers", f"Failed to read file: {exc}")
+            return
+
+        replace = (
+            QMessageBox.question(
+                self,
+                "Import Providers",
+                "Replace existing providers with this import?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            == QMessageBox.Yes
+        )
+        overwrite = (
+            QMessageBox.question(
+                self,
+                "Import Providers",
+                "Overwrite providers when IDs collide?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            == QMessageBox.Yes
+        )
+
+        try:
+            imported = self.provider_registry.import_data(
+                data,
+                replace=replace,
+                overwrite=overwrite,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Providers", f"Failed to import providers: {exc}")
+            return
+
+        payload: dict[str, object] = {
+            "replace": replace,
+            "overwrite": overwrite,
+        }
+        if isinstance(data, dict) and isinstance(data.get("providers"), list):
+            payload["providers"] = data["providers"]
+        elif isinstance(data, list):
+            payload["providers"] = data
+        else:
+            payload["providers"] = [row for row in imported if isinstance(row, dict)]
+
+        try:
+            self.bridge.providers_import(payload)
+        except Exception:
+            pass
+
+        QMessageBox.information(
+            self,
+            "Import Providers",
+            f"Imported {len(imported)} provider(s).",
+        )
+        self._refresh_servers()
 
     def _on_server_selected(self, current: QListWidgetItem | None, _: QListWidgetItem | None = None) -> None:
         if current is None:
@@ -394,12 +828,32 @@ class SettingsPanel(QDockWidget):
     # --------------------
     # Data helpers
     # --------------------
+    def _populate_template_combo(self) -> None:
+        self.template_combo.blockSignals(True)
+        self.template_combo.clear()
+        self.template_combo.addItem("Template: Select…", "")
+        templates = sorted(
+            self._templates_cache,
+            key=lambda item: item.get("priority", 999),
+        )
+        for template in templates:
+            template_id = template.get("id")
+            if not template_id:
+                continue
+            display = template.get("name") or template_id
+            self.template_combo.addItem(display, template_id)
+        self.template_combo.blockSignals(False)
+
     def _refresh_servers(self, select_id: str | None = None) -> None:
         merged: dict[str, dict] = {}
         local_entries = self.provider_registry.list()
         for entry in local_entries:
             merged[entry["id"]] = entry
         payload = self.bridge.providers_list()
+        templates = self.provider_registry.templates_public()
+        if payload and isinstance(payload.get("templates"), list):
+            templates = payload["templates"]
+        self._templates_cache = templates
         if payload and isinstance(payload.get("providers"), list):
             for entry in payload["providers"]:
                 pid = entry.get("id")
@@ -423,3 +877,4 @@ class SettingsPanel(QDockWidget):
         if not self.server_list.count():
             self.server_status_label.setText("No providers configured.")
         self.server_list.blockSignals(False)
+        self._populate_template_combo()

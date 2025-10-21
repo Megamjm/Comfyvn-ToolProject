@@ -4,5 +4,9 @@
   "version": "0.1.0",
   "official": true,
   "author": "ComfyVN Team",
-  "description": "Controls example render workflows and menu entries for queued jobs."
+  "description": "Controls example render workflows and menu entries for queued jobs.",
+  "entrypoint": "extension.py",
+  "requires": {
+    "comfyvn": ">=1.0.0"
+  }
 }

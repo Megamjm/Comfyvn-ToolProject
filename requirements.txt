@@ -10,3 +10,5 @@ Pillow>=10
 jsonschema>=4.22
 pytest>=8
 typer>=0.12
+platformdirs>=4.2
+packaging>=24.0

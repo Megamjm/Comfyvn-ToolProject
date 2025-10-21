@@ -7,9 +7,10 @@ logger = logging.getLogger(__name__)
 
 import os, json, time, uuid, asyncio
 from typing import Dict, Any, List, Optional
+from comfyvn.config.runtime_paths import logs_dir
 from comfyvn.core.event_bus import EventBus
 
-LOG_DIR = "logs/jobs"
+LOG_DIR = logs_dir("jobs")
 MAX_LOG_FILES = 10
 
 
@@ -17,7 +18,7 @@ class JobManager:
     """Tracks render/export tasks, supports persistence, rotation, and async event publishing."""
 
     def __init__(self, event_bus: Optional[EventBus] = None):
-        os.makedirs(LOG_DIR, exist_ok=True)
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
         self.jobs: Dict[str, Dict[str, Any]] = {}
         self.event_bus = event_bus or EventBus()
 
@@ -135,7 +136,7 @@ class JobManager:
         """Append job event to rotating log set."""
         try:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            file_path = os.path.join(LOG_DIR, f"{timestamp}_{job['id']}.json")
+            file_path = LOG_DIR / f"{timestamp}_{job['id']}.json"
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(job, f, indent=2)
         except Exception as e:
@@ -145,10 +146,13 @@ class JobManager:
     def _rotate_logs(self):
         """Maintain only the newest MAX_LOG_FILES logs."""
         try:
-            files = sorted(os.listdir(LOG_DIR))
+            files = sorted(LOG_DIR.iterdir(), key=lambda p: p.name)
             while len(files) > MAX_LOG_FILES:
                 oldest = files.pop(0)
-                os.remove(os.path.join(LOG_DIR, oldest))
+                try:
+                    oldest.unlink()
+                except Exception:
+                    break
         except Exception as e:
             print(f"[JobManager] Log rotation error: {e}")
 

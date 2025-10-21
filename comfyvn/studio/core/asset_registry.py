@@ -10,8 +10,11 @@ import logging
 import os
 import shutil
 import sqlite3
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from comfyvn.config.runtime_paths import thumb_cache_dir
 
 try:  # thumbnail generation optional
     from PIL import Image  # type: ignore
@@ -19,6 +22,21 @@ try:  # thumbnail generation optional
 except Exception:  # pragma: no cover - pillow optional
     Image = None  # type: ignore
     PngImagePlugin = None  # type: ignore
+
+try:  # audio tagging optional
+    from mutagen.id3 import ID3, TXXX, ID3NoHeaderError  # type: ignore
+    from mutagen.mp3 import MP3  # type: ignore
+    from mutagen.oggvorbis import OggVorbis  # type: ignore
+    from mutagen.flac import FLAC  # type: ignore
+    from mutagen.wave import WAVE  # type: ignore
+except Exception:  # pragma: no cover - mutagen optional
+    ID3 = None  # type: ignore
+    TXXX = None  # type: ignore
+    ID3NoHeaderError = Exception  # type: ignore
+    MP3 = None  # type: ignore
+    OggVorbis = None  # type: ignore
+    FLAC = None  # type: ignore
+    WAVE = None  # type: ignore
 
 from .base_registry import BaseRegistry
 from .provenance_registry import ProvenanceRegistry
@@ -31,7 +49,12 @@ class AssetRegistry(BaseRegistry):
     TABLE = "assets_registry"
     ASSETS_ROOT = Path("data/assets")
     META_ROOT = ASSETS_ROOT / "_meta"
-    THUMB_ROOT = Path("cache/thumbs")
+    THUMB_ROOT = thumb_cache_dir()
+    _THUMBNAIL_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+    _thumb_executor: ThreadPoolExecutor | None = None
+    _thumb_executor_lock = threading.Lock()
+    _pending_futures: set[Future] = set()
+    _pending_lock = threading.Lock()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -122,8 +145,7 @@ class AssetRegistry(BaseRegistry):
         if license_tag:
             meta_payload.setdefault("license", license_tag)
         size_bytes = dest.stat().st_size
-        thumb_path = self._create_thumbnail(dest, uid)
-        thumb_rel = str(thumb_path) if thumb_path else None
+        thumb_rel = self._schedule_thumbnail(dest, uid)
 
         meta_json = self.dumps(meta_payload)
         with self.connection() as conn:
@@ -271,19 +293,78 @@ class AssetRegistry(BaseRegistry):
                 payload["meta"] = meta
         return payload
 
-    def _create_thumbnail(self, dest: Path, uid: str) -> Optional[str]:
+    @classmethod
+    def _get_thumbnail_executor(cls) -> ThreadPoolExecutor:
+        if cls._thumb_executor is None:
+            with cls._thumb_executor_lock:
+                if cls._thumb_executor is None:
+                    cls._thumb_executor = ThreadPoolExecutor(
+                        max_workers=2,
+                        thread_name_prefix="AssetThumb",
+                    )
+        return cls._thumb_executor
+
+    def _schedule_thumbnail(self, dest: Path, uid: str) -> Optional[str]:
         if Image is None:
             LOGGER.debug("Pillow not available; skipping thumbnail for %s", dest)
             return None
-        try:
-            thumb_path = self.THUMB_ROOT / f"{uid}{dest.suffix}"
-            with Image.open(dest) as img:  # type: ignore[attr-defined]
-                img.thumbnail((256, 256))
-                img.save(thumb_path)
-            return str(Path("cache/thumbs") / thumb_path.name)
-        except Exception as exc:  # pragma: no cover - optional
-            LOGGER.warning("Thumbnail generation failed for %s: %s", dest, exc)
+        suffix = dest.suffix.lower()
+        if suffix not in self._THUMBNAIL_SUFFIXES:
+            LOGGER.debug("Skipping thumbnail for %s (unsupported suffix)", dest)
             return None
+
+        thumb_path = self.THUMB_ROOT / f"{uid}{suffix}"
+        thumb_rel = str(Path("cache/thumbs") / thumb_path.name)
+
+        executor = self._get_thumbnail_executor()
+        future = executor.submit(self._thumbnail_job, dest, thumb_path, thumb_rel, uid)
+        self._register_thumbnail_future(future)
+        return thumb_rel
+
+    @classmethod
+    def _register_thumbnail_future(cls, future: Future) -> None:
+        with cls._pending_lock:
+            cls._pending_futures.add(future)
+
+        def _cleanup(fut: Future) -> None:
+            with cls._pending_lock:
+                cls._pending_futures.discard(fut)
+
+        future.add_done_callback(_cleanup)
+
+    @classmethod
+    def wait_for_thumbnails(cls, timeout: float | None = None) -> bool:
+        with cls._pending_lock:
+            pending = list(cls._pending_futures)
+        if not pending:
+            return True
+        done, not_done = wait(pending, timeout=timeout)
+        return not not_done
+
+    def _thumbnail_job(self, source: Path, thumb_path: Path, thumb_rel: str, uid: str) -> None:
+        success = self._create_thumbnail_file(source, thumb_path)
+        if not success:
+            LOGGER.warning("Clearing thumbnail mapping for %s due to generation failure", uid)
+            thumb_path.unlink(missing_ok=True)
+            with self.connection() as conn:
+                conn.execute(
+                    f"UPDATE {self.TABLE} SET path_thumb = NULL WHERE project_id = ? AND uid = ?",
+                    (self.project_id, uid),
+                )
+
+    @staticmethod
+    def _create_thumbnail_file(source: Path, thumb_path: Path) -> bool:
+        if Image is None:
+            return False
+        try:
+            with Image.open(source) as img:  # type: ignore[attr-defined]
+                img.thumbnail((256, 256))
+                thumb_path.parent.mkdir(parents=True, exist_ok=True)
+                img.save(thumb_path)
+            return True
+        except Exception as exc:  # pragma: no cover - optional
+            LOGGER.warning("Thumbnail generation failed for %s: %s", source, exc)
+            return False
 
     # ---------------------
     # Provenance helpers
@@ -336,6 +417,8 @@ class AssetRegistry(BaseRegistry):
         try:
             if suffix == ".png" and PngImagePlugin is not None:
                 self._stamp_png(dest, marker)
+            elif suffix in {".mp3", ".ogg", ".oga", ".flac", ".wav", ".wave"}:
+                self._stamp_audio(dest, marker, suffix)
             else:
                 LOGGER.debug("No provenance marker implementation for %s files", suffix)
         except Exception as exc:  # pragma: no cover - defensive
@@ -356,3 +439,75 @@ class AssetRegistry(BaseRegistry):
                         png_info.add_text(key, value)
             png_info.add_text(PROVENANCE_TAG, marker)
             img.save(dest, pnginfo=png_info)
+
+    @staticmethod
+    def _stamp_audio(dest: Path, marker: str, suffix: str) -> None:
+        if suffix == ".mp3":
+            AssetRegistry._stamp_mp3(dest, marker)
+        elif suffix in {".ogg", ".oga"}:
+            AssetRegistry._stamp_ogg(dest, marker)
+        elif suffix == ".flac":
+            AssetRegistry._stamp_flac(dest, marker)
+        elif suffix in {".wav", ".wave"}:
+            AssetRegistry._stamp_wav(dest, marker)
+
+    @staticmethod
+    def _stamp_mp3(dest: Path, marker: str) -> None:
+        if MP3 is None or ID3 is None or TXXX is None:
+            LOGGER.debug("Mutagen ID3 support unavailable; skipping MP3 provenance for %s", dest)
+            return
+        try:
+            try:
+                tags = ID3(dest)  # type: ignore[call-arg]
+            except ID3NoHeaderError:  # type: ignore[misc]
+                tags = ID3()  # type: ignore[call-arg]
+            tags.delall(f"TXXX:{PROVENANCE_TAG}")
+            tags.add(TXXX(encoding=3, desc=PROVENANCE_TAG, text=[marker]))
+            tags.save(dest)  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - optional
+            LOGGER.warning("Unable to embed MP3 provenance for %s: %s", dest, exc)
+
+    @staticmethod
+    def _stamp_ogg(dest: Path, marker: str) -> None:
+        if OggVorbis is None:
+            LOGGER.debug("Mutagen Ogg support unavailable; skipping provenance for %s", dest)
+            return
+        try:
+            audio = OggVorbis(dest)  # type: ignore[call-arg]
+            audio[PROVENANCE_TAG] = [marker]
+            audio.save()  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - optional
+            LOGGER.warning("Unable to embed OGG provenance for %s: %s", dest, exc)
+
+    @staticmethod
+    def _stamp_flac(dest: Path, marker: str) -> None:
+        if FLAC is None:
+            LOGGER.debug("Mutagen FLAC support unavailable; skipping provenance for %s", dest)
+            return
+        try:
+            audio = FLAC(dest)  # type: ignore[call-arg]
+            audio[PROVENANCE_TAG] = [marker]
+            audio.save()  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - optional
+            LOGGER.warning("Unable to embed FLAC provenance for %s: %s", dest, exc)
+
+    @staticmethod
+    def _stamp_wav(dest: Path, marker: str) -> None:
+        if WAVE is None or TXXX is None:
+            LOGGER.debug("Mutagen WAV support unavailable; skipping provenance for %s", dest)
+            return
+        try:
+            audio = WAVE(dest)  # type: ignore[call-arg]
+            if getattr(audio, "tags", None) is None:
+                add_tags = getattr(audio, "add_tags", None)
+                if callable(add_tags):
+                    add_tags()
+            tags = getattr(audio, "tags", None)
+            if tags is None:
+                LOGGER.warning("Unable to embed WAV provenance for %s (no tag container)", dest)
+                return
+            tags.delall(f"TXXX:{PROVENANCE_TAG}")
+            tags.add(TXXX(encoding=3, desc=PROVENANCE_TAG, text=[marker]))  # type: ignore[call-arg]
+            audio.save()  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - optional
+            LOGGER.warning("Unable to embed WAV provenance for %s: %s", dest, exc)

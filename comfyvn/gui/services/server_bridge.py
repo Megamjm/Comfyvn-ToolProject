@@ -21,6 +21,7 @@ _UNSET = object()
 
 class ServerBridge(QObject):
     status_updated = Signal(dict)
+    warnings_updated = Signal(list)
 
     def __init__(self, base: Optional[str] = None):
         super().__init__()
@@ -29,6 +30,8 @@ class ServerBridge(QObject):
         self._thread: Optional[threading.Thread] = None
         self._interval = 3
         self._latest: Dict[str, Any] = {}
+        self._warnings: list[Dict[str, Any]] = []
+        self._seen_warning_ids: set[str] = set()
 
     # ─────────────────────────────
     # Async polling loop (non-blocking)
@@ -37,12 +40,15 @@ class ServerBridge(QObject):
         try:
             async with httpx.AsyncClient(timeout=3.0) as cli:
                 response = await cli.get(f"{self.base_url}/system/metrics")
+                metrics_ok = await self._process_metrics_response(response)
+                if metrics_ok:
+                    await self._process_warnings(cli)
         except Exception as exc:
             logger.error("Metrics polling error: %s", exc, exc_info=True)
             self._latest = {"ok": False, "error": str(exc)}
             self.status_updated.emit(self._latest)
-            return
 
+    async def _process_metrics_response(self, response: httpx.Response) -> bool:
         if response.status_code == 200:
             try:
                 payload = response.json()
@@ -51,10 +57,44 @@ class ServerBridge(QObject):
             self._latest = payload
             logger.debug("Received system metrics: %s", payload)
             self.status_updated.emit(payload)
-        else:
-            logger.warning("Metrics request failed: %s", response.status_code)
-            self._latest = {"ok": False, "status": response.status_code}
-            self.status_updated.emit(self._latest)
+            return True
+
+        logger.warning("Metrics request failed: %s", response.status_code)
+        self._latest = {"ok": False, "status": response.status_code}
+        self.status_updated.emit(self._latest)
+        return False
+
+    async def _process_warnings(self, client: httpx.AsyncClient) -> None:
+        try:
+            warn_resp = await client.get(f"{self.base_url}/api/system/warnings", params={"limit": 20})
+        except Exception as exc:
+            logger.debug("Warning fetch failed: %s", exc)
+            return
+
+        if warn_resp.status_code != 200:
+            return
+
+        try:
+            warn_payload = warn_resp.json()
+        except Exception:
+            warn_payload = {}
+        warnings = warn_payload.get("warnings", []) if isinstance(warn_payload, dict) else []
+        if not isinstance(warnings, list):
+            return
+        new_warnings = []
+        for item in warnings:
+            if not isinstance(item, dict):
+                continue
+            warn_id = str(item.get("id") or "")
+            if warn_id and warn_id in self._seen_warning_ids:
+                continue
+            if warn_id:
+                self._seen_warning_ids.add(warn_id)
+            new_warnings.append(item)
+        if new_warnings:
+            self._warnings.extend(new_warnings)
+            self._warnings = self._warnings[-50:]
+            self.warnings_updated.emit(new_warnings)
 
     def start_polling(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -191,6 +231,15 @@ class ServerBridge(QObject):
             return data
         return None
 
+    def providers_create(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        result = self.post_json("/api/providers/create", payload, default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
     def providers_register(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         result = self.post_json("/api/providers/register", payload, default=None)
         if not isinstance(result, dict):
@@ -198,6 +247,9 @@ class ServerBridge(QObject):
         data = result.get("data")
         if isinstance(data, dict):
             return data
+
+    def get_warnings(self) -> list[Dict[str, Any]]:
+        return list(self._warnings)
         return None
 
     def providers_activate(self, provider_id: str, active: bool) -> Optional[Dict[str, Any]]:
@@ -220,6 +272,25 @@ class ServerBridge(QObject):
 
     def providers_remove(self, provider_id: str) -> Optional[Dict[str, Any]]:
         result = self._request("DELETE", f"/api/providers/remove/{provider_id}", timeout=5.0)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_export(self, include_secrets: bool = False) -> Optional[Dict[str, Any]]:
+        params = {"include_secrets": "true" if include_secrets else "false"}
+        result = self.get_json("/api/providers/export", params, default=None)
+        if not isinstance(result, dict):
+            return None
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+        return None
+
+    def providers_import(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        result = self.post_json("/api/providers/import", payload, default=None)
         if not isinstance(result, dict):
             return None
         data = result.get("data")

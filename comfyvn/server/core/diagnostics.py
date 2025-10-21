@@ -5,10 +5,11 @@ logger = logging.getLogger(__name__)
 # 🧠 Diagnostics — collects startup info, errors, and saves reports
 
 import os, json, datetime
+from comfyvn.config.runtime_paths import diagnostics_dir
 
-LOG_PATH = "./logs/diagnostics"
-os.makedirs(LOG_PATH, exist_ok=True)
-REPORT_FILE = os.path.join(LOG_PATH, "startup_report.json")
+LOG_PATH = diagnostics_dir()
+LOG_PATH.mkdir(parents=True, exist_ok=True)
+REPORT_FILE = diagnostics_dir("startup_report.json")
 
 _startup_log = {
     "timestamp": datetime.datetime.now().isoformat(),

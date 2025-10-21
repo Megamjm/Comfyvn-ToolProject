@@ -71,7 +71,7 @@ All prior job history features (Phases 3.5 – 3.7) remain fully compatible.
 
 ### Files
 - `comfyvn/gui/components/task_manager_dock.py` (updated)
-- `./logs/jobs/` (auto-created)
+- `jobs/` folder inside the user log directory (auto-created)
 
 ### Notes
 Logs rotate oldest-first when exceeding 10 files.

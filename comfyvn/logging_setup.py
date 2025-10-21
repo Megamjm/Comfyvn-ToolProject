@@ -1,7 +1,7 @@
 """
 Logging bootstrap for ComfyVN.
 
-Creates a run-scoped directory in logs/ and attaches rotating file + console handlers.
+Creates a run-scoped directory in the user log folder and attaches rotating file + console handlers.
 """
 
 from __future__ import annotations
@@ -12,12 +12,14 @@ import pathlib
 from logging.handlers import RotatingFileHandler
 from typing import Tuple
 
+from comfyvn.config.runtime_paths import logs_dir
+
 
 def init_logging(run_tag: str = "session") -> Tuple[pathlib.Path, str]:
-    logs_dir = pathlib.Path("logs")
-    logs_dir.mkdir(parents=True, exist_ok=True)
+    logs_root = logs_dir()
+    logs_root.mkdir(parents=True, exist_ok=True)
     run_id = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    run_dir = logs_dir / f"run-{run_id}"
+    run_dir = logs_root / f"run-{run_id}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     formatter = logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")

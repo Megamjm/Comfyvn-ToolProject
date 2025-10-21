@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core.external_extractors import extractor_manager
-from comfyvn.server.core.extractor_installer import KNOWN_EXTRACTORS, install_extractor
+from comfyvn.server.core import extractor_installer
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
 from comfyvn.server.modules.auth import require_scope
 
@@ -26,6 +26,15 @@ def _task_meta(task_id: str) -> Dict[str, Any]:
     if task and task.meta:
         return dict(task.meta)
     return {}
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        return lowered in {"true", "1", "yes", "on"}
+    return bool(value)
 
 
 def _execute_import(task_id: str, package_path: str, overwrite: bool, tool: Optional[str]) -> Dict[str, Any]:
@@ -92,7 +101,8 @@ async def import_vn(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="path is required")
 
     overwrite = bool(payload.get("overwrite", False))
-    blocking = bool(payload.get("blocking", False))
+    blocking_value = payload.get("blocking")
+    blocking = _coerce_bool(blocking_value) if blocking_value is not None else True
     tool = payload.get("tool")
     if tool:
         tool = str(tool).strip()
@@ -248,13 +258,13 @@ async def install_tool(payload: Dict[str, Any], _: bool = Depends(require_scope(
         raise HTTPException(status_code=400, detail="name is required")
     if not payload.get("accept_terms"):
         raise HTTPException(status_code=400, detail="accept_terms must be true")
-    meta = KNOWN_EXTRACTORS.get(name)
+    meta = extractor_installer.KNOWN_EXTRACTORS.get(name)
     if not meta:
         raise HTTPException(status_code=404, detail="unknown extractor")
 
     target = payload.get("target_dir")
     try:
-        result = install_extractor(name, target_dir=target)
+        result = extractor_installer.install_extractor(name, target_dir=target)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive
@@ -280,7 +290,7 @@ async def install_tool(payload: Dict[str, Any], _: bool = Depends(require_scope(
 @router.get("/tools/catalog")
 async def tool_catalog() -> Dict[str, Any]:
     catalog = []
-    for key, meta in KNOWN_EXTRACTORS.items():
+    for key, meta in extractor_installer.KNOWN_EXTRACTORS.items():
         catalog.append(
             {
                 "id": key,

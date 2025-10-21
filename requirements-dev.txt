@@ -1,0 +1,2 @@
+-r requirements.txt
+platformdirs>=4.2

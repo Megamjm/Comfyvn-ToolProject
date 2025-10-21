@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, Importer, PlanResult
+from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.importers.renpy_setup import ensure_renpy_sdk, get_renpy_executable
 from comfyvn.core.normalizer import normalize_tree
 
@@ -60,7 +60,7 @@ class RenpyImporter:
         out_dir: Path | str,
         *,
         hooks: Optional[Dict[str, str]] = None,
-    ) -> Path:
+    ):
         root_path = Path(root)
         out_path = Path(out_dir)
         renpy_home = ensure_renpy_sdk()
@@ -80,13 +80,16 @@ class RenpyImporter:
             manifest["sources"]["renpy_executable"] = str(renpy_exec)
 
         LOGGER.info("Normalizing Ren'Py project from %s -> %s", root_path, out_path)
-        return normalize_tree(
+        result = normalize_tree(
             root_path,
             out_path,
             engine=self.label,
             manifest_patch=manifest,
             hooks=hooks or {},
         )
+        if result.warnings:
+            LOGGER.warning("Ren'Py normalizer warnings:\n%s", "\n".join(result.warnings))
+        return result
 
 
 __all__ = ["RenpyImporter"]

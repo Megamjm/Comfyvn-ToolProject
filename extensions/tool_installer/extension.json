@@ -5,5 +5,9 @@
   "description": "Lists optional VN extraction helpers (e.g. arc_unpacker) and links to installation docs.",
   "official": false,
   "author": "Importer Chat",
-  "homepage": "https://github.com/vn-tools/arc_unpacker"
+  "homepage": "https://github.com/vn-tools/arc_unpacker",
+  "entrypoint": "extension.py",
+  "requires": {
+    "comfyvn": ">=1.0.0"
+  }
 }

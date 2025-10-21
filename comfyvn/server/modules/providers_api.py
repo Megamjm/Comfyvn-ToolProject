@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Request
 
 from comfyvn.core.compute_providers import health as provider_health
 from comfyvn.core.compute_registry import get_provider_registry
@@ -30,6 +31,30 @@ async def register_provider(payload: Dict[str, Any] = Body(...)) -> Dict[str, An
         raise HTTPException(status_code=400, detail=str(exc))
     LOGGER.info("Provider registered/updated -> %s", entry.get("id"))
     return {"ok": True, "provider": entry}
+
+
+@router.post("/create")
+async def create_provider(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    template_id = payload.get("template_id")
+    if not template_id:
+        raise HTTPException(status_code=400, detail="template_id is required")
+    try:
+        entry = REGISTRY.create_from_template(
+            template_id,
+            provider_id=payload.get("id"),
+            name=payload.get("name"),
+            base_url=payload.get("base_url"),
+            config=payload.get("config"),
+            meta_overrides=payload.get("meta"),
+            priority=payload.get("priority"),
+            active=bool(payload.get("active", True)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    providers = REGISTRY.list()
+    masked = next((p for p in providers if p.get("id") == entry.get("id")), entry)
+    LOGGER.info("Provider created from template '%s' -> %s", template_id, entry.get("id"))
+    return {"ok": True, "provider": masked}
 
 
 @router.post("/activate")
@@ -90,3 +115,50 @@ async def remove_provider(provider_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="provider not found")
     LOGGER.info("Provider removed -> %s", provider_id)
     return {"ok": True, "removed": provider_id}
+
+
+def _client_is_local(request: Request) -> bool:
+    try:
+        client = request.client
+        if not client or not client.host:
+            return True
+        return client.host in {"127.0.0.1", "::1", "localhost"}
+    except Exception:  # pragma: no cover - defensive
+        return True
+
+
+def _secrets_export_allowed(request: Request) -> bool:
+    env_flag = os.getenv("COMFYVN_ALLOW_SECRET_EXPORT", "").lower()
+    if env_flag in {"1", "true", "yes"}:
+        return True
+    return _client_is_local(request)
+
+
+@router.get("/export")
+async def export_providers(request: Request, include_secrets: bool = False) -> Dict[str, Any]:
+    if include_secrets and not _secrets_export_allowed(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Secrets export permitted only from localhost or when COMFYVN_ALLOW_SECRET_EXPORT=1.",
+        )
+    export = REGISTRY.export_all(mask_secrets=not include_secrets)
+    return {"ok": True, "export": export}
+
+
+@router.post("/import")
+async def import_providers(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    replace = bool(payload.get("replace", False))
+    overwrite = payload.get("overwrite", True)
+    try:
+        imported = REGISTRY.import_data(payload, replace=replace, overwrite=bool(overwrite))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    imported_ids: List[str] = [row.get("id") for row in imported if isinstance(row, dict) and row.get("id")]
+    providers = REGISTRY.list()
+    LOGGER.info(
+        "Imported %d provider(s) (replace=%s overwrite=%s)",
+        len(imported),
+        replace,
+        overwrite,
+    )
+    return {"ok": True, "imported": imported_ids, "providers": providers}

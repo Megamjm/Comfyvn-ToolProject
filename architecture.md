@@ -82,8 +82,8 @@ logs/
 exports/
 renpy_project/
 
-
-Important: Only templates and example assets belong in Git. User data (imports, generated assets, cache, logs) must be git-ignored.
+Important: Only templates and example assets belong in Git. User data (imports, generated assets, cache, logs) must be git-ignored.  
+`renpy_project/` is a reference-only Ren'Py sample used for renderer/export validation; keep it pristine (copy assets out before editing, never write saves/build artefacts back into the repo).
 
 3) Phase plan (Studio-style delivery)
 Phase 1 — Core stabilization
@@ -104,7 +104,8 @@ Outputs:
 
 Acceptance: ~~curl /health returns {status:"ok"}; /status lists routes and version.~~ ✅ Verified 2025-10-20
 
-Notes: Ensure python-multipart in requirements.
+Notes: Ensure python-multipart in requirements.  
+2025-10-21 — Launcher (`run_comfyvn.py`) derives the default port from `COMFYVN_SERVER_PORT` or the shared settings file (`data/settings/config.json`) and writes the resolved value back to the environment so the GUI and backend stay aligned across restarts.
 
 Part B — GUI shell & metrics
 
@@ -131,6 +132,12 @@ Owner: Project Integration Chat
 Outputs: ~~All logs under ./logs/ (gui.log, server.log, launcher.log).~~ ✅ 2025-10-20
 
 Acceptance: ~~Re-run writes to the same files; log rotation policy documented.~~ ✅ Logging normalized 2025-10-20
+
+Phase 1 — Stability follow-ups (next)
+- ~~Silence the Pydantic field warning by renaming `RegisterAssetRequest.copy`.~~ ✅ 2025-10-23 — Boolean renamed to `copy_file` (alias `copy`) inside `comfyvn/server/modules/assets_api.py`, removing the Pydantic shadow warning without breaking the API.
+- ~~Add regression coverage for `/settings/save` to confirm deep-merge semantics on the shared settings file.~~ ✅ 2025-10-23 — `tests/test_settings_api.py::test_settings_save_deep_merge` patches the settings manager and verifies nested keys survive incremental saves.
+- ~~Track launcher/settings alignment via a smoke test that exercises `run_comfyvn.py --server-only` and probes `/health` + `/status`.~~ ✅ 2025-10-23 — `tests/test_launcher_smoke.py` parses launcher arguments, applies the environment, boots uvicorn, and polls both endpoints.
+- Document the port-resolution pathway and environment overrides in public-facing docs (owner: Project Integration) — README updated 2025-10-21; keep parity in future release notes.
 
 Phase 2 — Data layer & registries (v0.6 baseline)
 
@@ -166,7 +173,7 @@ Acceptance: Importing any asset yields a registry row + thumbnail + sidecar.
 
 Status:
 - ~~Registry copy/hash/sidecar helpers available via `AssetRegistry.register_file`.~~ ✅ 2025-10-20
-- ⚠ Thumbnail worker still inline; background worker deferred while Pillow-powered path handles PNGs.
+- ✅ 2025-10-21 — Thumbnail generation now runs on a background worker, keeping large image imports from blocking the registration path while still updating the registry once the thumb is ready.
 - ✅ 2025-10-21 — `/assets` router now fronts the registry (list/detail/upload/register/delete), ensuring metadata sidecars + thumbnails stay in sync and logging uploads to aid debugging.
 - ✅ 2025-10-21 — Provenance ledger + PNG metadata stamp in place; asset sidecars include provenance id/source/workflow hash.
 
@@ -184,7 +191,7 @@ Acceptance: Exported asset carries minimal embedded stamp; provenance manifest a
 
 Status:
 - ✅ 2025-10-21 — AssetRegistry records provenance rows, embeds `comfyvn_provenance` markers in PNGs, and preserves license tags in metadata/sidecars.
-- ⚠ Audio/voice stamping pending ID3 integration; current implementation logs a warning for unsupported formats.
+- ✅ 2025-10-21 — Audio/voice assets embed provenance markers via optional Mutagen support (MP3/OGG/FLAC/WAV); when tagging libraries are unavailable the system falls back gracefully with a debug notice.
 
 Phase 3 — Import infrastructure
 
@@ -205,7 +212,7 @@ Progress:
 - ✅ 2025-10-21 — `/roleplay/imports/{job_id}` aggregates job + import metadata for GUI status polling.
 - ✅ 2025-10-21 — `/roleplay/imports` list + `/roleplay/imports/{job_id}/log` enable Studio shell dashboards and log viewers; docs outline curl + sqlite inspection steps.
 - ✅ 2025-10-21 — Studio `RoleplayImportView` upgraded to live job dashboard with auto-refresh and inline log viewer, consuming the new API hooks.
-- ⚠ Background job offload + multi-scene splitting still pending; current implementation runs synchronously per request.
+- ✅ 2025-10-22 — Roleplay imports now offload to background threads with optional blocking mode exposed to the API; multi-scene splitting remains on the backlog.
 
 Part B — VN “pak/zip” importer
 
@@ -227,9 +234,9 @@ Status:
 - ✅ 2025-10-21 — `/vn/import/{job_id}` exposes job meta + cached summary JSON; backend writes `summary_path` + log artifacts for downstream UI.
 - ✅ 2025-10-21 — External extractor manager (`/vn/tools/*`) lets users register binaries like arc_unpacker with regional warnings; importer auto-detects `.arc`/`.xp3` via adapters and records extractor provenance.
 - ✅ 2025-10-21 — `/vn/tools/install` downloads curated extractors from GitHub with explicit license warnings and auto-registers them; `tool_installer` extension exposes installer docs.
-- 🚧 Engine adapters pending — Build per-engine importers (Ren’Py, KiriKiri/KAG, NScripter family, Yu-RIS, CatSystem2, BGI/Ethornell, RealLive/Siglus, Unity VN, TyranoScript, LiveMaker) using detection heuristics documented in `docs/importer_engine_matrix.md`. Preserve voice/text mapping, convert proprietary formats via user-supplied hooks, and emit `comfyvn-pack@1` manifests.
-- 🚧 Normalizer/manifest writer — Implement `core/normalizer.py` to create deterministic asset IDs, manage thumbnails, and store large binaries on disk with JSON sidecars; persist provenance metadata for audits.
-- 🚧 Translation + remix pipeline — Integrate segmenters, TM/glossary, ComfyUI remix workflows (sprite recolor, CG upscale, UI theme), and export targets (Ren’Py loose/RPA via hook, KiriKiri overlay patch, Tyrano data/). See Section 6 design notes.
+- ✅ 2025-10-22 — Engine adapters wired: stage extraction feeds the importer registry, auto-detecting Ren'Py, KiriKiri, NScripter, Yu-RIS, CatSystem2, BGI/Ethornell, RealLive/Siglus, Unity VN, TyranoScript, and LiveMaker to emit `comfyvn-pack@1` manifests with per-engine metadata.
+- ✅ 2025-10-22 — Normalizer upgraded (`core/normalizer.py`) to emit deterministic asset IDs, thumbnail placeholders, provenance-rich sidecars for large binaries, and manifest side-channel bookkeeping for audits.
+- ✅ 2025-10-22 — Translation/remix pipeline delivered: segmenters generate translation bundles with TM hints, remix planning emits ComfyUI task manifests plus music stubs, and export plans cover Ren'Py loose/RPA, KiriKiri overlay, and Tyrano data outputs.
 - 🚧 Manga importer parity — Mirror VN importer behaviour for Manga → VN conversion; ensure branchable scenes, voice synthesis hooks, and asset registries align.
 - ⚠ Adapter selection (Ren’Py vs. generic), overwrite policy UX, and queued job cancellation still pending.
 
@@ -249,6 +256,15 @@ Acceptance: Manga archive becomes a basic VN timeline with panels as backgrounds
 
 Phase 4 — Studio views
 
+Recent Phase 4 updates (2025-10-22):
+- ✅ Unified the Studio shell under `gui/main_window` with the legacy `studio_window` gating development toggles only; ServerBridge wiring, layout persistence, and menu flows now live in a single entrypoint.
+- ✅ Scenes and Characters panels gained in-place editors backed by `/api/scenes/*` and `/api/characters/*`, keeping registry refreshes in-sync without regressing polling performance.
+- ✅ Persisted server port selector now issues a relaunch reminder, writes through `ServerBridge.save_settings()`, and verifies the handshake against the backend before accepting the value.
+- ✅ Backend warnings (provenance/import/advisory) flow through the toast + toast log system; warning toasts provide `View details` deep links and persist the latest 20 events.
+- ✅ Extension manifests now enforce semantic-version compatibility (`requires.comfyvn`, optional API versions, explicit entrypoints). Incompatible plugins are skipped with surfaced diagnostics instead of hard failures.
+- ✅ Runtime data (logs, settings, workspaces, caches) moved to OS-specific user directories via `comfyvn.config.runtime_paths`, with optional overrides (`COMFYVN_RUNTIME_ROOT`, `COMFYVN_LOG_DIR`, etc.) and legacy-friendly symlinks for existing scripts.
+- ✅ Packaging roadmap documented in `docs/packaging_plan.md`, aligning wheel + PyInstaller/AppImage deliverables and signing/notarisation requirements.
+
 Part A — Scenes view (designer)
 
 Owner: GUI Code Production
@@ -262,7 +278,7 @@ Inline play/preview
 Acceptance: Create/edit scenes, persist changes; valid JSON schema; undo/redo.
 
 Progress:
-- ✅ 2025-10-21 — Dockable Scenes panel lists registry scenes and refreshes when projects change (baseline browser, no editor yet).
+- ✅ 2025-10-22 — Node editor enables create/edit/delete for text, choice, and action nodes; inspector commits to `/api/scenes/save`, performs schema validation before merge, and tracks undo/redo history per session.
 
 Part B — Characters view (lab)
 
@@ -277,7 +293,7 @@ Links to scenes containing this character
 Acceptance: Changing portrait/expression reflects in preview and persisted model.
 
 Progress:
-- ✅ 2025-10-21 — Characters dock lists registry entries and displays origin metadata; updates automatically on project switch (editing still pending).
+- ✅ 2025-10-22 — Trait editor now supports inline edits, portrait swaps, and expression preview syncing; changes persist via `/api/characters/update` and cross-link scenes refresh on save.
 
 Part C — Timeline builder
 
@@ -344,6 +360,7 @@ Next wave (Importer alignment):
 - Populate curated provider profiles (RunPod, Vast.ai, Lambda Labs, AWS EC2, Azure NV, Paperspace, unRAID, on-prem SSH/NFS) including authentication fields, cost/V RAM metadata, and policy hints for importer workloads (e.g., voice synthesis vs. large CG batch).
 - Extend `/compute/advise` to consider importer asset sizes, translation pipeline demands, and cached ComfyUI workflow requirements. Surface recommended provider + cost estimate back into importer job summary.
 - Document remote GPU onboarding flows in `docs/remote_gpu_services.md`, including legal caveats around content processing and data residency.
+- ✅ 2025-10-22 — `/api/providers/{create,import,export}` support template-based provisioning, sharing, and backups; reference docs in `docs/compute_advisor_integration.md`.
 - ✅ 2025-10-21 — `/api/gpu/advise` exposes compute advisor recommendations (local vs remote choice, cost hints, rationale) to importer pipelines and GUI scheduling.
 
 Phase 6 — Audio & music
@@ -356,11 +373,11 @@ Outputs:
 
 API: /api/tts/synthesize (scene_id/character_id/text/lang)
 
-Backend: ComfyUI node pipeline or local adapter; cache to assets_registry
+Backend: ComfyUI node pipeline (workflow templating) with synthetic fallback; cache to assets_registry via audio cache manager
 
 Acceptance: Generating a line creates a voice asset with sidecar + provenance.
-Debugging: POST `/api/tts/synthesize` with curl, inspect `exports/tts/<voice>_<hash>.txt/.json`, confirm `logs/server.log` shows cached toggle on repeat call.
-Notes: See docs/studio_phase6_audio.md for API contracts, cache expectations, and logging checklist.
+Debugging: POST `/api/tts/synthesize` with curl, inspect `exports/tts/<voice>_<hash>.wav/.json`, confirm `logs/server.log` shows cached toggle on repeat call and `provider` metadata when ComfyUI is active.
+Notes: See docs/studio_phase6_audio.md for API contracts, ComfyUI settings, cache expectations, and logging checklist.
 
 Part B — Music remix
 
@@ -373,8 +390,8 @@ API: /api/music/remix (scene_id, target_style)
 Looping/intro/outro helpers; asset linkage
 
 Acceptance: Scene playback swaps to remixed track without glitch; asset registered.
-Debugging: POST `/api/music/remix` with scene/style, inspect `exports/music/<scene>_<style>_*.txt/.json`, confirm INFO log in `logs/server.log`.
-Notes: Stub implementation in `comfyvn/core/music_remix.py`; replace with real pipeline while preserving `(artifact, sidecar)` contract.
+Debugging: POST `/api/music/remix` with scene/style, inspect `exports/music/<scene>_<style>_*.wav/.json`, confirm INFO log in `logs/server.log` and ComfyUI provenance details when enabled.
+Notes: `comfyvn/core/music_remix.py` submits MusicGen workflows to ComfyUI when configured and falls back to deterministic synth; `(artifact, sidecar)` contract unchanged.
 
 Part C — Audio cache manager
 

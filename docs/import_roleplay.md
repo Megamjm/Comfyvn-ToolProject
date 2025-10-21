@@ -15,7 +15,7 @@ Processing steps:
 6. Job row updated with output payload; status can be queried via `/roleplay/imports/{job_id}` or listed via `/roleplay/imports`.
 
 Debugging tips:
-- Check `logs/imports/roleplay_<job>.log` for per-job transcript diagnostics.
+- Check `imports/roleplay_<job>.log` under the user log directory for per-job transcript diagnostics.
 - Inspect database rows with `sqlite3 comfyvn/data/comfyvn.db "SELECT * FROM jobs ORDER BY id DESC LIMIT 5;"`.
 - Use `tests/test_studio_api.py` and future importer-specific tests for automation.
 - Retrieve importer log text via `curl http://localhost:8001/roleplay/imports/<job_id>/log` to surface in Studio consoles.

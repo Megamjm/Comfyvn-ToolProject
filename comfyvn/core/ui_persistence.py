@@ -4,7 +4,8 @@ from PySide6.QtGui import QAction
 import json
 from pathlib import Path
 from comfyvn.core.log_bus import log
-CONF = Path("data/settings/features.json")
+from comfyvn.config.runtime_paths import settings_file
+CONF = settings_file("features.json")
 def load_state():
     if CONF.exists():
         try: return json.loads(CONF.read_text(encoding="utf-8"))

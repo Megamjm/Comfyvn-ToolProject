@@ -16,9 +16,21 @@ class NotifyOverlay(QWidget):
         self.v.setSpacing(6)
         self.labels = []
 
-    def toast(self, text: str, ms=3000):
+    def toast(self, text: str, level: str = "info", ms: int = 3000):
+        level = (level or "info").lower()
+        accent = {
+            "info": "#4da3ff",
+            "success": "#4caf50",
+            "warn": "#ffb300",
+            "warning": "#ffb300",
+            "error": "#ff5252",
+        }.get(level, "#4da3ff")
         lab = QLabel(text)
-        lab.setStyleSheet("QLabel { background: rgba(30,30,30,190); color: white; border-radius:8px; padding:8px 12px; }")
+        style = (
+            "QLabel {{ background: rgba(30,30,30,220); color: white; border-radius:8px; padding:8px 12px;"
+            " border-left: 4px solid {accent}; }}"
+        ).format(accent=accent)
+        lab.setStyleSheet(style)
         lab.setWordWrap(True)
         self.v.addWidget(lab, alignment=Qt.AlignRight)
         self.labels.append(lab)

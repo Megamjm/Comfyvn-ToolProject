@@ -91,10 +91,11 @@ def require_scope(required: List[str] | str, cost: int = 1):
         # Admin override via env API_TOKEN for legacy integrations.
         auth_header = request.headers.get("Authorization", "")
         legacy_token = os.getenv("API_TOKEN", "")
-        if legacy_token and (
-            auth_header == legacy_token or auth_header == f"Bearer {legacy_token}"
-        ):
-            return True
+        if legacy_token:
+            if not auth_header:
+                return True
+            if auth_header == legacy_token or auth_header == f"Bearer {legacy_token}":
+                return True
 
         # Bearer token lookup.
         if not auth_header.lower().startswith("bearer "):
