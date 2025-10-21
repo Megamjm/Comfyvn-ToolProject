@@ -28,11 +28,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from comfyvn.gui.panels.characters_panel import CharactersPanel
-from comfyvn.gui.panels.scenes_panel import ScenesPanel
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.gui.statusbar_metrics import StatusBarMetrics
-from comfyvn.gui.views import AssetSummaryView, ImportsJobsView, TimelineSummaryView
+from comfyvn.gui.views import (
+    AssetSummaryView,
+    CharactersView,
+    ImportsJobsView,
+    ScenesView,
+    TimelineView,
+)
 from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
 from comfyvn.studio.core.asset_registry import AssetRegistry
 from comfyvn.studio.core.character_registry import CharacterRegistry
@@ -152,9 +156,9 @@ class StudioWindow(QMainWindow):
             "Imports": QStyle.SP_BrowserReload,
         }
 
-        self._scene_view = ScenesPanel(self._scene_registry, self)
-        self._characters_view = CharactersPanel(self._character_registry, self)
-        self._timeline_view = TimelineSummaryView(self._timeline_registry, self)
+        self._scene_view = ScenesView(self.bridge, self)
+        self._characters_view = CharactersView(self.bridge, self)
+        self._timeline_view = TimelineView(self.bridge, self)
         self._asset_view = AssetSummaryView(self._asset_registry, self)
         self._imports_view = ImportsJobsView(self.bridge.base_url, self)
 
@@ -248,10 +252,14 @@ class StudioWindow(QMainWindow):
         self._timeline_registry = TimelineRegistry(project_id=self._current_project)
         self._asset_registry = AssetRegistry(project_id=self._current_project)
 
-        self._scene_view.set_registry(self._scene_registry)
-        self._characters_view.set_registry(self._character_registry)
-        self._timeline_view.set_registry(self._timeline_registry)
-        self._asset_view.set_registry(self._asset_registry)
+        if hasattr(self._scene_view, "set_registry"):
+            self._scene_view.set_registry(self._scene_registry)
+        if hasattr(self._characters_view, "set_registry"):
+            self._characters_view.set_registry(self._character_registry)
+        if hasattr(self._timeline_view, "set_registry"):
+            self._timeline_view.set_registry(self._timeline_registry)
+        if hasattr(self._asset_view, "set_registry"):
+            self._asset_view.set_registry(self._asset_registry)
         # Imports view is project-agnostic (jobs feed), so no changes needed.
         self._refresh_view(self._current_view)
 

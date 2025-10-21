@@ -90,14 +90,14 @@ Important: Only templates and example assets belong in Git. User data (imports, 
 Studio v0.7 release coordination (target window: 2025-10-27)
 
 Highlights:
-- Unified Studio shell under `gui/main_window/*` with scenes, characters, and timeline editors feeding the registries without regressions. ✅ GUI Code Production
+- Unified Studio shell under `gui/main_window/*` with scenes, characters, and timeline inspectors now mirrored in `gui/views/{scenes,characters,timeline}_view.py`. These views fetch from `/api/{scenes,characters,timelines}` via `ServerBridge` and fall back to mock payloads when the server is offline. ✅ GUI Code Production
 - Import infrastructure (roleplay + VN) hardened with job dashboards, provenance stamping, and asset registry parity; docs live under `docs/import_roleplay.md` and `docs/importer_engine_matrix.md`. ✅ Importer + Roleplay Chats
 - Remote compute path delivers `/jobs/ws`, GPU manager policies, and provider registry with curated templates; packaging + runtime storage docs aligned. ✅ System/Server Core + Remote Compute Chats
-- Policy gate, advisory scans, and TTS/music pipelines landed with cache + provenance scaffolding; GUI surfacing wired for acknowledgements and previews. ✅ Audio & Policy Chats
+- Policy gate, advisory scans, and audio lab stubs landed: cached `/api/tts/speak` synthesis (deterministic WAV + provenance sidecars) and `/api/music/remix` job plans provide repeatable previews until the ComfyUI hand-off is wired. GUI surfacing wired for acknowledgements and previews. ✅ Audio & Policy Chats
 
 Blockers (release-critical):
 - Asset inspector UX in the Studio assets panel remains unimplemented; needs thumbnails, provenance drill-down, and open-in-finder actions. Owner: Asset & Sprite System Chat.
-- Audio remix + TTS ComfyUI hand-off must write asset registry sidecars and telemetry before we can call audio automation done. Owner: Audio & Policy Chat.
+- Audio remix + TTS ComfyUI hand-off must write asset registry sidecars and telemetry before we can call audio automation done. Stub endpoints/cache are live under `comfyvn/server/routes/audio.py`; next iteration needs real synthesis plumbing. Owner: Audio & Policy Chat.
 - Manga importer parity (panel segmentation → VN timeline) is still flagged 🚧; release requires at least the preview flow and asset registration parity. Owner: Importer Chat.
 
 Cross-chat dependencies:
@@ -162,6 +162,7 @@ Phase 1 — Stability follow-ups (next)
 - ~~Add regression coverage for `/settings/save` to confirm deep-merge semantics on the shared settings file.~~ ✅ 2025-10-23 — `tests/test_settings_api.py::test_settings_save_deep_merge` patches the settings manager and verifies nested keys survive incremental saves.
 - ~~Track launcher/settings alignment via a smoke test that exercises `run_comfyvn.py --server-only` and probes `/health` + `/status`.~~ ✅ 2025-10-23 — `tests/test_launcher_smoke.py` parses launcher arguments, applies the environment, boots uvicorn, and polls both endpoints.
 - Document the port-resolution pathway and environment overrides in public-facing docs (owner: Project Integration) — README updated 2025-10-21; keep parity in future release notes.
+- ✅ 2025-10-27 — Scenario graph foundation landed: canonical scene schema (`comfyvn/schema/scenario_schema.json`), deterministic runner (`comfyvn/runner/scenario_runner.py` + seeded RNG), and `/api/scenario/{validate,run/step}` endpoints unblock branching playback tests; authoring GUI + callbacks remain on the backlog.
 
 Phase 2 — Data layer & registries (v0.6 baseline)
 
@@ -278,6 +279,11 @@ Optional translation pass (target: user base language)
 
 Acceptance: Manga archive becomes a basic VN timeline with panels as backgrounds and lines as dialogue; fix-up UI available.
 
+Status:
+- ✅ 2025-10-27 — `/manga/pipeline/start` now provisions production jobs under `data/manga/<job_id>`, executes staged segmentation → OCR → grouping → speaker attribution with configurable providers, and publishes `manifest.json` + log artifacts for Studio dashboards.
+- ✅ 2025-10-27 — Provider registry (`comfyvn/manga/providers.py`) lists open-source (Basic/Whitespace segmenter, Tesseract, EasyOCR), ComfyUI I2T workflow, and paid connectors (Azure Vision, Google Vision, OpenAI dialogue attribution). `/manga/pipeline/providers` exposes metadata (paid flags, config schema) for UI wiring.
+- ✅ 2025-10-27 — Provider settings accept ComfyUI base URLs/workflows, cloud API keys, and language hints; manifests capture chosen providers per stage for auditing. Jobs continue to run even if a provider falls back, with warnings surfaced in `manifest.json`.
+
 Phase 4 — Studio views
 
 Recent Phase 4 updates (2025-10-22):
@@ -304,6 +310,7 @@ Acceptance: Create/edit scenes, persist changes; valid JSON schema; undo/redo.
 
 Progress:
 - ✅ 2025-10-22 — Node editor enables create/edit/delete for text, choice, and action nodes; inspector commits to `/api/scenes/save`, performs schema validation before merge, and tracks undo/redo history per session.
+- ✅ 2025-10-28 — Scenes inspector now calls `/api/presentation/plan` to render a directive plan preview alongside the JSON, driven by the non-blocking presentation bridge.
 
 Part B — Characters view (lab)
 
@@ -447,6 +454,23 @@ Status:
 - ✅ 2025-10-21 — `AudioCacheManager` loads/persists JSON entries, keyed by the documented tuple and shared via `audio_cache` singleton for the TTS API.
 - ✅ 2025-10-21 — Cache path now resolved through `comfyvn/config/runtime_paths.audio_cache_file`, aligning with the runtime storage overhaul.
 - ⚠ Pending: eviction policy, size limits, and instrumentation (hit/miss counters to metrics/logs) before wider rollout.
+
+Part D — Asset dedup cache
+
+Owner: Asset & Sprite System Chat
+
+Outputs:
+
+Hash-indexed asset cache with refcounts + pin/unpin + LRU eviction; rebuild CLI.
+
+Acceptance: Duplicate asset files collapse to one record; pins are preserved after a rebuild.
+Debugging: `python scripts/rebuild_dedup_cache.py --assets ./assets` prints processed/duplicate counts and writes the JSON index to the runtime cache directory.
+Notes: Cache manager lives in `comfyvn/cache/cache_manager.py`; JSON index defaults to `cache/dedup/dedup_cache.json` via `runtime_paths.cache_dir`.
+
+Status:
+- ✅ 2025-10-22 — `CacheManager` stores content hashes, refcounts, and pin state with LRU eviction safeguards for non-pinned blobs.
+- ✅ 2025-10-22 — `scripts/rebuild_dedup_cache.py` rebuilds the index from disk while preserving pinned entries and reporting duplicates.
+- ⚠ TODO: hook asset registry import flows so new registrations automatically register/release paths against the dedup cache.
 
 Phase 7 — Advisory, policy, SFW/NSFW
 
@@ -663,6 +687,9 @@ Outputs:
 translations table; UI language toggle; fallback rules
 
 Acceptance: Switching language updates text, falls back cleanly.
+
+Status:
+- ✅ 2025-10-26 — Introduced `comfyvn/translation/manager.py`, GET/POST `/api/i18n/lang`, and stubbed POST `/api/translate/batch`; active/fallback language persisted to `config/comfyvn.json` with runtime fallback helper `translation.t`.
 
 Phase 11 — Ops & CI
 

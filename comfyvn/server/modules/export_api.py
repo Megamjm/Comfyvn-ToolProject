@@ -421,6 +421,28 @@ def _collect_assets(asset_refs: Iterable[str]) -> List[Tuple[str, Path]]:
     return assets
 
 
+def _bundle_readme(project_id: str, timeline_id: str, generated_at: str) -> str:
+    lines = [
+        "ComfyVN Studio Bundle",
+        "======================",
+        "",
+        f"Project: {project_id}",
+        f"Timeline: {timeline_id}",
+        f"Generated: {generated_at}",
+        "",
+        "Contents:",
+        "- manifest.json            Bundle manifest (scenes, assets, metadata)",
+        "- provenance.json          Provenance payload + advisory findings",
+        "- timelines/, scenes/, characters/ JSON exports",
+        "- assets/                  Referenced project assets",
+        "- renpy_project/           Generated Ren'Py script snapshot",
+        "",
+        "Review provenance.json before distribution and honour any license metadata in manifest.json.",
+        "Exported via ComfyVN Studio.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def _ensure_timeline_payload(
     timeline_id: Optional[str],
     project_id: str,
@@ -458,10 +480,18 @@ def _build_bundle_archive(
     timeline_data: dict,
     timeline_path: Path,
     renpy_info: dict,
-) -> Tuple[Path, dict]:
-    bundles_dir = _bundles_dir()
+    bundle_path: Optional[Path] = None,
+) -> Tuple[Path, dict, List[Dict[str, Any]]]:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    bundle_path = bundles_dir / f"{project_id}_{timeline_id}_{ts}.zip"
+    if bundle_path is None:
+        bundles_dir = _bundles_dir()
+        bundle_path = bundles_dir / f"{project_id}_{timeline_id}_{ts}.zip"
+    else:
+        bundle_path = Path(bundle_path)
+        if not bundle_path.suffix:
+            bundle_path = bundle_path.with_suffix(".zip")
+    bundle_path = bundle_path.expanduser()
+    bundle_path.parent.mkdir(parents=True, exist_ok=True)
 
     scenes: Dict[str, dict] = dict(renpy_info.get("scenes") or {})
     scene_sources: Dict[str, Path] = {
@@ -537,7 +567,7 @@ def _build_bundle_archive(
             }
         )
 
-    scan_bundle(
+    findings = scan_bundle(
         BundleContext(
             project_id=project_id,
             timeline_id=timeline_id,
@@ -549,6 +579,7 @@ def _build_bundle_archive(
             metadata={"source": "export.bundle", "bundle_path": bundle_path.as_posix()},
         )
     )
+    provenance["findings"] = findings
 
     with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -585,8 +616,15 @@ def _build_bundle_archive(
             if file_path.is_file():
                 rel = file_path.relative_to(renpy_root)
                 archive.write(file_path, f"renpy_project/{rel.as_posix()}")
+        archive.writestr(
+            "README.txt",
+            _bundle_readme(project_id, timeline_id, renpy_info["generated_at"]),
+        )
+        license_path = Path("LICENSE")
+        if license_path.exists():
+            archive.write(license_path, "LICENSE.txt")
 
-    return bundle_path, provenance
+    return bundle_path, provenance, findings
 
 
 # ---------------------------------------------------------------------------
@@ -669,7 +707,7 @@ def export_bundle(
         project_data=project_data,
     )
 
-    bundle_path, provenance = _build_bundle_archive(
+    bundle_path, provenance, findings = _build_bundle_archive(
         project_id=project_id,
         project_data=project_data,
         timeline_id=resolved_timeline_id,
@@ -682,6 +720,7 @@ def export_bundle(
         "ok": True,
         "bundle": bundle_path.as_posix(),
         "provenance": provenance,
+        "findings": findings,
         "generated_at": renpy_info["generated_at"],
         "gate": gate,
     }

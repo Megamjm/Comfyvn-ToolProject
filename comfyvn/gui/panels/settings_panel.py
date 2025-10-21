@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
@@ -49,6 +50,11 @@ class SettingsPanel(QDockWidget):
         w = QWidget()
         root = QVBoxLayout(w)
 
+        (
+            self._comfy_config_combined,
+            self._comfy_config_payload,
+            self._comfy_config_path,
+        ) = self._load_comfy_config()
         basics_widget = QWidget()
         form = QFormLayout(basics_widget)
         cfg_snapshot = self.settings_manager.load()
@@ -95,6 +101,11 @@ class SettingsPanel(QDockWidget):
 
         self.audio_group = self._build_audio_settings(cfg_snapshot)
         drawer_container.add_drawer(Drawer("Audio & Music", self.audio_group))
+
+        self.debug_group = self._build_debug_settings()
+        drawer_container.add_drawer(
+            Drawer("Debug & Feature Flags", self.debug_group, start_open=False)
+        )
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -199,6 +210,95 @@ class SettingsPanel(QDockWidget):
         self.btn_server_import.clicked.connect(self._import_providers)
 
         return group
+
+    def _build_debug_settings(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        features = dict(self._comfy_config_combined.get("features") or {})
+        self.bridge_hardening_checkbox = QCheckBox(
+            "Enable ComfyUI hardened bridge (override injection + LoRA)"
+        )
+        self.bridge_hardening_checkbox.setChecked(
+            bool(features.get("enable_comfy_bridge_hardening", False))
+        )
+        self.bridge_hardening_checkbox.stateChanged.connect(
+            self._on_bridge_hardening_toggled
+        )
+        layout.addWidget(self.bridge_hardening_checkbox)
+
+        hint = QLabel(
+            "When enabled, ComfyUI submissions are routed through the hardened bridge "
+            "which injects prompt overrides, merges per-character LoRAs, polls for completion, "
+            "and returns resolved artifact paths plus sidecar data. Requires a reachable ComfyUI instance."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #666666;")
+        layout.addWidget(hint)
+        layout.addStretch(1)
+        return widget
+
+    # --------------------
+    # Feature config helpers
+    # --------------------
+    def _load_comfy_config(self) -> tuple[dict, dict, Path]:
+        combined: dict = {}
+        for candidate in (Path("comfyvn.json"), Path("config/comfyvn.json")):
+            if not candidate.exists():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                combined.update(data)
+
+        path = Path("config/comfyvn.json")
+        payload: dict = {}
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(existing, dict):
+                    payload = existing
+            except Exception:
+                payload = {}
+
+        if not payload:
+            payload = {}
+            if "features" in combined:
+                payload["features"] = dict(combined.get("features") or {})
+
+        return combined, payload or {}, path
+
+    def _persist_comfy_config(self) -> None:
+        try:
+            self._comfy_config_path.parent.mkdir(parents=True, exist_ok=True)
+            self._comfy_config_path.write_text(
+                json.dumps(self._comfy_config_payload, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Save Failed",
+                f"Unable to update {self._comfy_config_path}: {exc}",
+            )
+            return
+
+        # Update combined view so subsequent toggles stay in sync
+        features = dict(self._comfy_config_payload.get("features") or {})
+        combined_features = dict(self._comfy_config_combined.get("features") or {})
+        combined_features.update(features)
+        self._comfy_config_combined["features"] = combined_features
+
+    def _on_bridge_hardening_toggled(self, state: int) -> None:
+        enabled = state == Qt.Checked
+        features = dict(self._comfy_config_payload.get("features") or {})
+        features["enable_comfy_bridge_hardening"] = enabled
+        self._comfy_config_payload["features"] = features
+        self._persist_comfy_config()
 
     def _build_audio_settings(self, cfg_snapshot: dict) -> QGroupBox:
         group = QGroupBox("Audio & Music Pipelines")

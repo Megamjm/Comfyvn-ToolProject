@@ -39,6 +39,8 @@ LOGGER = logging.getLogger(__name__)
 APP_VERSION = os.getenv("COMFYVN_VERSION", "0.8.0")
 MODULE_PACKAGE = "comfyvn.server.modules"
 MODULE_PATH = Path(__file__).resolve().parent / "modules"
+ROUTES_PACKAGE = "comfyvn.server.routes"
+ROUTES_PATH = Path(__file__).resolve().parent / "routes"
 DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
     "http://127.0.0.1:8000",
     "http://localhost:8000",
@@ -54,6 +56,9 @@ PRIORITY_MODULES: tuple[str, ...] = (
     "comfyvn.server.modules.playground_api",
     "comfyvn.server.modules.events_api",
     "comfyvn.server.modules.gpu_api",
+    "comfyvn.server.routes.audio",
+    "comfyvn.server.routes.compute",
+    "comfyvn.manga.routes",
 )
 
 
@@ -68,29 +73,6 @@ def _configure_logging() -> Path:
     warning_bus.attach_logging_handler()
     LOGGER.info("Server logging configured -> %s", log_path)
     return log_path
-
-
-def _iter_module_names() -> Iterable[str]:
-    def _walk(paths: list[str], prefix: str) -> Iterable[str]:
-        for module_info in pkgutil.iter_modules(paths, prefix):
-            name = module_info.name
-            if module_info.ispkg:
-                sub_paths: list[str] = []
-                finder = getattr(module_info, "module_finder", None)
-                find_spec = getattr(finder, "find_spec", None)
-                if find_spec is not None:
-                    try:
-                        spec = find_spec(name)
-                    except Exception:  # pragma: no cover - defensive
-                        spec = None
-                    if spec and spec.submodule_search_locations:
-                        sub_paths = list(spec.submodule_search_locations)
-                if sub_paths:
-                    yield from _walk(sub_paths, f"{name}.")
-                continue
-            yield name
-
-    yield from _walk([str(MODULE_PATH)], f"{MODULE_PACKAGE}.")
 
 
 def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) -> None:
@@ -116,11 +98,38 @@ def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) ->
         LOGGER.warning("Failed to include router %s: %s", module_name, exc)
 
 
+def _iter_module_names(
+    base_path: Path = MODULE_PATH, package: str = MODULE_PACKAGE
+) -> Iterable[str]:
+    def _walk(paths: list[str], prefix: str) -> Iterable[str]:
+        for module_info in pkgutil.iter_modules(paths, prefix):
+            name = module_info.name
+            if module_info.ispkg:
+                sub_paths: list[str] = []
+                finder = getattr(module_info, "module_finder", None)
+                find_spec = getattr(finder, "find_spec", None)
+                if find_spec is not None:
+                    try:
+                        spec = find_spec(name)
+                    except Exception:  # pragma: no cover - defensive
+                        spec = None
+                    if spec and spec.submodule_search_locations:
+                        sub_paths = list(spec.submodule_search_locations)
+                if sub_paths:
+                    yield from _walk(sub_paths, f"{name}.")
+                continue
+            yield name
+
+    yield from _walk([str(base_path)], f"{package}.")
+
+
 def _include_routers(app: FastAPI) -> None:
     seen: set[str] = set()
     for module_name in PRIORITY_MODULES:
         _include_router_module(app, module_name, seen=seen)
-    for module_name in _iter_module_names():
+    for module_name in _iter_module_names(MODULE_PATH, MODULE_PACKAGE):
+        _include_router_module(app, module_name, seen=seen)
+    for module_name in _iter_module_names(ROUTES_PATH, ROUTES_PACKAGE):
         _include_router_module(app, module_name, seen=seen)
 
 

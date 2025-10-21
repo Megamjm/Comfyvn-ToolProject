@@ -6,6 +6,17 @@
 - Runtime/storage + packaging docs updated: runtime paths redirected to OS-specific locations, provider templates curated, Doctor v0.7 script landed, and release coordination lives in `ARCHITECTURE.md`, `CHAT_WORK_ORDERS.md`, and `docs/CHANGEME.md`. Packaging rehearsal (wheel + PyInstaller/AppImage) to run once P0 blockers clear.
 - Known gaps before tagging: Studio asset inspector UX, audio provenance hand-off to `AssetRegistry`, Manga importer panel parity, export orchestrator full dry-run, and advisory auto-remediation events. These are noted in the release checklist and will remain in the changelog until resolved.
 
+### 2025-10-27 — Manga Pipeline Production (chat: Manga Pipeline)
+- Replaced the in-memory manga pipeline stub with a production executor that stages jobs under `/data/manga/<job_id>/{raw,ocr,group,scenes,logs}`, tracks state transitions, and persists `manifest.json` snapshots for Studio dashboards.
+- Added a provider registry (`comfyvn/manga/providers.py`) with segmentation, OCR/I2T, grouping, and speaker attribution handlers including ComfyUI workflow integration, local Tesseract/EasyOCR, and cloud connectors for Azure Vision, Google Vision, and OpenAI dialogue attribution.
+- `/manga/pipeline/start` now accepts source paths, provider overrides, and per-provider settings; `/manga/pipeline/providers` lists available services with paid/open-source tags, and status responses stream stage metadata plus artifact pointers.
+- Settings scaffolding surfaces configurable endpoints (base URLs, workflows, API keys) so deployments can wire ComfyUI or cloud OCR providers without code changes.
+
+### 2025-10-26 — Studio Views & Audio Lab Stubs (chat: Project Integration)
+- Added read-only Scenes, Characters, and Timeline inspectors under `comfyvn/gui/views/{scenes,characters,timeline}_view.py`, wiring them to `/api/{scenes,characters,timelines}` via `ServerBridge` with graceful mock fallbacks. The Studio navigation now embeds these widgets to avoid panel duplication and enables JSON inspectors for quick payload checks.
+- Introduced lightweight audio adapters: `comfyvn/bridge/tts_adapter.py` caches synthetic TTS clips (deterministic WAV + provenance sidecar) and `comfyvn/bridge/music_adapter.py` logs remix intents. FastAPI routes at `/api/tts/speak` and `/api/music/remix` expose the stubs for GUI use.
+- Updated `comfyvn.json` with `audio.tts_enabled`, `audio.tts_model`, and `audio.music_enabled` hints so deployments know how to toggle the new lab features.
+
 ### 2025-10-25 — Asset & Sprite System (chat: Assets)
 - `AssetRegistry` now honours configurable asset roots, writes `<filename>.asset.json` sidecars alongside media files (while mirroring legacy `_meta` paths), and schedules thumbnails or WAV waveform previews during registration.
 - Pose tooling (`comfyvn/assets/pose_manager.py`, `playground_manager.py`) now integrates with the registry so newly saved poses write JSON payloads, emit sidecars, and appear in registry queries.

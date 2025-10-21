@@ -96,3 +96,5 @@ data/imported_*/
 data/roleplay/*
 cache
 logs/
+!comfyvn/cache/
+!comfyvn/cache/**

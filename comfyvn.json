@@ -17,7 +17,10 @@
     "music": true,
     "sfx": true,
     "voice": false,
-    "fx": true
+    "fx": true,
+    "tts_enabled": false,
+    "tts_model": "xtts",
+    "music_enabled": false
   },
   "render": {
     "quality": "Standard",

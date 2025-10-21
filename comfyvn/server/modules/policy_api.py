@@ -8,21 +8,10 @@ from pydantic import BaseModel, Field
 
 from comfyvn.core.content_filter import content_filter
 from comfyvn.core.policy_gate import policy_gate
+from comfyvn.server.routes.advisory import GateResponse
 
 LOGGER = logging.getLogger("comfyvn.api.policy")
 router = APIRouter(prefix="/api/policy", tags=["Advisory/Policy"])
-
-
-class GateResponse(BaseModel):
-    ok: bool = True
-    status: Dict[str, Any]
-    message: str
-    allow_override: bool
-
-
-class AckRequest(BaseModel):
-    user: str = Field("anonymous", description="User acknowledging the policy")
-    notes: Optional[str] = Field(None, description="Optional acknowledgement notes")
 
 
 class EvaluateRequest(BaseModel):
@@ -50,18 +39,6 @@ def get_status() -> GateResponse:
     return GateResponse(
         status=status.to_dict(),
         message=message,
-        allow_override=status.warn_override_enabled,
-    )
-
-
-@router.post(
-    "/ack", response_model=GateResponse, summary="Acknowledge legal terms with warning"
-)
-def acknowledge(payload: AckRequest = Body(...)) -> GateResponse:
-    status = policy_gate.acknowledge(user=payload.user, notes=payload.notes)
-    return GateResponse(
-        status=status.to_dict(),
-        message="Acknowledgement recorded. Proceed with caution.",
         allow_override=status.warn_override_enabled,
     )
 

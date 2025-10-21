@@ -58,6 +58,48 @@ GUI now supports async job updates, tray alerts, and task overlays.
 
 Graceful WebSocket shutdowns and heartbeats for reliability.
 
+🧭 Scenario Schema & Deterministic Runtime
+
+Canonically defines a branching scene JSON schema (Scene → Node → Choice → Action), wired into a seeded runner so identical seeds replay the same path.
+
+New Bits: `comfyvn/schema/scenario_schema.json`, `comfyvn/runner/scenario_runner.py`, `comfyvn/runner/rng.py`, and FastAPI route wiring in `comfyvn/server/routes/scenario.py`.
+
+Endpoints:
+
+POST /api/scenario/validate → returns `{valid:bool, errors:list}` for the provided scene payload.
+
+POST /api/scenario/run/step → applies deterministic branching with optional `seed`, `state`, and explicit `choice_id`, returning the updated state plus peek data for the next node.
+
+Testing:
+
+`tests/test_scenario_runtime.py` (pending migration) should be expanded to hit the new `/api/scenario/*` routes for parity.
+
+💾 Runtime Savepoints & Checkpoints
+
+- Runtime snapshots are written to `data/saves/<slot>.json` through `comfyvn/runtime/savepoints.py`, using atomic temp-file swaps so slots never half-write.
+- New REST surface in `comfyvn/server/routes/save.py` exposes `POST /api/save/{slot}`, `GET /api/save/{slot}`, and `GET /api/save/list` for persisting and enumerating checkpoints.
+- Save payloads require `{vars, node_pointer, seed}` and accept extra metadata, letting callers stash runner history or UI context alongside the core state.
+- Designed around the deterministic `ScenarioRunner`: storing its RNG state alongside variables ensures the very next `step()` after a restore matches the original branch.
+
+🌐 Translation Manager & Live Language Switch
+
+(New Subsystem 12)
+Introduces `comfyvn/translation/manager.py`, a shared translation cache that persists the active and fallback languages to `config/comfyvn.json` and merges inline tables with JSON files found under `config/i18n` (user overrides) and `data/i18n` (bundled defaults).
+
+New Bits: `comfyvn/translation/__init__.py`, `comfyvn/translation/manager.py`, `comfyvn/server/routes/translation.py`
+
+Endpoints:
+
+POST /api/translate/batch → returns a stub identity mapping (`[{src, tgt}]`) so clients can shape payloads before real MT hooks land.
+
+GET /api/i18n/lang → exposes `{active, fallback, available}` straight from the manager.
+
+POST /api/i18n/lang → updates active/fallback languages instantly and persists them back to `config/comfyvn.json`.
+
+Runtime Helper:
+
+- `comfyvn.translation.t(key, lang=None)` now resolves strings through the active language with automatic fallback, so GUI menus and logs can flip languages without restarts.
+
 🪟 GUI Framework Expansion
 
 New Version: v1.2.0-dev
@@ -73,6 +115,8 @@ Implemented Progress Overlay and unified Status Bar.
 Async refactor: switched to httpx.AsyncClient.
 
 Scaffolded “Import Roleplay” dialog (Phase 3.2 GUI target).
+
+Read-only Scenes, Characters, and Timeline inspectors now live under `comfyvn/gui/views/` and source their lists from `/api/{scenes,characters,timelines}` via the shared `ServerBridge`, falling back to mock payloads when the backend is offline. Selection updates a JSON inspector so designers can sanity-check payloads without leaving the Studio shell.
 
 🌍 World & Ambience Enhancements
 
@@ -103,6 +147,8 @@ Centralized audio_settings.json.
 Adaptive layering plan (mood-based playback).
 
 Thread-safe audio calls and volume normalization.
+
+Lightweight audio lab endpoints now ship with the backend: `/api/tts/speak` reuses cached WAV + sidecar artefacts keyed by `(character,text,style,model)` via `comfyvn/bridge/tts_adapter.py`, and `/api/music/remix` logs remix intents with plan files so GUI clients can queue experiments before full DSP integration lands.
 
 🧬 LoRA Management
 
@@ -179,9 +225,23 @@ Environment variables honour the same knobs:
 - GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
 - The Settings panel also exposes a local backend port selector with a “Find Open Port” helper so you can avoid clashes with other services; the selection is saved to the user config directory (`settings/config.json`), mirrored to the current environment, and honoured by the next launcher run.
 - Backend `/settings/{get,set,save}` endpoints now use the shared settings manager with deep-merge semantics, so GUI updates and CLI edits land in the same file without clobbering unrelated sections.
+- Settings → **Debug & Feature Flags** hosts the ComfyUI hardened bridge toggle; once enabled the flag is persisted to `config/comfyvn.json` so subsequent ComfyUI submissions pick up prompt overrides, per-character LoRAs, and sidecar polling without needing to edit JSON by hand.
 - Asset imports enqueue thumbnail generation on a background worker so large images stop blocking the registration path; provenance metadata is embedded into PNGs and, when the optional `mutagen` package is installed, MP3/OGG/FLAC/WAV assets as well.
 - Install `mutagen` with `pip install mutagen` if you need audio provenance tags; without it the system still registers assets but skips embedding the metadata marker.
 - The launcher performs a basic hardware probe before auto-starting the embedded backend. When no suitable compute path is found it skips the local server, logs the reason, and guides you to connect to a remote node instead of crashing outright.
+
+## Asset Cache Maintenance
+
+- A hash-based deduplication index now lives in `comfyvn/cache/cache_manager.py`. Each asset path tracks the blob digest, refcount, pin flag, and last-access timestamp so identical files collapse into one cached blob while retaining per-path metadata.
+- Pinned entries (`pinned: true`) bypass LRU eviction, and refcounts decrement automatically when paths are released.
+- Rebuild or audit the cache at any time with:
+
+  ```bash
+  python scripts/rebuild_dedup_cache.py --assets ./assets
+  ```
+
+  Add `--index /custom/path.json` to target a different cache file, `--max-entries` / `--max-bytes` to enforce limits during the rebuild, or `--no-preserve-pins` when performing a full reset.
+- Generated indices persist under the runtime cache directory (see `comfyvn.config.runtime_paths.cache_dir`). Rebuild operations keep existing pins by default so curated assets remain protected across scans.
 
 ### Runtime Storage
 

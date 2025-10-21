@@ -27,7 +27,7 @@ _Last updated: 2025-10-21_
 
 ### 2.1 Scenario Graph (Scene/Node/Choice/Action)
 **Intent:** Canonical JSON schema for deterministic VN logic with conditions, actions, callbacks.  
-**Status:** Planned (schema & validator to finish; partial scene import exists).
+**Status:** In-Progress (Canonical scene schema + deterministic runner live with `/api/scenario/{validate,run/step}`; authoring GUI + callbacks pending).
 
 ### 2.2 Variables & Flags (Scoped)
 **Intent:** `global | session | scene` scopes; typed values; runtime API (get/set/list/reset).  
@@ -35,7 +35,7 @@ _Last updated: 2025-10-21_
 
 ### 2.3 Choices & Seeded RNG
 **Intent:** Conditional & weighted choices with reproducible playthroughs (seed).  
-**Status:** Planned (deterministic runner to implement).
+**Status:** In-Progress (ScenarioRuntime seeds + weighted choice picking implemented; UX wiring + branching analytics still queued).
 
 ### 2.4 Presentation Directives
 **Intent:** Portrait/expression/pose/camera; tween transitions; timing & SFX cues.  

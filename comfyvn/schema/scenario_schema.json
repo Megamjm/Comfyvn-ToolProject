@@ -1,0 +1,257 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://comfyvn.app/schema/scenario.json",
+  "title": "ComfyVN Scene",
+  "description": "Canonical scene structure with nodes, branching choices, and deterministic actions.",
+  "type": "object",
+  "required": ["id", "start", "nodes"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable scene identifier used in runner state."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human readable title for UI display."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional synopsis or author notes."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary metadata surfaced to clients.",
+      "additionalProperties": true
+    },
+    "variables": {
+      "type": "object",
+      "description": "Initial variable defaults applied to runner state.",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "start": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Node id where the runner starts."
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Node"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique node identifier."
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Node type hint (dialogue, action, branch, etc.).",
+          "default": "dialogue"
+        },
+        "text": {
+          "type": "string",
+          "description": "Primary dialogue/body text."
+        },
+        "speaker": {
+          "type": "string",
+          "description": "Optional speaker for dialogue nodes."
+        },
+        "data": {
+          "type": "object",
+          "description": "Free-form payload for renderer integrations.",
+          "additionalProperties": true
+        },
+        "actions": {
+          "type": "array",
+          "description": "Actions applied when the node is entered.",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "choices": {
+          "type": "array",
+          "description": "Available choices to leave this node.",
+          "items": {
+            "$ref": "#/$defs/Choice"
+          }
+        },
+        "end": {
+          "type": "boolean",
+          "description": "Explicitly mark node as terminal (no outgoing choices).",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Choice": {
+      "type": "object",
+      "required": ["target"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional stable choice identifier."
+        },
+        "label": {
+          "type": "string",
+          "description": "Player-facing label."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional extended copy for tooltips."
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Node id to enter when this choice is taken."
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1,
+          "description": "Relative probability weight. Choices with weight 0 are ignored."
+        },
+        "conditions": {
+          "type": "array",
+          "minItems": 1,
+          "description": "State predicates that must pass for the choice to be allowed.",
+          "items": {
+            "$ref": "#/$defs/Condition"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "description": "Actions executed when this choice is taken.",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Arbitrary client metadata.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Condition": {
+      "type": "object",
+      "required": ["operator", "key"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Variable key to test (dot notation supported)."
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "in",
+            "not_in",
+            "exists",
+            "not_exists"
+          ],
+          "description": "Comparison operator."
+        },
+        "value": {
+          "description": "Comparison value for operators that require it."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "enum": ["exists", "not_exists"]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": ["value"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "enum": ["in", "not_in"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "array"
+              }
+            },
+            "required": ["value"]
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "operator": {
+                  "enum": [
+                    "eq",
+                    "neq",
+                    "gt",
+                    "gte",
+                    "lt",
+                    "lte"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": ["value"]
+            }
+          }
+        }
+      ]
+    },
+    "Action": {
+      "type": "object",
+      "required": ["type", "key"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["set", "increment", "decrement", "clear"],
+          "description": "Action verb executed against runner state."
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Variable key to mutate (dot notation supported)."
+        },
+        "value": {
+          "description": "Value to assign for set or numeric delta defaults."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Optional numeric delta for increment/decrement."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
