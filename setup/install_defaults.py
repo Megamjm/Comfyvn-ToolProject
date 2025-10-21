@@ -78,7 +78,9 @@ class InstallSummary:
         return self.skipped.get(category, [])
 
 
-def discover_copy_actions(base: Path, destination_root: Path, category: str) -> Iterable[CopyAction]:
+def discover_copy_actions(
+    base: Path, destination_root: Path, category: str
+) -> Iterable[CopyAction]:
     if not base.exists():
         return []
     actions: list[CopyAction] = []
@@ -156,7 +158,8 @@ def apply_copy_action(
 
     if prefer_symlinks:
         try:
-            os.symlink(action.source, destination)
+            rel_target = os.path.relpath(action.source, start=destination_parent)
+            os.symlink(rel_target, destination)
             return "linked"
         except OSError:
             # Fall back to copying if symlink creation fails (e.g., Windows without privileges).
@@ -198,9 +201,7 @@ def install_defaults(
     actions: list[CopyAction] = []
     if SETUP_DEFAULTS_ROOT.exists():
         actions.extend(
-            discover_copy_actions(
-                SETUP_DEFAULTS_ROOT, REPO_ROOT, CATEGORY_CORE
-            )
+            discover_copy_actions(SETUP_DEFAULTS_ROOT, REPO_ROOT, CATEGORY_CORE)
         )
     else:
         warnings.append(

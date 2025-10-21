@@ -6,7 +6,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-DEFAULT_LOG_DIR = Path(os.getenv("COMFYVN_SERVER_LOG_DIR", "./logs")).resolve()
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG_FILE = "server.log"
 
 
@@ -17,15 +17,31 @@ def _coerce_level(level: str) -> int:
         return logging.INFO
 
 
+def _resolve_base(path: Path) -> Path:
+    if not path.is_absolute():
+        return (REPO_ROOT / path).resolve()
+    return path.resolve()
+
+
+def default_log_dir() -> Path:
+    override = os.getenv("COMFYVN_SERVER_LOG_DIR")
+    if override:
+        return _resolve_base(Path(override).expanduser())
+    return _resolve_base(Path("logs"))
+
+
 def init_logging(
     log_dir: str | os.PathLike[str] | None = None,
     *,
     level: str = "INFO",
     filename: str = DEFAULT_LOG_FILE,
 ) -> Path:
-    """Initialise the root logger and write to ./logs/server.log by default."""
+    """Initialise the root logger and write to repo-relative logs/server.log by default."""
 
-    base = Path(log_dir).expanduser().resolve() if log_dir else DEFAULT_LOG_DIR
+    if log_dir:
+        base = _resolve_base(Path(log_dir).expanduser())
+    else:
+        base = default_log_dir()
     base.mkdir(parents=True, exist_ok=True)
     log_path = base / filename
 

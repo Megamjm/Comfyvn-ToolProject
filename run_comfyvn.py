@@ -1,19 +1,34 @@
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent
+
+
+def _bootstrap_repo_cwd() -> None:
+    """Ensure Python resolves project-relative paths from the repository root."""
+    try:
+        current = Path.cwd().resolve()
+    except FileNotFoundError:
+        current = None
+    if current != REPO_ROOT:
+        os.chdir(REPO_ROOT)
+
+
+_bootstrap_repo_cwd()
+
 import argparse
 import hashlib
 import json
 import logging
-import os
 import shutil
 import subprocess
-import sys
 import venv
-from pathlib import Path
 from typing import Optional, Tuple
 
 from comfyvn.logging_config import init_logging as init_gui_logging
 from setup import install_defaults as defaults_install
 
-REPO_ROOT = Path(__file__).resolve().parent
 VENV_DIR = REPO_ROOT / ".venv"
 REQUIREMENTS_FILE = REPO_ROOT / "requirements.txt"
 REQUIREMENTS_HASH_FILE = VENV_DIR / ".requirements_hash"
@@ -86,6 +101,10 @@ DEFAULT_SERVER_PORT = _resolve_default_server_port()
 def log(message: str) -> None:
     LOGGER.info(message)
     print(f"[ComfyVN] {message}")
+
+
+def ensure_repo_cwd() -> None:
+    _bootstrap_repo_cwd()
 
 
 def configure_launcher_logging() -> None:
@@ -537,6 +556,7 @@ def launch_app() -> None:
 
 def main(argv: Optional[list[str]] = None) -> None:
     argv_list = list(argv) if argv is not None else sys.argv[1:]
+    ensure_repo_cwd()
     configure_launcher_logging()
     args = parse_arguments(argv_list)
     if args.install_defaults:
