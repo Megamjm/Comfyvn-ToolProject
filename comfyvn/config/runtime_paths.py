@@ -68,7 +68,15 @@ def _runtime_roots() -> _RuntimeRoots:
     logs = _expand(os.getenv("COMFYVN_LOG_DIR")) or logs
 
     for root in (data, config, cache, logs):
-        root.mkdir(parents=True, exist_ok=True)
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except FileExistsError:
+            # Path already exists but may not be a directory; surface a clearer error.
+            if not root.is_dir():
+                raise RuntimeError(
+                    f"Runtime path {root} exists but is not a directory. "
+                    "Remove or relocate the conflicting file and retry."
+                ) from None
 
     return _RuntimeRoots(data=data, config=config, cache=cache, logs=logs)
 

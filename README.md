@@ -163,6 +163,7 @@ Testing	Added pytest stubs for API endpoints.
 `python run_comfyvn.py [options]` bootstraps the virtualenv, installs requirements, and then launches either the GUI or the FastAPI server depending on the flags you pass. Handy commands:
 
 - `python run_comfyvn.py` – launch the GUI and auto-start a local backend on the resolved default port.
+- `run_comfyvn.bat` (Windows) performs the same bootstrap and attempts a `git pull --ff-only` first when the working tree is clean, keeping local installs up to date before delegating to `run_comfyvn.py`.
 - `python run_comfyvn.py --server-only --server-host 0.0.0.0 --server-port 9001` – start only the FastAPI server (headless) listening on an alternate interface/port.
 - `python run_comfyvn.py --server-url http://remote-host:8001 --no-server-autostart` – open the GUI but connect to an already-running remote server without spawning a local instance.
 - `python run_comfyvn.py --server-only --server-reload` – headless development loop with uvicorn’s auto-reload.
@@ -191,7 +192,7 @@ ComfyVN Studio stores mutable state outside the repository using the platform-aw
 - **Workspaces & user data** are stored under the user data directory (e.g., `workspaces/`, saved layouts, and importer artefacts). Override with `COMFYVN_DATA_DIR`.
 - **Caches** (thumbnails, audio/music caches, render scratch space) reside in the user cache directory; set `COMFYVN_CACHE_DIR` to relocate them.
 
-Environment overrides include `COMFYVN_RUNTIME_ROOT` (sets all four roots), or the specific `COMFYVN_LOG_DIR`, `COMFYVN_CONFIG_DIR`, `COMFYVN_DATA_DIR`, and `COMFYVN_CACHE_DIR`. The package bootstraps legacy-friendly symlinks (`logs/`, `cache/`, `data/workspaces`, `data/settings`) when possible so existing scripts continue to function.
+Environment overrides include `COMFYVN_RUNTIME_ROOT` (sets all four roots), or the specific `COMFYVN_LOG_DIR`, `COMFYVN_CONFIG_DIR`, `COMFYVN_DATA_DIR`, and `COMFYVN_CACHE_DIR`. The package bootstraps legacy-friendly symlinks (`logs/`, `cache/`, `data/workspaces`, `data/settings`) when possible so existing scripts continue to function. If a conflicting file already exists at one of these paths, remove or relocate it so the directory can be created.
 
 The GUI’s “Start Server” helper still delegates to `python comfyvn/app.py`, logging output to `server_detached.log` inside the user log directory, so manual invocations remain in sync with UI behaviour.
 

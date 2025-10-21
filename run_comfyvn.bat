@@ -19,13 +19,35 @@ if %ERRORLEVEL%==0 (
     if %ERRORLEVEL%==0 (
         set "PYTHON_CMD=python"
     )
-)
+) 
 
 if not defined PYTHON_CMD (
     echo [ComfyVN] Python 3 interpreter not found on PATH.
     echo [ComfyVN] Install Python 3.10+ and ensure it is available as^: py -3 or python.
     popd >nul 2>&1
     exit /b 9009
+)
+
+rem -- Attempt auto-update when git is available and the working tree is clean.
+if exist ".git" (
+    where git >nul 2>&1
+    if %ERRORLEVEL%==0 (
+        set "GIT_DIRTY="
+        for /f "delims=" %%S in ('git status --porcelain') do (
+            set "GIT_DIRTY=1"
+            goto :after_status
+        )
+:after_status
+        if defined GIT_DIRTY (
+            echo [ComfyVN] Skipping auto-update (local changes detected).
+        ) else (
+            echo [ComfyVN] Checking for updates ...
+            git pull --ff-only
+            if %ERRORLEVEL% NEQ 0 (
+                echo [ComfyVN] Auto-update failed (git pull). Continuing with existing files.
+            )
+        )
+    )
 )
 
 if "%INSTALL_DEFAULTS%"=="1" (
