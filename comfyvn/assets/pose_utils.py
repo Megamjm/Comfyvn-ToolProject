@@ -1,7 +1,5 @@
 import logging
 
-from PySide6.QtGui import QAction
-
 logger = logging.getLogger(__name__)
 # comfyvn/assets/pose_utils.py
 # 🧍 Pose Utilities — helper for blending/interpolating pose deltas

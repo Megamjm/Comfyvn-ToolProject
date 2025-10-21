@@ -11,31 +11,42 @@ from typing import Any
 
 from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices
-from PySide6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QLabel,
-                               QMainWindow, QMessageBox, QPushButton,
-                               QStatusBar, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QApplication,
+    QDockWidget,
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStatusBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 from comfyvn.config import runtime_paths
-from comfyvn.core.extensions_discovery import (ExtensionMetadata,
-                                               load_extension_metadata)
+from comfyvn.core.extensions_discovery import ExtensionMetadata, load_extension_metadata
+
 # Dynamic systems
-from comfyvn.core.menu_runtime_bridge import (menu_registry,
-                                              reload_from_extensions)
+from comfyvn.core.menu_runtime_bridge import menu_registry, reload_from_extensions
 from comfyvn.core.notifier import notifier
-from comfyvn.core.shortcut_registry import (load_shortcuts_from_folder,
-                                            shortcut_registry)
+from comfyvn.core.shortcut_registry import load_shortcuts_from_folder, shortcut_registry
 from comfyvn.core.theme_manager import apply_theme
 from comfyvn.gui.core.dock_manager import DockManager
 from comfyvn.gui.core.workspace_controller import WorkspaceController
+
 # Menus
-from comfyvn.gui.main_window.menu_bar import (ensure_menu_bar,
-                                              rebuild_menus_from_registry,
-                                              update_window_menu_state)
+from comfyvn.gui.main_window.menu_bar import (
+    ensure_menu_bar,
+    rebuild_menus_from_registry,
+    update_window_menu_state,
+)
 from comfyvn.gui.main_window.menu_defaults import register_core_menu_items
 from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
 from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
 from comfyvn.gui.panels.asset_browser import AssetBrowser
 from comfyvn.gui.panels.audio_panel import AudioPanel
+
 # Central space
 from comfyvn.gui.panels.central_space import CentralSpace
 from comfyvn.gui.panels.characters_panel import CharactersPanel
@@ -46,18 +57,20 @@ from comfyvn.gui.panels.playground_panel import PlaygroundPanel
 from comfyvn.gui.panels.scenes_panel import ScenesPanel
 from comfyvn.gui.panels.settings_panel import SettingsPanel
 from comfyvn.gui.panels.sprite_panel import SpritePanel
+
 # Panels (lazy-instantiated)
 from comfyvn.gui.panels.studio_center import StudioCenter
 from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
 from comfyvn.gui.panels.timeline_panel import TimelinePanel
+
 # Services
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.gui.statusbar_metrics import StatusBarMetrics
 from comfyvn.gui.widgets.log_hub import LogHub
-from comfyvn.studio.core import (CharacterRegistry, SceneRegistry,
-                                 TimelineRegistry)
+from comfyvn.studio.core import CharacterRegistry, SceneRegistry, TimelineRegistry
 
 from .quick_access_toolbar import QuickAccessToolbarMixin
+
 # Core studio shell & mixins
 from .shell_studio import ShellStudio
 
@@ -88,7 +101,11 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
         # Services & controllers
         self.bridge = ServerBridge()
-        self.bridge.status_updated.connect(self._handle_bridge_status)
+        if hasattr(self.bridge, "status_updated"):
+            try:
+                self.bridge.status_updated.connect(self._handle_bridge_status)
+            except AttributeError:
+                logger.debug("ServerBridge stub missing status_updated signal")
         self.dockman = DockManager(self)
         workspace_store = runtime_paths.workspace_dir()
         self.workspace = WorkspaceController(self, workspace_store)
@@ -148,7 +165,11 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._heartbeat = QTimer(self)
         self._heartbeat.timeout.connect(self._poll_server_status)
         self._heartbeat.start(2500)
-        self.bridge.warnings_updated.connect(self._handle_backend_warnings)
+        if hasattr(self.bridge, "warnings_updated"):
+            try:
+                self.bridge.warnings_updated.connect(self._handle_backend_warnings)
+            except AttributeError:
+                logger.debug("ServerBridge stub missing warnings_updated signal")
 
     # --------------------
     # Dynamic systems

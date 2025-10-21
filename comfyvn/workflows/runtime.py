@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from PySide6.QtGui import QAction
-
 from comfyvn.assets.pose_utils import load_pose as _load_pose
 from comfyvn.ext.plugins import PluginManager
 from comfyvn.workflows.models import NodeSpec, WorkflowSpec

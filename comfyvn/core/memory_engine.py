@@ -2,8 +2,6 @@ import json
 import time
 from pathlib import Path
 
-from PySide6.QtGui import QAction
-
 BASE = Path("data/memory")
 BASE.mkdir(parents=True, exist_ok=True)
 

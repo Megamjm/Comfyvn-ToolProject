@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from PySide6.QtGui import QAction
 
 ParamType = Literal["string", "number", "boolean", "image", "asset", "any"]
 

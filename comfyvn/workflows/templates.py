@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from PySide6.QtGui import QAction
-
 from .models import WorkflowSpec
 
 TEMPLATES: Dict[str, Dict[str, Any]] = {
