@@ -1,7 +1,37 @@
 // [ComfyVN Debug] Script loaded - Start of file
 
-const PLUGIN_BASE = "/api/plugins/comfyvn-data-exporter";
-const COMFYVN_ENDPOINT = "http://127.0.0.1:8000/st/import";
+const CONFIG_KEYS = {
+    pluginBase: "comfyvn.pluginBase",
+    comfyEndpoint: "comfyvn.endpoint",
+};
+
+function getPluginBase() {
+    return localStorage.getItem(CONFIG_KEYS.pluginBase) || "/api/plugins/comfyvn-data-exporter";
+}
+
+function getComfyEndpoint() {
+    return localStorage.getItem(CONFIG_KEYS.comfyEndpoint) || "http://127.0.0.1:8001/st/import";
+}
+
+function setConfig({ pluginBase, comfyEndpoint }) {
+    if (pluginBase !== undefined) {
+        localStorage.setItem(CONFIG_KEYS.pluginBase, pluginBase || "/api/plugins/comfyvn-data-exporter");
+    }
+    if (comfyEndpoint !== undefined) {
+        localStorage.setItem(CONFIG_KEYS.comfyEndpoint, comfyEndpoint || "http://127.0.0.1:8001/st/import");
+    }
+}
+
+function buildPluginUrl(path = "") {
+    const base = getPluginBase();
+    const cleanPath = path.replace(/^\//, "");
+    if (/^https?:\/\//i.test(base)) {
+        const trimmed = base.replace(/\/$/, "");
+        return cleanPath ? `${trimmed}/${cleanPath}` : trimmed;
+    }
+    const trimmed = base.replace(/\/$/, "");
+    return cleanPath ? `${trimmed}/${cleanPath}` : trimmed;
+}
 
 // [ComfyVN Debug] Constants defined
 
@@ -35,9 +65,9 @@ function toast(msg, ok = true) {
 async function syncCategory(type) {
     console.log("[ComfyVN Debug] Syncing category:", type);
     try {
-        const data = await fetchJSON(`${PLUGIN_BASE}/${type}`);
+        const data = await fetchJSON(buildPluginUrl(type));
         console.log("[ComfyVN Debug] Fetched data for", type);
-        await postJSON(COMFYVN_ENDPOINT, { type, data });
+        await postJSON(getComfyEndpoint(), { type, data });
         toast(`✅ Synced ${type} with ComfyVN.`);
     } catch (err) {
         console.warn(`[ComfyVN] Sync error for ${type}:`, err);
@@ -48,9 +78,9 @@ async function syncCategory(type) {
 async function syncActive() {
     console.log("[ComfyVN Debug] Syncing active state");
     try {
-        const data = await fetchJSON(`${PLUGIN_BASE}/active`);
+        const data = await fetchJSON(buildPluginUrl("active"));
         console.log("[ComfyVN Debug] Fetched active data");
-        await postJSON(COMFYVN_ENDPOINT, { type: "active", data });
+        await postJSON(getComfyEndpoint(), { type: "active", data });
         toast("✅ Active state synced.");
     } catch (err) {
         toast("❌ Failed to sync active state.", false);
@@ -60,7 +90,7 @@ async function syncActive() {
 async function checkPlugin() {
     console.log("[ComfyVN Debug] Checking plugin health");
     try {
-        const res = await fetchJSON(`${PLUGIN_BASE}/health`);
+        const res = await fetchJSON(buildPluginUrl("health"));
         console.log("[ComfyVN Debug] Health check response:", res);
         console.log("[ComfyVN] Plugin connected:", res);
         toast("🔗 Plugin connected.", true);
@@ -97,6 +127,13 @@ function buildPanel(container) {
     content.style.display = "none";  // Start collapsed
     content.innerHTML = `
         <div class="comfyvn-controls">
+            <div class="comfyvn-config">
+                <label>Plugin Base</label>
+                <input id="comfyvn-pluginBase" type="text" value="${getPluginBase()}">
+                <label>ComfyVN Endpoint</label>
+                <input id="comfyvn-endpoint" type="text" value="${getComfyEndpoint()}">
+                <button id="comfyvn-saveConfig">Save Settings</button>
+            </div>
             <button id="comfyvn-syncWorlds">Sync Worlds</button>
             <button id="comfyvn-syncChars">Sync Characters</button>
             <button id="comfyvn-syncPersonas">Sync Personas</button>
@@ -136,6 +173,12 @@ function buildPanel(container) {
     content.querySelector("#comfyvn-syncPersonas").onclick = () => syncCategory("personas");
     content.querySelector("#comfyvn-syncActive").onclick = () => syncActive();
     content.querySelector("#comfyvn-checkPlugin").onclick = () => checkPlugin();
+    content.querySelector("#comfyvn-saveConfig").onclick = () => {
+        const pluginInput = content.querySelector("#comfyvn-pluginBase");
+        const endpointInput = content.querySelector("#comfyvn-endpoint");
+        setConfig({ pluginBase: pluginInput.value.trim(), comfyEndpoint: endpointInput.value.trim() });
+        toast("💾 ComfyVN bridge settings saved.");
+    };
 
     console.log("[ComfyVN] Panel mounted.");
     console.log("[ComfyVN Debug] Panel built, toggle bound, events bound");

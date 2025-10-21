@@ -1,0 +1,309 @@
+{
+  "workflow_id": "scene_still_dual_model_v0.6",
+  "family": "scene_still",
+  "version": "0.6.0",
+  "metadata": {
+    "description": "Dual-model fusion workflow: SDXL background, FLUX character, composited via SAM2 masks.",
+    "packs": ["ipadapter_plus", "advanced_cn", "layerstyle", "compositor", "sam2", "impact_pack"],
+    "expected_inputs": [
+      "scene_prompt",
+      "scene_negative",
+      "background_seed",
+      "hero_seed",
+      "hero_pose",
+      "hero_face_ref"
+    ],
+    "outputs": [
+      {
+        "type": "image",
+        "filename": "scenes/{{scene_id}}/{{shot_id}}.png"
+      },
+      {
+        "type": "json",
+        "filename": "scenes/{{scene_id}}/{{shot_id}}.render.json"
+      }
+    ],
+    "seed_keys": ["background_seed", "hero_seed"]
+  },
+  "graph": {
+    "last_node_id": 24,
+    "last_link_id": 30,
+    "nodes": [
+      {
+        "id": 1,
+        "type": "CheckpointLoaderSimple",
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+          "ckpt_name": "{{sdxl_checkpoint}}"
+        }
+      },
+      {
+        "id": 2,
+        "type": "CLIPTextEncodeSDXLPrompt",
+        "class_type": "CLIPTextEncodeSDXLRefiner",
+        "inputs": {
+          "text_g": "{{scene_prompt}}",
+          "text_l": "{{scene_prompt_local}}",
+          "clip": 1
+        }
+      },
+      {
+        "id": 3,
+        "type": "CLIPTextEncodeSDXLPrompt",
+        "class_type": "CLIPTextEncodeSDXLRefiner",
+        "inputs": {
+          "text_g": "{{scene_negative}}",
+          "text_l": "{{scene_negative_local}}",
+          "clip": 1
+        }
+      },
+      {
+        "id": 4,
+        "type": "EmptyLatentImage",
+        "class_type": "EmptyLatentImage",
+        "inputs": {
+          "width": "{{scene_width}}",
+          "height": "{{scene_height}}",
+          "batch_size": 1
+        }
+      },
+      {
+        "id": 5,
+        "type": "KSampler",
+        "class_type": "KSampler",
+        "inputs": {
+          "model": 1,
+          "seed": "{{background_seed}}",
+          "steps": "{{bg_steps}}",
+          "cfg": "{{bg_cfg}}",
+          "sampler_name": "{{bg_sampler}}",
+          "scheduler": "{{bg_scheduler}}",
+          "positive": 2,
+          "negative": 3,
+          "latent_image": 4
+        }
+      },
+      {
+        "id": 6,
+        "type": "VAEDecode",
+        "class_type": "VAEDecode",
+        "inputs": {
+          "samples": 5,
+          "vae": 1
+        }
+      },
+      {
+        "id": 7,
+        "type": "LayerStyleColorGrade",
+        "class_type": "LayerStyleColorGrade",
+        "inputs": {
+          "image": 6,
+          "preset": "{{bg_grade_preset}}"
+        }
+      },
+      {
+        "id": 8,
+        "type": "FLUXCheckpointLoader",
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+          "ckpt_name": "{{flux_checkpoint}}"
+        }
+      },
+      {
+        "id": 9,
+        "type": "IPAdapterModelLoader",
+        "class_type": "IPAdapterModelLoader",
+        "inputs": {
+          "model": 8,
+          "ipadapter_file": "{{faceid_model}}"
+        }
+      },
+      {
+        "id": 10,
+        "type": "ControlNetLoader",
+        "class_type": "ControlNetLoader",
+        "inputs": {
+          "control_net_name": "{{controlnet_pose_model}}"
+        }
+      },
+      {
+        "id": 11,
+        "type": "ControlNetApplyAdvanced",
+        "class_type": "ControlNetApplyAdvanced",
+        "inputs": {
+          "strength": "{{pose_strength}}",
+          "model": 9,
+          "control_net": 10,
+          "image": "{{hero_pose}}"
+        }
+      },
+      {
+        "id": 12,
+        "type": "CLIPTextEncode",
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "{{hero_prompt}}",
+          "clip": 8
+        }
+      },
+      {
+        "id": 13,
+        "type": "CLIPTextEncode",
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "{{hero_negative}}",
+          "clip": 8
+        }
+      },
+      {
+        "id": 14,
+        "type": "IPAdapterApply",
+        "class_type": "IPAdapterApplyAdvanced",
+        "inputs": {
+          "weight": "{{faceid_weight}}",
+          "model": 11,
+          "ipadapter": 9,
+          "clip_vision": "{{clip_vision_flux}}",
+          "image": "{{hero_face_ref}}",
+          "style_strength": "{{style_weight}}"
+        }
+      },
+      {
+        "id": 15,
+        "type": "EmptyLatentImage",
+        "class_type": "EmptyLatentImage",
+        "inputs": {
+          "width": "{{hero_width}}",
+          "height": "{{hero_height}}",
+          "batch_size": 1
+        }
+      },
+      {
+        "id": 16,
+        "type": "KSampler",
+        "class_type": "KSampler",
+        "inputs": {
+          "model": 14,
+          "seed": "{{hero_seed}}",
+          "steps": "{{hero_steps}}",
+          "cfg": "{{hero_cfg}}",
+          "sampler_name": "{{hero_sampler}}",
+          "scheduler": "{{hero_scheduler}}",
+          "positive": 12,
+          "negative": 13,
+          "latent_image": 15
+        }
+      },
+      {
+        "id": 17,
+        "type": "VAEDecode",
+        "class_type": "VAEDecode",
+        "inputs": {
+          "samples": 16,
+          "vae": 8
+        }
+      },
+      {
+        "id": 18,
+        "type": "MaskSAM2Image",
+        "class_type": "MaskSAM2Image",
+        "inputs": {
+          "image": 17,
+          "prompt": "{{hero_mask_prompt}}"
+        }
+      },
+      {
+        "id": 19,
+        "type": "CompositeImage",
+        "class_type": "CompositeImage",
+        "inputs": {
+          "background": 7,
+          "foreground": 17,
+          "mask": 18,
+          "x": "{{hero_x}}",
+          "y": "{{hero_y}}",
+          "scale": "{{hero_scale}}"
+        }
+      },
+      {
+        "id": 20,
+        "type": "ImpactFaceDetailer",
+        "class_type": "ImpactFaceDetailer",
+        "inputs": {
+          "image": 19,
+          "detailer_strength": 0.4,
+          "seed": "{{detail_seed}}",
+          "refiner": "{{detailer_model}}"
+        }
+      },
+      {
+        "id": 21,
+        "type": "SaveImage",
+        "class_type": "SaveImage",
+        "inputs": {
+          "filename_prefix": "scenes/{{scene_id}}/{{shot_id}}",
+          "images": 20
+        }
+      },
+      {
+        "id": 22,
+        "type": "SaveText",
+        "class_type": "SaveText",
+        "inputs": {
+          "text": "{{render_log_json}}",
+          "filename_prefix": "scenes/{{scene_id}}/{{shot_id}}.render"
+        }
+      },
+      {
+        "id": 23,
+        "type": "MaskExpand",
+        "class_type": "MaskExpand",
+        "inputs": {
+          "mask": 18,
+          "expand": 12,
+          "feather": 8
+        }
+      },
+      {
+        "id": 24,
+        "type": "CompositeImage",
+        "class_type": "CompositeImage",
+        "inputs": {
+          "background": 20,
+          "foreground": "{{fx_overlays}}",
+          "mask": 23,
+          "blend_mode": "screen"
+        }
+      }
+    ],
+    "links": [
+      [1, 0, 2, 2, 1],
+      [1, 0, 3, 2, 2],
+      [1, 0, 5, 0, 3],
+      [2, 0, 5, 5, 4],
+      [3, 0, 5, 6, 5],
+      [4, 0, 5, 7, 6],
+      [5, 0, 6, 0, 7],
+      [6, 0, 7, 0, 8],
+      [8, 0, 12, 1, 9],
+      [8, 0, 13, 1, 10],
+      [8, 0, 14, 0, 11],
+      [9, 0, 11, 0, 12],
+      [10, 0, 11, 1, 13],
+      [11, 0, 14, 0, 14],
+      [12, 0, 16, 5, 15],
+      [13, 0, 16, 6, 16],
+      [14, 0, 16, 0, 17],
+      [15, 0, 16, 7, 18],
+      [16, 0, 17, 0, 19],
+      [17, 0, 18, 0, 20],
+      [17, 0, 19, 1, 21],
+      [18, 0, 19, 2, 22],
+      [19, 0, 20, 0, 23],
+      [20, 0, 21, 0, 24],
+      [20, 0, 24, 0, 25],
+      [23, 0, 24, 2, 26]
+    ]
+  }
+}
+

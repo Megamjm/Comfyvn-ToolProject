@@ -25,7 +25,7 @@ from comfyvn.gui.widgets.progress_overlay import ProgressOverlay
 class RoleplayPreviewUI(QWidget):
     """Lightweight VN-style player for imported/edited roleplay scenes."""
 
-    def __init__(self, parent=None, data_root="./data/roleplay/converted"):
+    def __init__(self, parent=None, data_root="./data/roleplay/processed"):
         super().__init__(parent)
         self.data_root = data_root
         self.scene = None

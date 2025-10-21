@@ -28,13 +28,19 @@ Endpoints:
 
 POST /roleplay/import → parse & convert logs
 
-GET /roleplay/preview/{scene_id} → preview generated scene JSON
+GET /roleplay/preview/{scene_uid} → preview generated scene JSON
+
+POST /roleplay/apply_corrections → persist editor updates back into the scene registry
+
+POST /roleplay/sample_llm → run detail-aware LLM cleanup and store the final variant
 
 Data Folders:
 
 /data/roleplay/raw
 
-/data/roleplay/converted
+/data/roleplay/processed (editable scripts; legacy mirror remains in /converted)
+
+/data/roleplay/final (LLM-enhanced outputs)
 
 /data/roleplay/preview
 
@@ -88,6 +94,8 @@ Group auto-layout based on Roleplay participants.
 
 Persona state serialization to /data/persona/state.json.
 
+Player Persona Manager panel syncs `/player/*` APIs, enabling roster imports, offline persona selection, and guaranteed active VN characters.
+
 🔊 Audio & FX Foundation
 
 Centralized audio_settings.json.
@@ -111,6 +119,18 @@ Scene mutation API stubs created.
 Undo/Redo stack base implemented (collections.deque).
 
 Safe auto-backup of live edits to /data/playground/history/.
+
+🛠️ Production Workflow Baselines
+
+Bridge layer refreshed for deterministic sprite/scene/video/voice runs:
+
+- `comfyvn/bridge/comfy.py` (queue/poll/download), `comfyvn/bridge/tts.py` (XTTS/RVC), `comfyvn/bridge/remote.py` (SSH probe).
+- Canonical ComfyUI graphs live under `comfyvn/workflows/` (`sprite_pack.json`, `scene_still.json`, `video_ad_evolved.json`, `voice_clip_xtts.json`).
+- Provider template + lock in `comfyvn/providers/`, regenerated through `tools/lock_nodes.py`.
+- Overview and usage notes documented in `docs/production_workflows_v0.6.md`.
+- Offline LLM registry ships a `local_llm` provider preset and ComfyUI LLM bridge pack for fully offline dialogue generation.
+- SillyTavern bridge respects configurable base + plugin paths (set in **Settings → Integrations** and the ST extension panel). Roots API mirrors source file locations for worlds, characters, and personas.
+- Roleplay imports store raw transcripts, processed editor JSON, and LLM-finalized scenes; detail levels (`Low`, `Medium`, `High`) drive the cohesion prompt pipeline.
 
 📦 Packaging & Build
 

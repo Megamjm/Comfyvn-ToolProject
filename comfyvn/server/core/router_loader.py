@@ -15,6 +15,7 @@ def load_routers(app):
     router_paths = [
         "comfyvn.server.modules.playground_api",
         "comfyvn.server.modules.roleplay.roleplay_api",
+        "comfyvn.server.modules.player_state_api",
         "comfyvn.server.modules.snapshot_api",  # ✅ added snapshot system
         "comfyvn.server.modules.jobs_api",  # optional
         "comfyvn.server.modules.settings_api",  # optional

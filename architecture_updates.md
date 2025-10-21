@@ -10,7 +10,11 @@ Scope: Snapshot of recent local changes and alignment tasks against `ARCHITECTUR
 - Timeline builder pass: new `TimelineRegistry` + dockable Timeline panel provide drag/drop sequences, notes per entry, and persistence for multiple timelines per project.
 - World lore pipeline: seeded default `data/worlds/default_world.json`, `world_prompt.build_world_prompt()` converts SillyTavern-style lore into ComfyUI prompt text with trace metadata, and documentation captured in `docs/world_prompt_notes.md`.
 - Sprite & pose controls: `SpritePanel` exposes persona expression switching, sprite previews, and pose assignment via `PoseManager`; persona metadata now retains the applied pose for ComfyUI exports.
+- Player persona roster: PersonaManager now persists active player/character state, `/player/*` APIs expose roster + import hooks, and the GUI Player Persona panel drives active selection with live metadata previews.
+- Offline LLM registry: provider templates add a `local_llm` runtime, packaged node sets include the ComfyUI LLM bridge, and persona defaults embed offline dialogue profiles for air-gapped production.
 - Workflow templates expanded: ComfyUI-ready specs (`sprite_composite_basic`, `pose_blend_basic`, `sprite_pose_composite`) landed with runtime stubs so GUI requests can be simulated without a running ComfyUI instance.
+- Production workflows baseline: `comfyvn/bridge/{comfy,tts,remote}.py` provide REST + TTS + remote compute wiring, provider templates live in `comfyvn/providers/`, canonical graphs ship under `comfyvn/workflows/` (`sprite_pack.json`, `scene_still.json`, `video_ad_evolved.json`, `voice_clip_xtts.json`), and `tools/lock_nodes.py` regenerates `nodeset.lock.json` from local nodes.
+- SillyTavern bridge now reads configurable settings (base URL + plugin path), the ST extension exposes `/comfyvn/roots` for source directories, and roleplay imports persist raw/processed/final transcripts with detail-level aware LLM passes + editor endpoints (`/preview/{scene_uid}`, `/apply_corrections`, `/sample_llm`).
 
 Recent Changes Observed
 ----------------------

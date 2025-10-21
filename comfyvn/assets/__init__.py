@@ -4,6 +4,7 @@ from PySide6.QtGui import QAction
 __all__ = [
     "asset_index",
     "audio_manager",
+    "character_manager",
     "cache_manager",
     "export_manager",
     "lora_manager",

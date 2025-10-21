@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QComboBox,
 )
 from PySide6.QtCore import Qt
 from comfyvn.gui.services.server_bridge import ServerBridge
@@ -50,6 +51,13 @@ class RoleplayImportUI(QWidget):
         self.source_edit = QLineEdit("manual")
         form.addRow("World Tag", self.world_edit)
         form.addRow("Source", self.source_edit)
+
+        self.detail_combo = QComboBox()
+        self.detail_combo.addItem("Low", "low")
+        self.detail_combo.addItem("Medium", "medium")
+        self.detail_combo.addItem("High", "high")
+        self.detail_combo.setCurrentIndex(1)
+        form.addRow("LLM Detail Level", self.detail_combo)
         layout.addLayout(form)
 
         btn_row = QHBoxLayout()
@@ -96,6 +104,7 @@ class RoleplayImportUI(QWidget):
         self.btn_upload.clicked.connect(self._upload_file)
         self.btn_finalize.clicked.connect(self._finalize)
         self.btn_llm.clicked.connect(self._generate_llm_sample)
+        self.btn_savecorr.clicked.connect(self._save_corrections)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -122,13 +131,20 @@ class RoleplayImportUI(QWidget):
                         data={
                             "world_tag": self.world_edit.text().strip(),
                             "source": self.source_edit.text().strip(),
+                            "detail_level": self.detail_combo.currentData(),
+                            "blocking": "true",
                         },
                         timeout=120,
                     )
                 if r.status_code == 200:
                     res = r.json()
-                    self.current_scene = res.get("scene_id")
-                    self._load_preview(self.current_scene)
+                    self.current_scene = res.get("scene_uid") or res.get("scene_id")
+                    if not self.current_scene and res.get("scene"):
+                        self.current_scene = res["scene"].get("id")
+                    if self.current_scene:
+                        self._load_preview(self.current_scene)
+                    else:
+                        self.llm_out.setPlainText(json.dumps(res, indent=2))
                 else:
                     self.llm_out.setPlainText(f"Error {r.status_code}: {r.text}")
             except Exception as e:
@@ -154,6 +170,11 @@ class RoleplayImportUI(QWidget):
             self.btn_finalize.setEnabled(True)
             self.btn_savecorr.setEnabled(True)
             self.btn_llm.setEnabled(True)
+            detail = data.get("detail_level")
+            if detail:
+                idx = self.detail_combo.findData(detail)
+                if idx != -1:
+                    self.detail_combo.setCurrentIndex(idx)
         except Exception as e:
             self.llm_out.setPlainText(str(e))
 
@@ -222,6 +243,7 @@ class RoleplayImportUI(QWidget):
                         "endpoint": endpoint,
                         "model": model,
                         "api_key": api_key,
+                        "detail_level": self.detail_combo.currentData(),
                     },
                     timeout=180,
                 )
@@ -269,11 +291,13 @@ class RoleplayImportUI(QWidget):
                         "scene_id": self.current_scene,
                         "lines": lines,
                         "character_meta": meta,
+                        "detail_level": self.detail_combo.currentData(),
                     },
                     timeout=60,
                 )
                 if r.status_code == 200:
-                    self.llm_out.setPlainText(f"Corrections saved:\n{r.text}")
+                    self.llm_out.setPlainText("Corrections saved.")
+                    self._load_preview(self.current_scene)
                 else:
                     self.llm_out.setPlainText(f"Error {r.status_code}: {r.text}")
             except Exception as e:

@@ -16,6 +16,7 @@ def load_managers():
     from comfyvn.assets.audio_manager import AudioManager
     from comfyvn.assets.lora_manager import LoRAManager
     from comfyvn.assets.playground_manager import PlaygroundManager
+    from comfyvn.assets.character_manager import CharacterManager
     from comfyvn.assets.persona_manager import PersonaManager
     from comfyvn.assets.npc_manager import NPCManager
     from comfyvn.assets.export_manager import ExportManager
@@ -26,7 +27,9 @@ def load_managers():
     managers["audio_manager"] = AudioManager()
     managers["lora_manager"] = LoRAManager()
     managers["playground"] = PlaygroundManager()
-    managers["persona"] = PersonaManager()
+    character_manager = CharacterManager()
+    managers["characters"] = character_manager
+    managers["persona"] = PersonaManager(character_manager=character_manager)
     managers["npc"] = NPCManager()
     managers["mode_manager"] = ModeManager()
     managers["event_bus"] = EventBus()

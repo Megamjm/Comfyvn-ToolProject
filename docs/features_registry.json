@@ -83,6 +83,14 @@
       "description": "Provide API endpoints for external scripts and plugins."
     },
     {
+      "id": "llm_offline_registry",
+      "name": "Offline LLM Registry",
+      "subsystem": "Server Core",
+      "priority": "immediate",
+      "status": "beta",
+      "description": "Register offline LLM providers and ComfyUI bridge packs for local story generation."
+    },
+    {
       "id": "lore_lighting_profiles",
       "name": "Lore-based Lighting Profiles",
       "subsystem": "World Lore",
@@ -161,6 +169,14 @@
       "priority": "immediate",
       "status": "planned",
       "description": "Link emotion strength to voice pitch and modulation."
+    },
+    {
+      "id": "persona_player_manager",
+      "name": "Player Persona Manager",
+      "subsystem": "Persona & Character",
+      "priority": "immediate",
+      "status": "beta",
+      "description": "Roster UI linking player characters, personas, and active VN selection."
     },
     {
       "id": "audio_soundscapes",

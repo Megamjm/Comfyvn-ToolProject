@@ -1,0 +1,165 @@
+{
+  "workflow_id": "video_ad_evolved_v0.6",
+  "family": "video_render",
+  "version": "0.6.0",
+  "metadata": {
+    "description": "AnimateDiff Evolved + Advanced ControlNet video render with RIFE frame interpolation and VHS mux.",
+    "packs": ["animatediff_evolved", "advanced_cn", "impact_pack", "videohelper_vhs", "vfi_rife"],
+    "expected_inputs": [
+      "base_prompt",
+      "negative_prompt",
+      "timeline_prompt_schedule[]",
+      "pose_sequence[]",
+      "seconds",
+      "fps",
+      "audio_path"
+    ],
+    "outputs": [
+      {
+        "type": "video",
+        "filename": "video/{{scene_id}}/{{shot_id}}.mp4"
+      },
+      {
+        "type": "frames",
+        "filename": "video/{{scene_id}}/{{shot_id}}/frames/frame_%04d.png"
+      }
+    ],
+    "seed_keys": ["animation_seed", "detail_seed", "rife_seed"]
+  },
+  "graph": {
+    "last_node_id": 28,
+    "last_link_id": 34,
+    "nodes": [
+      {
+        "id": 1,
+        "type": "CheckpointLoaderSimple",
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+          "ckpt_name": "{{base_checkpoint}}"
+        }
+      },
+      {
+        "id": 2,
+        "type": "AnimateDiffEvolvedLoader",
+        "class_type": "ADLoader",
+        "inputs": {
+          "model": 1,
+          "config": "{{animatediff_config}}"
+        }
+      },
+      {
+        "id": 3,
+        "type": "PromptScheduleBuilder",
+        "class_type": "PromptScheduleBuilder",
+        "inputs": {
+          "base_prompt": "{{base_prompt}}",
+          "negative_prompt": "{{negative_prompt}}",
+          "timeline": "{{timeline_prompt_schedule}}"
+        }
+      },
+      {
+        "id": 4,
+        "type": "ControlNetLoader",
+        "class_type": "ControlNetLoader",
+        "inputs": {
+          "control_net_name": "{{controlnet_pose_model}}"
+        }
+      },
+      {
+        "id": 5,
+        "type": "ControlNetSchedule",
+        "class_type": "ControlNetSchedule",
+        "inputs": {
+          "control_net": 4,
+          "pose_sequence": "{{pose_sequence}}",
+          "strength": "{{control_strength}}",
+          "strength_end": "{{control_strength_end}}"
+        }
+      },
+      {
+        "id": 6,
+        "type": "AnimateDiffEvolvedSampler",
+        "class_type": "ADSampler",
+        "inputs": {
+          "loader": 2,
+          "prompt_schedule": 3,
+          "control_schedule": 5,
+          "seed": "{{animation_seed}}",
+          "steps": "{{animation_steps}}",
+          "cfg": "{{animation_cfg}}",
+          "sampler": "{{animation_sampler}}",
+          "motion_scale": "{{motion_scale}}",
+          "fps": "{{fps}}",
+          "seconds": "{{seconds}}"
+        }
+      },
+      {
+        "id": 7,
+        "type": "ImpactFrameDetailer",
+        "class_type": "ImpactFrameDetailer",
+        "inputs": {
+          "frames": 6,
+          "strength": "{{detail_strength}}",
+          "seed": "{{detail_seed}}",
+          "refiner": "{{detailer_model}}"
+        }
+      },
+      {
+        "id": 8,
+        "type": "VFI_RIFE",
+        "class_type": "VFI_RIFE_TRT",
+        "inputs": {
+          "frames": 7,
+          "multiplier": "{{rife_multiplier}}",
+          "seed": "{{rife_seed}}",
+          "model": "{{rife_model}}"
+        }
+      },
+      {
+        "id": 9,
+        "type": "VHSWriter",
+        "class_type": "VHSWriter",
+        "inputs": {
+          "frames": 8,
+          "fps": "{{target_fps}}",
+          "video_path": "video/{{scene_id}}/{{shot_id}}.mp4",
+          "audio_path": "{{audio_path}}",
+          "container": "mp4",
+          "codec": "h264"
+        }
+      },
+      {
+        "id": 10,
+        "type": "VHSSaveFrames",
+        "class_type": "VHSSaveFrames",
+        "inputs": {
+          "frames": 8,
+          "output_path": "video/{{scene_id}}/{{shot_id}}/frames",
+          "filename_pattern": "frame_%04d.png"
+        }
+      },
+      {
+        "id": 11,
+        "type": "SaveText",
+        "class_type": "SaveText",
+        "inputs": {
+          "text": "{{render_manifest_json}}",
+          "filename_prefix": "video/{{scene_id}}/{{shot_id}}.render"
+        }
+      }
+    ],
+    "links": [
+      [1, 0, 2, 0, 1],
+      [2, 0, 6, 0, 2],
+      [3, 0, 6, 1, 3],
+      [5, 0, 6, 2, 4],
+      [4, 0, 5, 0, 5],
+      [6, 0, 7, 0, 6],
+      [7, 0, 8, 0, 7],
+      [8, 0, 9, 0, 8],
+      [8, 0, 10, 0, 9],
+      [9, 0, 11, 0, 10]
+    ]
+  }
+}
+

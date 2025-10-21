@@ -11,6 +11,8 @@ import time
 import requests
 from typing import Any, Dict, Optional, List, Tuple
 
+from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge, SillyTavernBridgeError
+
 SYNC_DIR = "./data/st_sync"
 ARCHIVE_DIR = os.path.join(SYNC_DIR, "archive")
 META_FILE = os.path.join(SYNC_DIR, "meta.json")
@@ -44,15 +46,20 @@ class STSyncManager:
     worlds, lorebooks, characters, personas, chats.
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, *, user_id: Optional[str] = None):
         """
         base_url: base endpoint for ST REST export API, e.g. "http://127.0.0.1:8000"
         Assumes endpoints like /api/world/export, /api/character/export, etc.
         """
         self.base_url = base_url.rstrip("/")
+        self.user_id = user_id
         self.meta = (
             _load_meta()
         )  # e.g. {"worlds": {key: hash,...}, "characters": {...}}
+        self.bridge = SillyTavernBridge(base_url=self.base_url, user_id=user_id)
+        self._bridge_available = True
+        self._bridge_checked = False
+        self._fallback_warned = False
 
     def _pull_asset(
         self, asset_type: str, key: str, endpoint_suffix: str
@@ -61,6 +68,35 @@ class STSyncManager:
         Pull JSON from ST for a given asset.
         endpoint_suffix is like "world/export" or "character/export".
         """
+        if self._bridge_available:
+            if not self._bridge_checked:
+                try:
+                    self.bridge.health()
+                except SillyTavernBridgeError as exc:
+                    logger.warning("SillyTavern plugin health check failed: %s", exc)
+                    self._bridge_available = False
+                finally:
+                    self._bridge_checked = True
+
+        if self._bridge_available:
+            try:
+                if asset_type == "worlds":
+                    data = self.bridge.get_world(key, user_id=self.user_id)
+                elif asset_type == "characters":
+                    data = self.bridge.get_character(key, user_id=self.user_id)
+                elif asset_type == "personas":
+                    data = self.bridge.get_persona(key, user_id=self.user_id)
+                else:
+                    # fall back for unsupported asset types
+                    raise SillyTavernBridgeError("unsupported asset type")
+                return {"status": "ok", "data": data}
+            except SillyTavernBridgeError as exc:
+                if not self._fallback_warned:
+                    logger.warning("Falling back to legacy SillyTavern endpoints: %s", exc)
+                    self._fallback_warned = True
+                self._bridge_available = False
+
+        # Legacy fallback: expect old export endpoints.
         url = f"{self.base_url}/api/{endpoint_suffix}"
         payload = {"key": key}
         try:

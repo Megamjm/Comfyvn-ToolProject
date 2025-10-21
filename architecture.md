@@ -383,6 +383,11 @@ Acceptance: Generating a line creates a voice asset with sidecar + provenance.
 Debugging: POST `/api/tts/synthesize` with curl, inspect `exports/tts/<voice>_<hash>.wav/.json`, confirm `logs/server.log` shows cached toggle on repeat call and `provider` metadata when ComfyUI is active.
 Notes: See docs/studio_phase6_audio.md for API contracts, ComfyUI settings, cache expectations, and logging checklist.
 
+Status:
+- ✅ 2025-10-21 — `/api/tts/synthesize` implemented in `comfyvn/server/modules/tts_api.py`, delegating to `comfyvn/core/audio_stub.synth_voice` and persisting cache entries.
+- ✅ 2025-10-21 — GUI audio panel wired to the new endpoint (stub playback) with cached toggles surfaced in logs.
+- ⚠ Pending integration with ComfyUI runner and asset registry provenance so synthesized clips register as managed assets.
+
 Part B — Music remix
 
 Owner: Audio & Effects Chat
@@ -397,6 +402,11 @@ Acceptance: Scene playback swaps to remixed track without glitch; asset register
 Debugging: POST `/api/music/remix` with scene/style, inspect `exports/music/<scene>_<style>_*.wav/.json`, confirm INFO log in `logs/server.log` and ComfyUI provenance details when enabled.
 Notes: `comfyvn/core/music_remix.py` submits MusicGen workflows to ComfyUI when configured and falls back to deterministic synth; `(artifact, sidecar)` contract unchanged.
 
+Status:
+- ✅ 2025-10-21 — `comfyvn/server/modules/music_api.py` exposes `/api/music/remix`, calling `comfyvn/core/music_remix.py::remix_track` with deterministic fallback generation and JSON sidecars.
+- ✅ 2025-10-21 — Music cache entries persist to `cache/music_cache.json` via `MusicCacheManager`, enabling idempotent GUI previews.
+- ⚠ ComfyUI workflow execution + asset registry linkage remain to be wired, including provenance entries and long-running job telemetry.
+
 Part C — Audio cache manager
 
 Owner: Asset & Sprite System + Audio Chat
@@ -408,6 +418,11 @@ Cache policy and dedupe by (character, text, style, model hash)
 Acceptance: Repeated synth of identical inputs hits cache.
 Debugging: Compare successive `/api/tts/synthesize` calls; verify `cached=true` and cache entry appears in `cache/audio_cache.json`.
 Notes: Cache manager lives in `comfyvn/core/audio_cache.py` with key format `{voice|text_hash|lang|character|style|model_hash}`.
+
+Status:
+- ✅ 2025-10-21 — `AudioCacheManager` loads/persists JSON entries, keyed by the documented tuple and shared via `audio_cache` singleton for the TTS API.
+- ✅ 2025-10-21 — Cache path now resolved through `comfyvn/config/runtime_paths.audio_cache_file`, aligning with the runtime storage overhaul.
+- ⚠ Pending: eviction policy, size limits, and instrumentation (hit/miss counters to metrics/logs) before wider rollout.
 
 Phase 7 — Advisory, policy, SFW/NSFW
 
@@ -423,6 +438,11 @@ Acceptance: Exports/imports blocked until acknowledged; recorded in settings.
 Debugging: `GET /api/policy/status`, `POST /api/policy/ack`, then `POST /api/policy/evaluate` (ensure warnings surface but allow remains true).
 Notes: Gate state persisted via `comfyvn/core/policy_gate.py`; honour user choice by warning without hard blocks.
 
+Status:
+- ✅ 2025-10-21 — `PolicyGate` persists acknowledgements via `SettingsManager`, tracks `ack_timestamp`, and surfaces overrides for audit.
+- ✅ 2025-10-21 — FastAPI router (`comfyvn/server/modules/policy_api.py`) implements `/api/policy/{status,ack,evaluate}` with logging + error paths.
+- ⚠ Outstanding: studio UX for multi-user acknowledgement history and automated reminder surfaces.
+
 Part B — Advisory scans
 
 Owner: Advisory/Policy Chat
@@ -436,6 +456,11 @@ Debugging: POST `/api/advisory/scan`, list via `/api/advisory/logs`, resolve wit
 Notes: See docs/studio_phase7_advisory.md for scan heuristics, resolution flow, and logging.
 
 Acceptance: Import of non-open assets flagged; UI shows resolution flow.
+
+Status:
+- ✅ 2025-10-21 — `/api/advisory/scan` appends issues through `comfyvn/core/advisory.log_issue`, persisted to advisory logs for GUI consumption.
+- ✅ 2025-10-21 — `/api/policy/filter-preview` and `content_filter.filter_items` emit WARN entries and integrate with advisory logs, satisfying filter preview tooling.
+- ⚠ TODO: auto-remediation hooks (replace/remove/waiver) must emit structured events and surface in Studio dashboards.
 
 Part C — SFW/NSFW filters
 
@@ -451,6 +476,11 @@ Acceptance: Toggling filters affects queries/preview/export as expected.
 Debugging: `POST /api/policy/filter-preview` with sample metadata, confirm warnings surface and `content_mode` matches `GET /api/policy/filters`.
 Notes: Filter modes (`sfw|warn|unrestricted`) stored in `data/settings/config.json`; overrides keep items accessible while logging advisory warnings.
 
+Status:
+- ✅ 2025-10-21 — `comfyvn/core/content_filter.ContentFilter` reads/writes `filters.content_mode` and classifies assets, logging advisory warnings.
+- ✅ 2025-10-21 — `/api/policy/filters` exposes GET/POST plus preview, enabling GUI toggles and importer checks.
+- ⚠ Planned: extend classification with ML/heuristic scores and integrate per-export overrides.
+
 Phase 8 — Runtime & playthrough
 
 Part A — Variables/flags & API
@@ -459,9 +489,21 @@ Owner: Server Core + GUI
 
 Outputs:
 
-/api/vars/{get,set,list,reset}; scopes: global/session/scene
+- REST API `/api/vars/{list,get,set,reset}` bridging GUI requests to the SQLite-backed registry.
+- Scope support: global (project), session, scene. Reset clears corresponding caches and notifies listeners.
+- GUI inspector for live variables with override + revert controls.
 
-Acceptance: Scene logic can read/write variables; reset works.
+Acceptance: Scene logic can read/write variables, reset clears scoped state, and automated tests cover concurrency + persistence.
+
+Status:
+- ✅ 2025-10-20 — Phase 2 migrations created the `variables` table; `comfyvn/studio/core/variable_registry.py` supports list/get access.
+- ✅ 2025-10-21 — Session persistence helpers in `comfyvn/core/state_manager.py` and `session_manager.py` provide baseline state IO (single scope).
+- ⚠ API router + scope-aware runtime storage still pending; need event emission via `event_bus.emit("vars/changed", ...)` and GUI wiring.
+
+Next:
+- Formalise schema (global/session/scene columns) with migration script + tests.
+- Implement FastAPI router (`comfyvn/server/modules/vars_api.py`) enforcing scope validation and audit logging.
+- Extend session/state managers for multi-scope caches and notify the GUI variable dock.
 
 Part B — Choices & deterministic seed
 
@@ -473,15 +515,36 @@ Engine resolves conditional + weighted choices; seeded RNG
 
 Acceptance: Replay with same seed yields same path; tests pass.
 
+Status:
+- ✅ 2025-10-20 — `comfyvn/core/replay_memory.ReplayMemory` appends/readbacks JSONL event streams for QA.
+- ✅ 2025-10-20 — `/replay/auto` FastAPI endpoint exists with deterministic index selection stub in `comfyvn/core/replay.autoplay`.
+- ⚠ Need full branching runner: weighted choice resolver, integration with scene execution engine, and seed propagation through sessions/jobs.
+
+Next:
+- Replace `autoplay` stub with RNG wrapper capturing branch metadata + variable diffs, persisting to `ReplayMemory`.
+- Thread session seed management through orchestrator/state managers and expose `/replay/{start,step,status}` control APIs.
+- Add pytest coverage to replay stored sessions twice and confirm identical paths, including failure-mode fixtures.
+
 Part C — Streaming & typewriter
 
 Owner: Server Core + GUI
 
 Outputs:
 
-WS delta stream for lines; finalization marker; typewriter effect
+- WebSocket delta stream for dialogue lines (with finalisation marker) plus Server-Sent Event fallback.
+- GUI typewriter effect consumes streaming payloads, honours speed settings, and reconciles final chunk with authoritative text.
 
-Acceptance: Smooth incremental rendering; no gaps; final chunk consistent.
+Acceptance: Smooth incremental rendering; no gaps; final chunk matches stored dialogue; tests cover reconnect & slow-consumer scenarios.
+
+Status:
+- ✅ 2025-10-20 — `/events/ws` + `/events/sse` routers deliver broadcast payloads using the current `event_hub` shim and keepalive pings.
+- ✅ 2025-10-20 — GUI toast/log infrastructure consumes advisory + job events via the shared hub, validating transport plumbing.
+- ⚠ Dialogue streaming not yet implemented; need async publisher for scene playback, buffering, and GUI typewriter integration.
+
+Next:
+- Upgrade `comfyvn/core/event_hub` to native async pub/sub with backpressure and topic filters.
+- Implement streaming emitters in `scene_api.play_scene` (or dedicated runtime service) that send token deltas + final chunk events.
+- Teach GUI dialogue renderer to animate incremental payloads and fall back to batch mode when streaming disabled.
 
 Phase 9 — Export & packaging
 
@@ -491,9 +554,21 @@ Owner: Export/Packaging Chat
 
 Outputs:
 
-Scenes → rpy scripts; assets copied; build into renpy_project/
+- Orchestrator aggregates project scenes into `.rpy` scripts, copies assets, and stages output under `renpy_project/`.
+- Validates scene graphs (labels, jumps), emits warnings for missing assets, and supports dry-run.
+- Hooks into pipeline jobs so GUI can queue exports with progress and telemetry.
 
-Acceptance: Minimal playable project runs; dry-run validation passes.
+Acceptance: Minimal playable project runs; dry-run validation passes; export job writes provenance + validation logs.
+
+Status:
+- ✅ 2025-10-20 — `comfyvn/server/modules/export_scene_api.py` writes per-scene `.rpy` stubs; `/bundle/renpy` bundles staged files.
+- ✅ 2025-10-20 — `comfyvn/scene_bundle.py` + `docs/scene_bundle.md` define scene bundle schema and conversions.
+- ⚠ Full orchestrator pending: need multi-scene graph assembly, asset copying, and integration with job/orchestrator services.
+
+Next:
+- Build orchestrator service that walks scenes, resolves assets via registry, and materialises `script.rpy` + config.
+- Validate exports with Ren’Py lint/dry-run, capturing logs under `exports/renpy/validation.log`.
+- Surface job progress (per-scene events) via `/jobs/*` and enrich provenance metadata for later audits.
 
 Part B — Studio export bundle
 
@@ -505,6 +580,15 @@ ZIP with scenes, assets, provenance manifest, readme/license
 
 Acceptance: Bundle re-importable; provenance intact.
 
+Status:
+- ✅ 2025-10-20 — Bundle scaffolding exists through `/bundle/renpy` (zip) and scene bundle converters.
+- ⚠ Need unified export bundle (studio-focused) combining scene bundles, assets, provenance json, and README/license copy.
+
+Next:
+- Define bundle manifest schema (v1) covering variables, seeds, advisory status, and included assets.
+- Extend CLI/GUI commands to trigger bundle build and store artefacts under `exports/bundles/`.
+- Add tests ensuring bundles re-import cleanly via importer pipeline.
+
 Part C — Provenance manifest
 
 Owner: Advisory/Policy + Export
@@ -514,6 +598,15 @@ Outputs:
 provenance.json describing pipeline, seeds, hashes, timestamps
 
 Acceptance: Manifest resolves back to DB entries and sidecars.
+
+Status:
+- ✅ 2025-10-21 — Asset-level provenance captured during registry writes (hashes, licenses, source workflow).
+- ⚠ Export-level manifest not yet authored; need to aggregate seeds, variable snapshots, advisory findings, and compute traces.
+
+Next:
+- Design manifest format referencing scene IDs, variable baselines, replay seeds, and export timestamps.
+- Implement writer invoked by both Ren’Py orchestrator and studio bundle builder.
+- Cross-link manifest entries to advisory logs and compute provider metadata for auditability.
 
 Phase 10 — Integrations & extensions
 

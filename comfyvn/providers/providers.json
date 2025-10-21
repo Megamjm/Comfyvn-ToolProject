@@ -1,0 +1,115 @@
+{
+  "nodePacks": {
+    "videohelper_vhs": {
+      "repo": "Kosinkadink/ComfyUI-VideoHelperSuite",
+      "commit": "",
+      "category": ["video", "io"]
+    },
+    "impact_pack": {
+      "repo": "ltdrdata/ComfyUI-Impact-Pack",
+      "commit": "",
+      "category": ["detail", "upscale"]
+    },
+    "advanced_cn": {
+      "repo": "Kosinkadink/ComfyUI-Advanced-ControlNet",
+      "commit": "",
+      "category": ["controlnet"]
+    },
+    "ipadapter_plus": {
+      "repo": "cubiq/ComfyUI_IPAdapter_plus",
+      "commit": "",
+      "category": ["identity"]
+    },
+    "layerstyle": {
+      "repo": "chflame163/ComfyUI_LayerStyle",
+      "commit": "",
+      "category": ["composite"]
+    },
+    "compositor": {
+      "repo": "erosDiffusion/ComfyUI-enricos-nodes",
+      "commit": "",
+      "category": ["layout"]
+    },
+    "sam2": {
+      "repo": "kijai/ComfyUI-segment-anything-2",
+      "commit": "",
+      "category": ["mask"]
+    },
+    "controlnet_aux": {
+      "repo": "Fannovel16/comfyui_controlnet_aux",
+      "commit": "",
+      "category": ["preprocess"]
+    },
+    "animatediff_evolved": {
+      "repo": "Kosinkadink/ComfyUI-AnimateDiff-Evolved",
+      "commit": "",
+      "category": ["video"]
+    },
+    "vfi_rife": {
+      "repo": "Fannovel16/ComfyUI-Frame-Interpolation",
+      "commit": "",
+      "category": ["video"]
+    },
+    "rife_trt": {
+      "repo": "yuvraj108c/ComfyUI-Rife-Tensorrt",
+      "commit": "",
+      "category": ["video"]
+    },
+    "index_tts2": {
+      "repo": "snicolast/ComfyUI-IndexTTS2",
+      "commit": "",
+      "category": ["tts"]
+    },
+    "tts_audio_suite": {
+      "repo": "diodiogod/TTS-Audio-Suite",
+      "commit": "",
+      "category": ["tts", "vc"]
+    },
+    "xtts": {
+      "repo": "AIFSH/ComfyUI-XTTS",
+      "commit": "",
+      "category": ["tts"]
+    },
+    "openvoice": {
+      "repo": "AIFSH/ComfyUI-OpenVoice",
+      "commit": "",
+      "category": ["tts", "vc"]
+    },
+    "rvc": {
+      "repo": "SayanoAI/Comfy-RVC",
+      "commit": "",
+      "category": ["vc"]
+    },
+    "wan_wrapper": {
+      "repo": "kijai/ComfyUI-WanVideoWrapper",
+      "commit": "",
+      "category": ["video"]
+    },
+    "llm_bridge": {
+      "repo": "Comfy-Org/ComfyUI-LLM-Bridge",
+      "commit": "",
+      "category": ["llm", "text"]
+    }
+  },
+  "models": {
+    "flux_dev": {
+      "hint": "ComfyUI_examples Flux",
+      "path": "models/unet/flux1-dev.sft"
+    },
+    "wan22_i2v_5b": {
+      "hint": "Wan 2.2 repackaged",
+      "path": "models/diffusion/wan2.2/wan2.2_i2v_5b.safetensors"
+    },
+    "sdxl_realvis": {
+      "hint": "RealVisXL ckpt",
+      "path": "models/checkpoints/RealVisXL_V4.0.safetensors"
+    },
+    "juggernaut_xl": {
+      "path": "models/checkpoints/Juggernaut_XL_v9.safetensors"
+    },
+    "story_llm_offline": {
+      "hint": "Offline GGUF for persona scripting",
+      "path": "models/llm/storyteller-dialogue.gguf"
+    }
+  }
+}

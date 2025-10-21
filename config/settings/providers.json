@@ -40,6 +40,50 @@
       "updated_at": null
     },
     {
+      "id": "local_llm",
+      "name": "Local LLM Runtime",
+      "kind": "local",
+      "service": "llm_local",
+      "base_url": "http://127.0.0.1:5005",
+      "active": true,
+      "priority": 5,
+      "meta": {
+        "min_vram_gb": null,
+        "max_vram_gb": null,
+        "cost": {
+          "hourly_usd": 0.0,
+          "billing_increment_minutes": 0
+        },
+        "supports_large_assets": true,
+        "supports_persistent_storage": true,
+        "supports_long_running": true,
+        "supports_short_burst": true,
+        "cost_tier": 0,
+        "model_formats": [
+          "gguf",
+          "ggml",
+          "ollama"
+        ],
+        "notes": "Offline llama.cpp/ollama runtime for persona dialogue authoring.",
+        "auth_fields": [],
+        "policy_hints": {
+          "dialogue_authoring": "Preferred for private scripting and persona rehearsal when offline.",
+          "translation": "Expect CPU-bound throughput; batch long documents accordingly."
+        },
+        "preferred_workloads": [
+          "dialogue_authoring",
+          "translation"
+        ]
+      },
+      "config": {},
+      "last_health": {
+        "ok": null,
+        "ts": null
+      },
+      "created_at": null,
+      "updated_at": null
+    },
+    {
       "id": "runpod",
       "name": "RunPod",
       "kind": "remote",

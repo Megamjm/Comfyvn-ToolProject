@@ -20,6 +20,7 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
     registry.add("Studio Center", "open_studio_center", section="Modules", order=10)
     registry.add("Scenes", "open_scenes_panel", section="Modules", order=20)
     registry.add("Characters", "open_characters_panel", section="Modules", order=30)
+    registry.add("Player Persona", "open_player_persona_panel", section="Modules", order=35)
     registry.add("Assets", "open_asset_browser", section="Modules", order=40)
     registry.add("Playground", "open_playground", section="Modules", order=50)
     registry.add("Sprites", "open_sprite_panel", section="Modules", order=55)

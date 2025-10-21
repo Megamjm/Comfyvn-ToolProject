@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 import os, json, hashlib, shutil
 from pathlib import Path
-from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge
+from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge, SillyTavernBridgeError
 from comfyvn.config.runtime_paths import data_dir
 
 
@@ -76,6 +76,24 @@ class WorldLoader:
         world = self.cache.get(self.active_world, {})
         return world.get("locations", {}).get(location_id, {})
 
+    def configure_remote(
+        self,
+        *,
+        base_url: str | None = None,
+        plugin_base: str | None = None,
+        token: str | None = None,
+        user_id: str | None = None,
+        persist: bool = False,
+    ) -> None:
+        """Update the SillyTavern bridge endpoint."""
+        self.bridge.set_endpoint(
+            base_url=base_url,
+            plugin_base=plugin_base,
+            token=token,
+            user_id=user_id,
+            persist=persist,
+        )
+
     def _ensure_default_world(self) -> None:
         """Copy packaged default worlds into the user data directory if missing."""
         base = Path(__file__).resolve().parents[2] / "defaults" / "worlds"
@@ -97,14 +115,14 @@ class WorldLoader:
     # -----------------------------------------------------
     # Clean-State Sync (enhanced)
     # -----------------------------------------------------
-    def sync_from_sillytavern(self) -> dict:
+    def sync_from_sillytavern(self, *, user_id: str | None = None) -> dict:
         """
         Pull and compare world data from SillyTavern.
         Returns:
           {"status": "success" | "no_change" | "fail", "updated": [...], "message": str}
         """
         try:
-            remote_worlds = self.bridge.fetch_worlds()
+            remote_worlds = self.bridge.fetch_worlds(user_id=user_id)
             if not remote_worlds:
                 return {
                     "status": "fail",
@@ -114,9 +132,12 @@ class WorldLoader:
 
             updated = []
             for world in remote_worlds:
-                wid = world.get("id") or world.get("name", "unknown_world")
-                local_path = os.path.join(self.data_path, f"{wid}.json")
-                remote_hash = self._sha1(world)
+                wid = world.get("id") or world.get("name") or "unknown_world.json"
+                if not wid.lower().endswith(".json"):
+                    wid = f"{wid}.json"
+                local_path = os.path.join(self.data_path, wid)
+                remote_data = world.get("data") or {}
+                remote_hash = self._sha1(remote_data)
                 local_hash = None
 
                 if os.path.exists(local_path):
@@ -127,7 +148,7 @@ class WorldLoader:
 
                 if local_hash != remote_hash:
                     # New or changed
-                    self.bridge.download_world(wid, self.data_path)
+                    self._write_json(local_path, remote_data)
                     updated.append(wid)
 
             if updated:
@@ -142,8 +163,11 @@ class WorldLoader:
                 "message": "No changes detected.",
             }
 
-        except Exception as e:
-            print(f"[WorldLoader] Sync Error: {e}")
+        except SillyTavernBridgeError as exc:
+            logger.warning("World sync failed via SillyTavern bridge: %s", exc)
+            return {"status": "fail", "updated": [], "message": str(exc)}
+        except Exception as e:  # pragma: no cover - defensive
+            logger.exception("WorldLoader encountered an unexpected error during sync")
             return {"status": "fail", "updated": [], "message": str(e)}
 
     # -----------------------------------------------------

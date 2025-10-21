@@ -1,0 +1,30 @@
+{
+  "generated": "2025-10-21T00:00:00Z",
+  "packs": [
+    {
+      "name": "ComfyUI-VideoHelperSuite",
+      "repo": "Kosinkadink/ComfyUI-VideoHelperSuite",
+      "commit": "0000000000000000000000000000000000000000",
+      "category": ["video", "io"]
+    },
+    {
+      "name": "ComfyUI-Impact-Pack",
+      "repo": "ltdrdata/ComfyUI-Impact-Pack",
+      "commit": "0000000000000000000000000000000000000000",
+      "category": ["detail", "upscale"]
+    },
+    {
+      "name": "ComfyUI-AnimateDiff-Evolved",
+      "repo": "Kosinkadink/ComfyUI-AnimateDiff-Evolved",
+      "commit": "0000000000000000000000000000000000000000",
+      "category": ["video"]
+    },
+    {
+      "name": "ComfyUI-IndexTTS2",
+      "repo": "snicolast/ComfyUI-IndexTTS2",
+      "commit": "0000000000000000000000000000000000000000",
+      "category": ["tts"]
+    }
+  ]
+}
+

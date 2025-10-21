@@ -1,0 +1,147 @@
+{
+  "workflow_id": "voice_clip_xtts_v0.6",
+  "family": "voice_clip",
+  "version": "0.6.0",
+  "metadata": {
+    "description": "XTTS → optional RVC conversion voice clip workflow with limiter and SRT export.",
+    "packs": ["tts_audio_suite", "xtts", "openvoice", "rvc"],
+    "expected_inputs": [
+      "text",
+      "lang",
+      "speaker",
+      "voice_refs[]",
+      "engine",
+      "rvc_model",
+      "target_ms"
+    ],
+    "outputs": [
+      {
+        "type": "audio",
+        "filename": "audio/{{scene_id}}/{{clip_id}}.wav"
+      },
+      {
+        "type": "subtitle",
+        "filename": "audio/{{scene_id}}/{{clip_id}}.srt"
+      }
+    ],
+    "seed_keys": ["tts_seed"]
+  },
+  "graph": {
+    "last_node_id": 17,
+    "last_link_id": 20,
+    "nodes": [
+      {
+        "id": 1,
+        "type": "XTTSLoadVoice",
+        "class_type": "XTTSLoadVoice",
+        "inputs": {
+          "voice_refs": "{{voice_refs}}",
+          "language": "{{lang}}"
+        }
+      },
+      {
+        "id": 2,
+        "type": "XTTSGenerate",
+        "class_type": "XTTSGenerate",
+        "inputs": {
+          "text": "{{text}}",
+          "speaker": "{{speaker}}",
+          "language": "{{lang}}",
+          "seed": "{{tts_seed}}",
+          "voice": 1,
+          "temperature": "{{temperature}}",
+          "length_scale": "{{length_scale}}"
+        }
+      },
+      {
+        "id": 3,
+        "type": "AudioLimiter",
+        "class_type": "AudioLimiter",
+        "inputs": {
+          "audio": 2,
+          "lufs": -16.0,
+          "true_peak": -1.0
+        }
+      },
+      {
+        "id": 4,
+        "type": "AudioDeEsser",
+        "class_type": "AudioDeEsser",
+        "inputs": {
+          "audio": 3,
+          "strength": 0.35
+        }
+      },
+      {
+        "id": 5,
+        "type": "RVCConvert",
+        "class_type": "RVCConvert",
+        "inputs": {
+          "audio": 4,
+          "model": "{{rvc_model}}",
+          "mix": "{{rvc_mix}}"
+        }
+      },
+      {
+        "id": 6,
+        "type": "AudioSlicer",
+        "class_type": "AudioSlicer",
+        "inputs": {
+          "audio": 5,
+          "target_ms": "{{target_ms}}",
+          "allow_extend": true
+        }
+      },
+      {
+        "id": 7,
+        "type": "SubtitleGenerator",
+        "class_type": "SubtitleGenerator",
+        "inputs": {
+          "audio": 6,
+          "text": "{{text}}",
+          "lang": "{{lang}}"
+        }
+      },
+      {
+        "id": 8,
+        "type": "SaveAudio",
+        "class_type": "SaveAudio",
+        "inputs": {
+          "audio": 6,
+          "filename": "audio/{{scene_id}}/{{clip_id}}.wav",
+          "sample_rate": 48000
+        }
+      },
+      {
+        "id": 9,
+        "type": "SaveText",
+        "class_type": "SaveText",
+        "inputs": {
+          "text": 7,
+          "filename_prefix": "audio/{{scene_id}}/{{clip_id}}",
+          "extension": "srt"
+        }
+      },
+      {
+        "id": 10,
+        "type": "SaveText",
+        "class_type": "SaveText",
+        "inputs": {
+          "text": "{{render_metadata_json}}",
+          "filename_prefix": "audio/{{scene_id}}/{{clip_id}}.render"
+        }
+      }
+    ],
+    "links": [
+      [1, 0, 2, 4, 1],
+      [2, 0, 3, 0, 2],
+      [3, 0, 4, 0, 3],
+      [4, 0, 5, 0, 4],
+      [5, 0, 6, 0, 5],
+      [6, 0, 7, 0, 6],
+      [6, 0, 8, 0, 7],
+      [7, 0, 9, 0, 8]
+    ]
+  }
+}
+

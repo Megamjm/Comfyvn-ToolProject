@@ -41,6 +41,7 @@ from comfyvn.gui.panels.imports_panel import ImportsPanel
 from comfyvn.gui.panels.audio_panel import AudioPanel
 from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
 from comfyvn.gui.panels.sprite_panel import SpritePanel
+from comfyvn.gui.panels.player_persona_panel import PlayerPersonaPanel
 from comfyvn.gui.widgets.log_hub import LogHub
 from comfyvn.gui.panels.notify_overlay import NotifyOverlay
 from comfyvn.core.notifier import notifier
@@ -223,6 +224,22 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         if isinstance(widget, CharactersPanel):
             widget.set_registry(self._character_registry)
 
+    def open_player_persona_panel(self):
+        dock = getattr(self, "_player_persona_panel", None)
+        if dock is None:
+            dock = PlayerPersonaPanel(
+                self.bridge,
+                self,
+                open_sprite_manager=self.open_sprite_panel,
+                open_asset_manager=self.open_asset_browser,
+                open_playground=self.open_playground,
+            )
+            self.dockman.dock(dock, "Player Persona")
+            self._player_persona_panel = dock
+            logger.debug("Player persona panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
     def open_imports_panel(self):
         dock = getattr(self, "_imports_panel", None)
         if dock is None:
@@ -256,7 +273,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     def open_playground(self):
         dock = getattr(self, "_playground", None)
         if dock is None:
-            dock = PlaygroundPanel(self.bridge.base)
+            dock = PlaygroundPanel(self.bridge)
             self.dockman.dock(dock, "Playground")
             self._playground = dock
             logger.debug("Playground module created")

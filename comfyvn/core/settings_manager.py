@@ -15,6 +15,15 @@ DEFAULTS = {
     "developer": {"verbose": True, "toasts": True, "file_only": False},
     "ui": {"menu_sort_mode": "load_order"},
     "server": {"local_port": 8001},
+    "integrations": {
+        "sillytavern": {
+            "base_url": "http://127.0.0.1:8000",
+            "plugin_base": "/api/plugins/comfyvn-data-exporter",
+            "endpoint": "http://127.0.0.1:8001/st/import",
+            "token": None,
+            "user_id": None,
+        }
+    },
     "policy": {
         "ack_legal_v1": False,
         "ack_timestamp": None,

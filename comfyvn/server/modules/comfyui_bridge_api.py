@@ -1,5 +1,4 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
 from fastapi import APIRouter, Body
 from typing import Dict, Any
 from comfyvn.core.comfy_bridge import ComfyBridge
