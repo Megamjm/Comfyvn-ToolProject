@@ -1,18 +1,27 @@
-from PySide6.QtGui import QAction
+import json
+import shutil
+import uuid
+from pathlib import Path
+
 # comfyvn/server/modules/bridge_api.py
 from fastapi import APIRouter, Body, HTTPException
-from pathlib import Path
-import json, shutil, uuid
+from PySide6.QtGui import QAction
 
 router = APIRouter()
-SCENES = Path("data/scenes"); SCENES.mkdir(parents=True, exist_ok=True)
-ARTDIR = Path("data/assets/scenes"); ARTDIR.mkdir(parents=True, exist_ok=True)
+SCENES = Path("data/scenes")
+SCENES.mkdir(parents=True, exist_ok=True)
+ARTDIR = Path("data/assets/scenes")
+ARTDIR.mkdir(parents=True, exist_ok=True)
+
 
 @router.get("/ping")
-def ping(): return {"ok": True, "pong": True}
+def ping():
+    return {"ok": True, "pong": True}
+
 
 def _scene_path(scene_id: str) -> Path:
     return SCENES / f"{scene_id}.json"
+
 
 @router.post("/comfyui/link")
 def comfyui_link(payload: dict = Body(...)):

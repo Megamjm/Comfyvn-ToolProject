@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 
@@ -67,7 +67,9 @@ async def create_provider(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]
         raise HTTPException(status_code=400, detail=str(exc))
     providers = REGISTRY.list()
     masked = next((p for p in providers if p.get("id") == entry.get("id")), entry)
-    LOGGER.info("Provider created from template '%s' -> %s", template_id, entry.get("id"))
+    LOGGER.info(
+        "Provider created from template '%s' -> %s", template_id, entry.get("id")
+    )
     return {"ok": True, "provider": masked}
 
 
@@ -88,7 +90,9 @@ async def activate_provider(payload: Dict[str, Any] = Body(...)) -> Dict[str, An
 async def reorder_providers(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     order = payload.get("order")
     if not isinstance(order, list):
-        raise HTTPException(status_code=400, detail="order must be a list of provider ids")
+        raise HTTPException(
+            status_code=400, detail="order must be a list of provider ids"
+        )
     providers = REGISTRY.set_priority_order(order)
     return {"ok": True, "providers": providers}
 
@@ -117,12 +121,16 @@ def _provider_health(provider_id: Optional[str]) -> Dict[str, Any]:
 
 
 @router.get("/health")
-async def provider_health_query(provider_id: Optional[str] = Query(None, alias="id")) -> Dict[str, Any]:
+async def provider_health_query(
+    provider_id: Optional[str] = Query(None, alias="id")
+) -> Dict[str, Any]:
     return _provider_health(provider_id)
 
 
 @router.post("/health")
-async def provider_health_check(payload: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
+async def provider_health_check(
+    payload: Optional[Dict[str, Any]] = Body(None),
+) -> Dict[str, Any]:
     payload = payload or {}
     provider_id = payload.get("id")
     return _provider_health(provider_id)
@@ -158,7 +166,9 @@ def _secrets_export_allowed(request: Request) -> bool:
 
 
 @router.get("/export")
-async def export_providers(request: Request, include_secrets: bool = False) -> Dict[str, Any]:
+async def export_providers(
+    request: Request, include_secrets: bool = False
+) -> Dict[str, Any]:
     if include_secrets and not _secrets_export_allowed(request):
         raise HTTPException(
             status_code=403,
@@ -173,10 +183,14 @@ async def import_providers(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any
     replace = bool(payload.get("replace", False))
     overwrite = payload.get("overwrite", True)
     try:
-        imported = REGISTRY.import_data(payload, replace=replace, overwrite=bool(overwrite))
+        imported = REGISTRY.import_data(
+            payload, replace=replace, overwrite=bool(overwrite)
+        )
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    imported_ids: List[str] = [row.get("id") for row in imported if isinstance(row, dict) and row.get("id")]
+    imported_ids: List[str] = [
+        row.get("id") for row in imported if isinstance(row, dict) and row.get("id")
+    ]
     providers = REGISTRY.list()
     LOGGER.info(
         "Imported %d provider(s) (replace=%s overwrite=%s)",

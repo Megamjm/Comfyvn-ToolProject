@@ -174,7 +174,10 @@ def apply_launcher_environment(args: argparse.Namespace) -> None:
     if args.server_url:
         os.environ["COMFYVN_SERVER_BASE"] = args.server_url.rstrip("/")
     else:
-        os.environ.setdefault("COMFYVN_SERVER_BASE", derive_server_base(args.server_host, args.server_port))
+        os.environ.setdefault(
+            "COMFYVN_SERVER_BASE",
+            derive_server_base(args.server_host, args.server_port),
+        )
 
     os.environ["COMFYVN_SERVER_HOST"] = args.server_host
     os.environ["COMFYVN_SERVER_PORT"] = str(args.server_port)
@@ -245,11 +248,15 @@ def ensure_virtualenv(venv_dir: Path) -> Tuple[Path, bool]:
     builder.create(venv_dir)
     python_path = venv_python_path(venv_dir)
     if not python_path.exists():
-        raise RuntimeError("Virtual environment creation succeeded but python executable was not found.")
+        raise RuntimeError(
+            "Virtual environment creation succeeded but python executable was not found."
+        )
     return python_path, True
 
 
-def run_command(command: list[str], *, cwd: Optional[Path] = None, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+def run_command(
+    command: list[str], *, cwd: Optional[Path] = None, capture_output: bool = False
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         cwd=str(cwd) if cwd else None,
@@ -270,7 +277,17 @@ def ensure_requirements(python_path: Path, force: bool = False) -> None:
 
     log("Installing Python dependencies …")
     run_command([str(python_path), "-m", "pip", "install", "--upgrade", "pip"])
-    run_command([str(python_path), "-m", "pip", "install", "--upgrade", "-r", str(REQUIREMENTS_FILE)])
+    run_command(
+        [
+            str(python_path),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "-r",
+            str(REQUIREMENTS_FILE),
+        ]
+    )
     REQUIREMENTS_HASH_FILE.write_text(requirements_hash)
 
 
@@ -294,7 +311,9 @@ def prompt_yes_no(message: str, default: bool = True) -> bool:
         log("Please respond with 'y' or 'n'.")
 
 
-def git_command(args: list[str], *, capture_output: bool = True, check: bool = True) -> subprocess.CompletedProcess[str]:
+def git_command(
+    args: list[str], *, capture_output: bool = True, check: bool = True
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         cwd=str(REPO_ROOT),
@@ -310,7 +329,9 @@ def get_upstream_branch() -> Optional[str]:
     except subprocess.CalledProcessError:
         return None
 
-    result = git_command(["rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"], check=False)
+    result = git_command(
+        ["rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"], check=False
+    )
     if result.returncode != 0:
         return None
     upstream = result.stdout.strip()
@@ -340,9 +361,11 @@ def prompt_for_git_update() -> None:
         return
 
     try:
-        remote_count_str, local_count_str = git_command(
-            ["rev-list", "--left-right", "--count", f"{upstream}...HEAD"]
-        ).stdout.strip().split()
+        remote_count_str, local_count_str = (
+            git_command(["rev-list", "--left-right", "--count", f"{upstream}...HEAD"])
+            .stdout.strip()
+            .split()
+        )
         remote_count = int(remote_count_str)
         local_count = int(local_count_str)
     except (ValueError, subprocess.CalledProcessError):
@@ -359,7 +382,9 @@ def prompt_for_git_update() -> None:
         pass
 
     if dirty:
-        log("Repository has uncommitted changes. Please update manually when convenient.")
+        log(
+            "Repository has uncommitted changes. Please update manually when convenient."
+        )
         return
 
     if local_count > 0:
@@ -387,6 +412,7 @@ def bootstrap_environment() -> None:
         log("Re-launching inside the virtual environment …")
         result = subprocess.call(command, env=env)
         sys.exit(result)
+
 
 os.environ[BOOTSTRAP_FLAG] = "1"
 
@@ -427,6 +453,7 @@ def launch_app() -> None:
         log("Auto-start for local server is disabled (COMFYVN_SERVER_AUTOSTART=0).")
     init_gui_logging(str(gui_log_dir), filename="gui.log")
     from PySide6.QtGui import QAction  # noqa: F401
+
     from comfyvn.gui.main_window import main
 
     log("🎨 Launching GUI and embedded backend …")
@@ -448,7 +475,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not args.server_only:
         supports_render, render_reason = detect_render_support()
         if (not supports_render) and not args.server_url:
-            log(f"⚠️ Render hardware check failed ({render_reason}). Skipping automatic backend launch.")
+            log(
+                f"⚠️ Render hardware check failed ({render_reason}). Skipping automatic backend launch."
+            )
             os.environ["COMFYVN_SERVER_AUTOSTART"] = "0"
     if args.server_only:
         launch_server(
@@ -462,7 +491,9 @@ def main(argv: Optional[list[str]] = None) -> None:
         )
         return
     if not supports_render and render_reason:
-        log("GUI will attach without a local backend. Configure a remote server via Settings → Compute / Server Endpoints.")
+        log(
+            "GUI will attach without a local backend. Configure a remote server via Settings → Compute / Server Endpoints."
+        )
     launch_app()
 
 

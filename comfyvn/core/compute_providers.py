@@ -16,7 +16,9 @@ def _http_get(url: str, headers: Optional[dict] = None, timeout: float = 5.0) ->
     return response.text
 
 
-def _http_post(url: str, body: dict, headers: Optional[dict] = None, timeout: float = 10.0) -> Any:
+def _http_post(
+    url: str, body: dict, headers: Optional[dict] = None, timeout: float = 10.0
+) -> Any:
     response = httpx.post(url, json=body, headers=headers or {}, timeout=timeout)
     response.raise_for_status()
     if response.headers.get("content-type", "").startswith("application/json"):
@@ -64,7 +66,9 @@ def generic_health(base_url: str, headers: Optional[dict] = None) -> dict:
 
 def generic_send(base_url: str, payload: dict, headers: Optional[dict] = None) -> dict:
     try:
-        result = _http_post(base_url.rstrip("/") + "/jobs/enqueue", payload, headers=headers)
+        result = _http_post(
+            base_url.rstrip("/") + "/jobs/enqueue", payload, headers=headers
+        )
         return {"ok": True, "result": result}
     except Exception as exc:  # pragma: no cover - network call
         LOGGER.warning("Generic provider send failed for %s: %s", base_url, exc)
@@ -72,11 +76,18 @@ def generic_send(base_url: str, payload: dict, headers: Optional[dict] = None) -
 
 
 def _service_type(provider: Dict[str, Any]) -> str:
-    return (provider.get("service") or provider.get("kind") or provider.get("type") or "").lower()
+    return (
+        provider.get("service") or provider.get("kind") or provider.get("type") or ""
+    ).lower()
 
 
 def _base_url(provider: Dict[str, Any]) -> str:
-    return provider.get("base_url") or provider.get("base") or provider.get("endpoint") or ""
+    return (
+        provider.get("base_url")
+        or provider.get("base")
+        or provider.get("endpoint")
+        or ""
+    )
 
 
 def health(provider: Dict[str, Any]) -> dict:

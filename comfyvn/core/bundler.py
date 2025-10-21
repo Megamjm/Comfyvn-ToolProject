@@ -1,16 +1,24 @@
-from PySide6.QtGui import QAction
-import zipfile, hashlib, json, os, time
+import hashlib
+import json
+import os
+import time
+import zipfile
 from pathlib import Path
 
+from PySide6.QtGui import QAction
+
 from comfyvn.core.provenance import stamp_path
+
 
 def trace_metadata(asset_path: Path):
     data = Path(asset_path).read_bytes()
     h = hashlib.sha256(data).hexdigest()[:16]
     return {"file": asset_path.name, "hash": h, "timestamp": time.time()}
 
+
 def bundle_scene(scene_json: dict, assets: list[str], outdir="exports"):
-    outdir = Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
     bundle = {"scene": scene_json, "assets": []}
     zipname = outdir / f"bundle_{int(time.time())}.zip"
     with zipfile.ZipFile(zipname, "w", zipfile.ZIP_DEFLATED) as z:

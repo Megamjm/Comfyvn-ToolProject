@@ -1,8 +1,12 @@
+import json
+import os
+from pathlib import Path
+
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMainWindow
-import json, os
-from pathlib import Path
+
 from comfyvn.config.runtime_paths import workspace_dir
+
 
 class WorkspaceManager:
     def __init__(self, window: QMainWindow):
@@ -19,7 +23,9 @@ class WorkspaceManager:
     def load(self, name=None):
         name = name or self.current
         path = self.dir / f"{name}.json"
-        if not path.exists(): return
+        if not path.exists():
+            return
         raw = json.loads(path.read_text())
         from PySide6.QtCore import QByteArray
+
         self.window.restoreState(QByteArray.fromHex(bytes(raw["layout"], "utf8")))

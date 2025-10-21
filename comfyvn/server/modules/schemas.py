@@ -1,6 +1,8 @@
-from PySide6.QtGui import QAction
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field, field_validator
+from PySide6.QtGui import QAction
+
 
 class RenderRequest(BaseModel):
     id: Optional[str] = Field(None, min_length=1, max_length=64)
@@ -18,10 +20,12 @@ class RenderRequest(BaseModel):
             raise ValueError("backend must be 'comfyui'")
         return v
 
+
 class BatchRequest(BaseModel):
     items: List[RenderRequest]
     depends_on: Optional[List[str]] = None
     retries: int = 0
+
 
 class CustomJob(BaseModel):
     type: str = Field(..., min_length=2, max_length=64)

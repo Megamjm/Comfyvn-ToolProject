@@ -1,8 +1,9 @@
+from fastapi import APIRouter
 from PySide6.QtGui import QAction
 
-from fastapi import APIRouter
-
 router = APIRouter(prefix="/gui", tags=["gui"])
+
+
 @router.get("/config")
 def gui_config():
     return {

@@ -8,8 +8,8 @@ from typing import Optional
 import typer
 
 from comfyvn.assets_manifest import build_manifest
-from comfyvn.logging_setup import init_logging
 from comfyvn.lmstudio_client import healthcheck
+from comfyvn.logging_setup import init_logging
 from comfyvn.scene_bundle import convert_file as bundle_convert
 from comfyvn.sdk import ComfyVN
 
@@ -64,9 +64,15 @@ def manifest(
 
 @app.command()
 def bundle(
-    raw: Path = typer.Option(..., help="Path to raw scene JSON exported from SillyTavern"),
-    manifest: Path = typer.Option(Path("assets/assets.manifest.json"), help="Assets manifest path"),
-    schema: Path = typer.Option(Path("docs/scene_bundle.schema.json"), help="Bundle schema path"),
+    raw: Path = typer.Option(
+        ..., help="Path to raw scene JSON exported from SillyTavern"
+    ),
+    manifest: Path = typer.Option(
+        Path("assets/assets.manifest.json"), help="Assets manifest path"
+    ),
+    schema: Path = typer.Option(
+        Path("docs/scene_bundle.schema.json"), help="Bundle schema path"
+    ),
     out: Optional[Path] = typer.Option(None, help="Override bundle output path"),
     name: Optional[str] = typer.Option(None, help="Override bundle filename stem"),
 ) -> None:
@@ -75,7 +81,9 @@ def bundle(
     target = out or Path("bundles") / f"{name or raw.stem}.bundle.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     logger.info("Converting raw scene %s -> %s", raw, target)
-    bundle_data = bundle_convert(str(raw), str(target), manifest_path=str(manifest), schema_path=str(schema))
+    bundle_data = bundle_convert(
+        str(raw), str(target), manifest_path=str(manifest), schema_path=str(schema)
+    )
     print(
         json.dumps(
             {

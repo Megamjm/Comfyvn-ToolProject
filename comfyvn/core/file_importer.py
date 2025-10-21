@@ -4,16 +4,14 @@ import logging
 import re
 import shutil
 import time
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-import unicodedata
-
 from comfyvn.config.runtime_paths import data_dir
 from comfyvn.core.advisory import AdvisoryIssue, log_issue
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +60,12 @@ class FileImporter:
         self.extracted_dir = self.kind_root / "extracted"
         self.converted_dir = self.kind_root / "converted"
 
-        for path in (self.kind_root, self.raw_dir, self.extracted_dir, self.converted_dir):
+        for path in (
+            self.kind_root,
+            self.raw_dir,
+            self.extracted_dir,
+            self.converted_dir,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
     def _generate_import_id(self, source: Path) -> str:
@@ -197,7 +200,10 @@ def log_license_issues(
                 kind="policy",
                 message="Additional assets missing license metadata",
                 severity="warn",
-                detail={"skipped_assets": len(assets) - limit, "import_kind": import_kind},
+                detail={
+                    "skipped_assets": len(assets) - limit,
+                    "import_kind": import_kind,
+                },
             )
             log_issue(issue)
             advisories.append(issue.to_dict())
@@ -263,7 +269,11 @@ def sanitize_filename(filename: Optional[str], default: str = "upload.txt") -> s
         return default
 
     candidate = str(filename).split("/")[-1].split("\\")[-1].strip()
-    candidate = unicodedata.normalize("NFKD", candidate).encode("ascii", "ignore").decode("ascii")
+    candidate = (
+        unicodedata.normalize("NFKD", candidate)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
     candidate = candidate.replace(" ", "_")
     candidate = re.sub(r"[^A-Za-z0-9._-]", "", candidate)
     candidate = candidate.lstrip("._")

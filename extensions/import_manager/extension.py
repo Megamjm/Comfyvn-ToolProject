@@ -15,4 +15,6 @@ def register(registry: MenuRegistry) -> None:
 
 
 def _not_implemented(window) -> None:
-    notifier.toast("warn", "Import Manager placeholder invoked — no implementation available.")
+    notifier.toast(
+        "warn", "Import Manager placeholder invoked — no implementation available."
+    )

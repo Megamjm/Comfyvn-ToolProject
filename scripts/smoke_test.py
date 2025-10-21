@@ -15,7 +15,6 @@ from typing import Iterable
 
 import httpx
 
-
 DEFAULT_ENDPOINTS: tuple[str, ...] = ("/health", "/system/metrics")
 DEFAULT_UPLOAD_ENDPOINT = "/system/roleplay"
 DEFAULT_BASE_URL = "http://localhost:8001"
@@ -58,7 +57,9 @@ def maybe_upload_roleplay(
     if not upload_path.exists():
         print(f"[warn] roleplay file not found: {upload_path}")
         return False
-    with httpx.Client(base_url=base_url, timeout=timeout, follow_redirects=True) as client:
+    with httpx.Client(
+        base_url=base_url, timeout=timeout, follow_redirects=True
+    ) as client:
         try:
             payload = upload_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -66,7 +67,9 @@ def maybe_upload_roleplay(
         try:
             resp = client.post(
                 upload_endpoint,
-                files={"file": (upload_path.name, payload.encode("utf-8"), "text/plain")},
+                files={
+                    "file": (upload_path.name, payload.encode("utf-8"), "text/plain")
+                },
             )
             resp.raise_for_status()
             print(f"Uploaded roleplay sample to {upload_endpoint}: {resp.status_code}")

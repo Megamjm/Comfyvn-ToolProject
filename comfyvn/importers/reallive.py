@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,7 +17,9 @@ class RealLiveImporter:
     def detect(self, root: Path | str) -> DetectResult:
         root_path = Path(root)
         reasons: list[str] = []
-        if (root_path / "RealLive.exe").exists() or (root_path / "SiglusEngine.exe").exists():
+        if (root_path / "RealLive.exe").exists() or (
+            root_path / "SiglusEngine.exe"
+        ).exists():
             reasons.append("engine executable present")
         scene_pck = list(root_path.glob("Scene.pck"))
         if scene_pck:
@@ -32,7 +34,11 @@ class RealLiveImporter:
             confidence += 0.3
         if scene_pck:
             confidence += 0.2
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.85), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.85),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -60,7 +66,9 @@ class RealLiveImporter:
             "sources": {"root": str(root_path.resolve()), "hooks": hooks or {}},
             "notes": ["RealLive/Siglus importer executed"],
         }
-        LOGGER.info("Normalizing RealLive/Siglus project from %s -> %s", root_path, out_path)
+        LOGGER.info(
+            "Normalizing RealLive/Siglus project from %s -> %s", root_path, out_path
+        )
         result = normalize_tree(
             root_path,
             out_path,
@@ -69,7 +77,9 @@ class RealLiveImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("RealLive normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "RealLive normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

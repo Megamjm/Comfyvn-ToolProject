@@ -4,15 +4,8 @@ import json
 from typing import Any, Dict, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QDockWidget,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QDockWidget, QHBoxLayout, QLabel, QPushButton,
+                               QTextEdit, QVBoxLayout, QWidget)
 
 from comfyvn.gui.services.server_bridge import ServerBridge
 
@@ -61,7 +54,11 @@ class PlaygroundPanel(QDockWidget):
     # ------------------------------------------------------------------
     def _extract_payload(self, result: Any) -> Optional[Dict[str, Any]]:
         if not isinstance(result, dict) or not result.get("ok"):
-            error = (result or {}).get("error") if isinstance(result, dict) else "unknown error"
+            error = (
+                (result or {}).get("error")
+                if isinstance(result, dict)
+                else "unknown error"
+            )
             self.state_view.setPlainText(f"⚠️ Request failed: {error}")
             return None
         payload = result.get("data")
@@ -71,7 +68,9 @@ class PlaygroundPanel(QDockWidget):
         return payload
 
     def _refresh_state(self) -> None:
-        payload = self._extract_payload(self.bridge.get_json("/player/state", timeout=5.0, default=None))
+        payload = self._extract_payload(
+            self.bridge.get_json("/player/state", timeout=5.0, default=None)
+        )
         if payload is None:
             return
         try:
@@ -81,19 +80,27 @@ class PlaygroundPanel(QDockWidget):
         self.state_view.setPlainText(pretty)
 
     def _set_mode(self, mode: str) -> None:
-        state = self._extract_payload(self.bridge.get_json("/player/state", timeout=5.0, default=None))
+        state = self._extract_payload(
+            self.bridge.get_json("/player/state", timeout=5.0, default=None)
+        )
         persona_id = state.get("persona_id") if state else None
         payload: Dict[str, Any] = {"mode": mode}
         if persona_id:
             payload["persona"] = persona_id
-        result = self.bridge.post_json("/player/select", payload, timeout=5.0, default=None)
+        result = self.bridge.post_json(
+            "/player/select", payload, timeout=5.0, default=None
+        )
         if self._extract_payload(result) is not None:
             self._refresh_state()
 
     def _fetch_metrics(self) -> None:
         result = self.bridge.get_json("/system/metrics", timeout=5.0, default=None)
         if not isinstance(result, dict) or not result.get("ok"):
-            error = (result or {}).get("error") if isinstance(result, dict) else "unknown error"
+            error = (
+                (result or {}).get("error")
+                if isinstance(result, dict)
+                else "unknown error"
+            )
             self.state_view.setPlainText(f"⚠️ Metrics request failed: {error}")
             return
         data = result.get("data")
@@ -105,4 +112,3 @@ class PlaygroundPanel(QDockWidget):
 
 
 __all__ = ["PlaygroundPanel"]
-

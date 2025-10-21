@@ -1,10 +1,13 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
+from PySide6.QtGui import QAction
+
 try:
-    from fastapi import APIRouter, HTTPException, Body
+    from fastapi import APIRouter, Body, HTTPException
 except Exception:
     APIRouter = None  # type: ignore
 
@@ -12,6 +15,7 @@ SEARCH_DIRS = [Path("comfyvn/flows"), Path("data/flows")]
 STATE_DIR = Path("data/state")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 ACTIVE_FILE = STATE_DIR / "flow.json"
+
 
 class FlowRegistry:
     def __init__(self) -> None:
@@ -34,14 +38,16 @@ class FlowRegistry:
                     continue
         if ACTIVE_FILE.exists():
             try:
-                self._active = json.loads(ACTIVE_FILE.read_text(encoding="utf-8")).get("active_flow")
+                self._active = json.loads(ACTIVE_FILE.read_text(encoding="utf-8")).get(
+                    "active_flow"
+                )
             except Exception:
                 self._active = None
 
     def list(self) -> List[Dict[str, Any]]:
         if not self._by_id:
             self.refresh()
-        return sorted(self._by_id.values(), key=lambda o: o.get("id",""))
+        return sorted(self._by_id.values(), key=lambda o: o.get("id", ""))
 
     def get(self, flow_id: str) -> Dict[str, Any]:
         if not self._by_id:
@@ -61,8 +67,11 @@ class FlowRegistry:
         if flow_id not in self._by_id:
             raise KeyError(flow_id)
         self._active = flow_id
-        ACTIVE_FILE.write_text(json.dumps({"active_flow": flow_id}, indent=2), encoding="utf-8")
+        ACTIVE_FILE.write_text(
+            json.dumps({"active_flow": flow_id}, indent=2), encoding="utf-8"
+        )
         return {"ok": True, "active_flow": flow_id}
+
 
 def get_flow_router() -> "APIRouter":
     if APIRouter is None:

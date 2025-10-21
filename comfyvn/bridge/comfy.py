@@ -173,7 +173,9 @@ class ComfyUIBridge:
                 response = await client.post(f"{self.base_url}/prompt", json=payload)
                 response.raise_for_status()
                 data = response.json()
-                prompt_id = str(data.get("prompt_id") or data.get("promptID") or "").strip()
+                prompt_id = str(
+                    data.get("prompt_id") or data.get("promptID") or ""
+                ).strip()
                 if not prompt_id:
                     raise ComfyBridgeError("ComfyUI did not return a prompt_id")
                 LOGGER.debug(
@@ -191,9 +193,15 @@ class ComfyUIBridge:
                     workflow=graph,
                     envelope=envelope,
                 )
-            except httpx.HTTPStatusError as exc:  # pragma: no cover - network errors hard to reproduce
+            except (
+                httpx.HTTPStatusError
+            ) as exc:  # pragma: no cover - network errors hard to reproduce
                 last_exc = exc
-                LOGGER.warning("ComfyUI prompt submission failed (%s): %s", exc.response.status_code, exc)
+                LOGGER.warning(
+                    "ComfyUI prompt submission failed (%s): %s",
+                    exc.response.status_code,
+                    exc,
+                )
             except Exception as exc:  # pragma: no cover - defensive
                 last_exc = exc
                 LOGGER.warning("ComfyUI prompt submission error: %s", exc)
@@ -201,7 +209,9 @@ class ComfyUIBridge:
             attempt += 1
             await asyncio.sleep(self.retry_backoff * attempt)
 
-        raise ComfyBridgeError(f"Failed to submit workflow after {self.max_retries} attempts") from last_exc
+        raise ComfyBridgeError(
+            f"Failed to submit workflow after {self.max_retries} attempts"
+        ) from last_exc
 
     async def fetch_history(self, prompt_id: str) -> Dict[str, Any]:
         """Fetch the raw history payload for a prompt."""
@@ -228,7 +238,10 @@ class ComfyUIBridge:
         """Poll history until the prompt completes or fails."""
         deadline = time.monotonic() + timeout
         last_status: Optional[str] = None
-        desired = {status.lower() for status in (terminal_statuses or ("completed", "success", "finished"))}
+        desired = {
+            status.lower()
+            for status in (terminal_statuses or ("completed", "success", "finished"))
+        }
         failure_states = {"failed", "error", "cancelled", "canceled"}
 
         while time.monotonic() < deadline:
@@ -260,12 +273,16 @@ class ComfyUIBridge:
     ) -> RenderResult:
         """Submit, wait, and optionally download artifacts for a workflow."""
         job = await self.queue_prompt(workflow, context=context)
-        result = await self.wait_for_result(job, poll_interval=poll_interval, timeout=timeout)
+        result = await self.wait_for_result(
+            job, poll_interval=poll_interval, timeout=timeout
+        )
         if download_dir:
             await self.download_artifacts(result, download_dir)
         return result
 
-    async def download_artifacts(self, result: RenderResult, target_dir: Path) -> List[Path]:
+    async def download_artifacts(
+        self, result: RenderResult, target_dir: Path
+    ) -> List[Path]:
         """Download all artifacts from a completed job into the provided directory."""
         target_dir.mkdir(parents=True, exist_ok=True)
         client = await self._ensure_client()
@@ -308,7 +325,9 @@ class ComfyUIBridge:
         if "nodes" in data and "links" in data:
             return data, envelope
 
-        raise ComfyBridgeError("Workflow JSON missing graph definition ('workflow'/'graph'/'nodes')")
+        raise ComfyBridgeError(
+            "Workflow JSON missing graph definition ('workflow'/'graph'/'nodes')"
+        )
 
     def _build_prompt_payload(
         self,
@@ -328,7 +347,9 @@ class ComfyUIBridge:
         payload["extra_data"] = {"comfyvn": meta}
         return payload
 
-    def _extract_history_record(self, payload: Dict[str, Any], prompt_id: str) -> Dict[str, Any]:
+    def _extract_history_record(
+        self, payload: Dict[str, Any], prompt_id: str
+    ) -> Dict[str, Any]:
         if not payload:
             return {}
         history = payload.get("history")
@@ -341,7 +362,9 @@ class ComfyUIBridge:
             return record
         return {}
 
-    def _collect_artifacts(self, prompt_id: str, record: Dict[str, Any]) -> List[ArtifactDescriptor]:
+    def _collect_artifacts(
+        self, prompt_id: str, record: Dict[str, Any]
+    ) -> List[ArtifactDescriptor]:
         outputs = record.get("outputs") or {}
         descriptors: List[ArtifactDescriptor] = []
         for node_id, node_outputs in outputs.items():
@@ -377,4 +400,3 @@ __all__ = [
     "RenderJob",
     "RenderResult",
 ]
-

@@ -1,17 +1,21 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/st_sync_manager.py
 # ⚙️ 3. Server Core Production Chat — SillyTavern Generic Sync Manager
 
-import os
-import json
 import hashlib
+import json
+import os
 import time
-import requests
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge, SillyTavernBridgeError
+import requests
+
+from comfyvn.integrations.sillytavern_bridge import (SillyTavernBridge,
+                                                     SillyTavernBridgeError)
 
 SYNC_DIR = "./data/st_sync"
 ARCHIVE_DIR = os.path.join(SYNC_DIR, "archive")
@@ -92,7 +96,9 @@ class STSyncManager:
                 return {"status": "ok", "data": data}
             except SillyTavernBridgeError as exc:
                 if not self._fallback_warned:
-                    logger.warning("Falling back to legacy SillyTavern endpoints: %s", exc)
+                    logger.warning(
+                        "Falling back to legacy SillyTavern endpoints: %s", exc
+                    )
                     self._fallback_warned = True
                 self._bridge_available = False
 

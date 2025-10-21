@@ -1,26 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QDockWidget,
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QLabel,
-    QLineEdit,
-    QTextEdit,
-    QMessageBox,
-    QInputDialog,
-    QSplitter,
-    QSizePolicy,
-)
+from PySide6.QtWidgets import (QDockWidget, QHBoxLayout, QInputDialog, QLabel,
+                               QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QSizePolicy,
+                               QSplitter, QTextEdit, QVBoxLayout, QWidget)
 
 from comfyvn.studio.core.scene_registry import SceneRegistry
 from comfyvn.studio.core.timeline_registry import TimelineRegistry
@@ -40,7 +28,9 @@ def _make_item(text: str, data: dict | None = None) -> QListWidgetItem:
     item = QListWidgetItem(text)
     if data is not None:
         item.setData(Qt.UserRole, data)
-    item.setFlags(item.flags() | Qt.ItemIsEditable | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled)
+    item.setFlags(
+        item.flags() | Qt.ItemIsEditable | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+    )
     return item
 
 
@@ -163,7 +153,9 @@ class TimelinePanel(QDockWidget):
         self.btn_remove_scene.clicked.connect(self._remove_selected_sequence_scene)
         self.btn_move_up.clicked.connect(lambda: self._shift_selected_scene(-1))
         self.btn_move_down.clicked.connect(lambda: self._shift_selected_scene(1))
-        self.sequence_list.currentItemChanged.connect(self._on_sequence_selection_changed)
+        self.sequence_list.currentItemChanged.connect(
+            self._on_sequence_selection_changed
+        )
         self.scene_notes.textChanged.connect(self._capture_notes_change)
         self.btn_save.clicked.connect(self._save_timeline)
 
@@ -419,7 +411,9 @@ class TimelinePanel(QDockWidget):
     def _save_timeline(self) -> None:
         name = self.timeline_name.text().strip()
         if not name:
-            QMessageBox.warning(self, "Missing Name", "Provide a timeline name before saving.")
+            QMessageBox.warning(
+                self, "Missing Name", "Provide a timeline name before saving."
+            )
             return
         entries = self._serialize_sequence()
         meta = {"entry_count": len(entries)}

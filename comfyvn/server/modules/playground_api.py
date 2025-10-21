@@ -12,8 +12,8 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
-from PySide6.QtGui import QAction
 from fastapi import APIRouter, Body, HTTPException
+from PySide6.QtGui import QAction
 
 from comfyvn.config.runtime_paths import settings_file
 from comfyvn.core.comfyui_client import ComfyUIClient
@@ -93,7 +93,9 @@ def _load_config() -> Dict[str, Any]:
                 if not isinstance(data, dict):
                     raise ValueError("config root must be an object")
             except Exception as exc:  # pragma: no cover - defensive
-                LOGGER.warning("ComfyUI connector config invalid (%s); resetting to defaults", exc)
+                LOGGER.warning(
+                    "ComfyUI connector config invalid (%s); resetting to defaults", exc
+                )
                 data = {}
         else:
             data = {}
@@ -174,7 +176,9 @@ def _apply_replacements(payload: Any, replacements: Dict[str, str]) -> Any:
     return payload
 
 
-def _prepare_workflow(raw_workflow: Any, *, context: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+def _prepare_workflow(
+    raw_workflow: Any, *, context: Dict[str, Any]
+) -> Tuple[Dict[str, Any], str]:
     label = "inline"
     if isinstance(raw_workflow, dict):
         workflow = copy.deepcopy(raw_workflow)
@@ -202,13 +206,17 @@ def _prepare_workflow(raw_workflow: Any, *, context: Dict[str, Any]) -> Tuple[Di
 
 def _hash_workflow(workflow: Dict[str, Any]) -> str:
     try:
-        serialized = json.dumps(workflow, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        serialized = json.dumps(
+            workflow, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
     except (TypeError, ValueError):
         serialized = "{}"
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def _extract_history_record(history: Dict[str, Any], prompt_id: str) -> Optional[Dict[str, Any]]:
+def _extract_history_record(
+    history: Dict[str, Any], prompt_id: str
+) -> Optional[Dict[str, Any]]:
     if not history:
         return None
     record: Optional[Dict[str, Any]] = None
@@ -266,7 +274,9 @@ def _download_and_register_asset(
     kind: str,
     request_meta: Dict[str, Any],
 ) -> Dict[str, Any]:
-    filename = _safe_filename(entry.get("filename"), fallback=f"{kind}_{uuid.uuid4().hex}.bin")
+    filename = _safe_filename(
+        entry.get("filename"), fallback=f"{kind}_{uuid.uuid4().hex}.bin"
+    )
     params = {
         "filename": entry.get("filename"),
         "subfolder": entry.get("subfolder") or "",
@@ -280,7 +290,9 @@ def _download_and_register_asset(
         )
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise RuntimeError(f"failed to download ComfyUI output {filename}: {exc}") from exc
+        raise RuntimeError(
+            f"failed to download ComfyUI output {filename}: {exc}"
+        ) from exc
 
     suffix = Path(filename).suffix or ".bin"
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -327,7 +339,9 @@ def _download_and_register_asset(
     return asset
 
 
-def _fail_job(task_id: str, message: str, *, stage: str, error: Optional[Exception] = None) -> None:
+def _fail_job(
+    task_id: str, message: str, *, stage: str, error: Optional[Exception] = None
+) -> None:
     meta = _task_meta(task_id)
     connector_meta = meta.setdefault("connector", {})
     errors = connector_meta.setdefault("errors", [])
@@ -341,7 +355,9 @@ def _fail_job(task_id: str, message: str, *, stage: str, error: Optional[Excepti
     if error:
         connector_meta["last_exception"] = repr(error)
     meta["connector"] = connector_meta
-    task_registry.update(task_id, status="error", progress=1.0, message=message, meta=meta)
+    task_registry.update(
+        task_id, status="error", progress=1.0, message=message, meta=meta
+    )
 
 
 def _register_outputs(
@@ -359,7 +375,11 @@ def _register_outputs(
     outputs = _collect_outputs(record)
     if outputs_filter:
         desired = {str(item).lower() for item in outputs_filter if item}
-        outputs = [entry for entry in outputs if str(entry.get("type") or "").lower() in desired]
+        outputs = [
+            entry
+            for entry in outputs
+            if str(entry.get("type") or "").lower() in desired
+        ]
 
     connector_meta["outputs"] = [
         {
@@ -389,7 +409,9 @@ def _register_outputs(
             )
             assets.append(asset)
         except Exception as exc:  # pragma: no cover - defensive
-            LOGGER.warning("Failed to register ComfyUI output %s: %s", entry.get("filename"), exc)
+            LOGGER.warning(
+                "Failed to register ComfyUI output %s: %s", entry.get("filename"), exc
+            )
             warnings.append(
                 {
                     "filename": entry.get("filename"),
@@ -459,7 +481,9 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
     config = _load_config()
     base_url = options.get("base_url") or config["base_url"]
     if not base_url:
-        _fail_job(task_id, "ComfyUI connector base_url not configured", stage="configure")
+        _fail_job(
+            task_id, "ComfyUI connector base_url not configured", stage="configure"
+        )
         return []
 
     client = ComfyUIClient(base_url)
@@ -483,7 +507,9 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
     payload_meta = meta.get("payload")
     if isinstance(payload_meta, dict):
         connector_meta.setdefault("device", payload_meta.get("device"))
-        connector_meta.setdefault("compute_policy", payload_meta.get("meta", {}).get("compute_policy"))
+        connector_meta.setdefault(
+            "compute_policy", payload_meta.get("meta", {}).get("compute_policy")
+        )
 
     meta["connector"] = connector_meta
     task_registry.update(
@@ -495,13 +521,19 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
     )
 
     workflow_payload = copy.deepcopy(workflow)
-    workflow_payload.setdefault("client_id", options.get("client_id") or uuid.uuid4().hex)
+    workflow_payload.setdefault(
+        "client_id", options.get("client_id") or uuid.uuid4().hex
+    )
 
     try:
-        response = client.queue_prompt(workflow_payload, timeout=config["submit_timeout"])
+        response = client.queue_prompt(
+            workflow_payload, timeout=config["submit_timeout"]
+        )
     except requests.RequestException as exc:
         LOGGER.warning("ComfyUI submission failed: %s", exc)
-        _fail_job(task_id, f"Failed to submit workflow: {exc}", stage="submit", error=exc)
+        _fail_job(
+            task_id, f"Failed to submit workflow: {exc}", stage="submit", error=exc
+        )
         return []
 
     prompt_id = response.get("prompt_id")
@@ -519,7 +551,9 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
     )
 
     try:
-        record = _wait_for_prompt(task_id, client, prompt_id=prompt_id, config=config, meta=meta)
+        record = _wait_for_prompt(
+            task_id, client, prompt_id=prompt_id, config=config, meta=meta
+        )
     except TimeoutError as exc:
         LOGGER.warning("ComfyUI workflow timeout job=%s: %s", task_id, exc)
         _fail_job(task_id, str(exc), stage="wait", error=exc)
@@ -530,7 +564,9 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
         return []
     except requests.RequestException as exc:
         LOGGER.warning("ComfyUI history fetch failed job=%s: %s", task_id, exc)
-        _fail_job(task_id, f"Failed to poll ComfyUI history: {exc}", stage="wait", error=exc)
+        _fail_job(
+            task_id, f"Failed to poll ComfyUI history: {exc}", stage="wait", error=exc
+        )
         return []
 
     outputs_filter = options.get("outputs")
@@ -548,7 +584,12 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
         )
     except Exception as exc:
         LOGGER.warning("ComfyUI output processing failed job=%s: %s", task_id, exc)
-        _fail_job(task_id, f"Failed to capture ComfyUI outputs: {exc}", stage="outputs", error=exc)
+        _fail_job(
+            task_id,
+            f"Failed to capture ComfyUI outputs: {exc}",
+            stage="outputs",
+            error=exc,
+        )
         return []
 
     connector_meta["assets"] = [
@@ -573,7 +614,9 @@ def _run_pipeline_job_safe(task_id: str, options: Dict[str, Any]) -> None:
     try:
         _run_pipeline_job(task_id, options)
     except Exception as exc:  # pragma: no cover - defensive
-        LOGGER.exception("Unhandled error in ComfyUI connector job %s: %s", task_id, exc)
+        LOGGER.exception(
+            "Unhandled error in ComfyUI connector job %s: %s", task_id, exc
+        )
         _fail_job(task_id, "Unhandled connector error", stage="internal", error=exc)
 
 
@@ -594,7 +637,11 @@ def _spawn_pipeline_job(task_id: str, options: Dict[str, Any]) -> None:
 def health() -> Dict[str, Any]:
     cfg = _load_config()
     ok = PRJ.exists()
-    comfy_state = {"configured": bool(cfg["base_url"]), "base_url": cfg["base_url"], "online": False}
+    comfy_state = {
+        "configured": bool(cfg["base_url"]),
+        "base_url": cfg["base_url"],
+        "online": False,
+    }
     if cfg["base_url"]:
         client = ComfyUIClient(cfg["base_url"])
         comfy_state["online"] = client.health(timeout=cfg["health_timeout"])
@@ -612,7 +659,10 @@ def recommend() -> Dict[str, Any]:
     return {
         "ok": True,
         "engines": [
-            {"name": "Godot", "why": "Open-source, lightweight 3D/2D, good for preview"},
+            {
+                "name": "Godot",
+                "why": "Open-source, lightweight 3D/2D, good for preview",
+            },
             {"name": "Blend4Web/Three.js", "why": "Web preview alternative"},
         ],
     }
@@ -655,13 +705,18 @@ def submit_pipeline(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
 
     cfg = _load_config()
     if not cfg["base_url"]:
-        raise HTTPException(status_code=400, detail="ComfyUI connector not configured (base_url missing)")
+        raise HTTPException(
+            status_code=400,
+            detail="ComfyUI connector not configured (base_url missing)",
+        )
 
     raw_workflow = payload.get("workflow") or payload.get("graph")
     if raw_workflow is None:
         raw_workflow = payload.get("workflow_path") or payload.get("workflow_file")
     if raw_workflow is None:
-        raise HTTPException(status_code=400, detail="workflow or workflow_path is required")
+        raise HTTPException(
+            status_code=400, detail="workflow or workflow_path is required"
+        )
 
     try:
         context = _parse_object(payload.get("context"), name="context")
@@ -729,7 +784,9 @@ def submit_pipeline(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         assets = _run_pipeline_job(task_id, options)
         task = task_registry.get(task_id)
         if task and task.status == "error":
-            raise HTTPException(status_code=502, detail=task.message or "ComfyUI workflow failed")
+            raise HTTPException(
+                status_code=502, detail=task.message or "ComfyUI workflow failed"
+            )
         return {"ok": True, "job": _serialize_task(task), "assets": assets}
 
     _spawn_pipeline_job(task_id, options)
@@ -737,7 +794,9 @@ def submit_pipeline(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
 
 
 @router.post("/playground/comfy/pipelines/{kind}")
-def submit_pipeline_short(kind: str, payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+def submit_pipeline_short(
+    kind: str, payload: Dict[str, Any] = Body(...)
+) -> Dict[str, Any]:
     payload = dict(payload or {})
     payload.setdefault("kind", kind)
     return submit_pipeline(payload)
@@ -753,5 +812,9 @@ def comfy_job_status(task_id: str) -> Dict[str, Any]:
 
 @router.get("/playground/comfy/jobs")
 def comfy_job_list() -> Dict[str, Any]:
-    jobs = [_serialize_task(task) for task in task_registry.list() if task.kind.startswith("comfyui.")]
+    jobs = [
+        _serialize_task(task)
+        for task in task_registry.list()
+        if task.kind.startswith("comfyui.")
+    ]
     return {"ok": True, "jobs": jobs}

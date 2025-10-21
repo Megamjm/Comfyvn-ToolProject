@@ -1,6 +1,8 @@
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMainWindow, QWidget, QDockWidget, QVBoxLayout, QLabel
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (QDockWidget, QLabel, QMainWindow, QVBoxLayout,
+                               QWidget)
+
 
 class DockManager:
     def __init__(self, window: QMainWindow):
@@ -13,6 +15,7 @@ class DockManager:
         self.window.addDockWidget(area, dock)
         self._docks.append(dock)
         return dock
+
 
 class Shell(QMainWindow):
     def __init__(self, title="ComfyVN Studio"):
@@ -30,9 +33,11 @@ class Shell(QMainWindow):
 
         self.dockman = DockManager(self)
 
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
         QMainWindow { background: #171a1f; color: #e8eaed; }
         QLabel { color: #e8eaed; }
         QDockWidget { background: #1f232b; color: #e8eaed; }
         QToolBar, QMenuBar, QStatusBar { background: #20242c; color: #e8eaed; }
-        """)
+        """
+        )

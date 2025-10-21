@@ -1,22 +1,31 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 # comfyvn/gui/panels/command_palette.py
 # [COMFYVN Architect | v1.4 | this chat]
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QLabel, QPushButton, QHBoxLayout
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QPushButton,
+                               QVBoxLayout)
+
 from comfyvn.core.command_registry import registry
+
 
 def _simple_fuzzy(needle: str, hay: str) -> int:
     """Naive fuzzy score: subsequence match bonus."""
-    if not needle: return 0
-    n = needle.lower(); h = hay.lower()
+    if not needle:
+        return 0
+    n = needle.lower()
+    h = hay.lower()
     score, i = 0, 0
     for ch in n:
         pos = h.find(ch, i)
-        if pos < 0: return -1
+        if pos < 0:
+            return -1
         score += 5
-        if pos == i: score += 2
+        if pos == i:
+            score += 2
         i = pos + 1
     return score + max(0, 10 - (len(h) - len(n)))
+
 
 class CommandPalette(QDialog):
     def __init__(self, parent=None):
@@ -25,13 +34,15 @@ class CommandPalette(QDialog):
         self.setWindowModality(Qt.ApplicationModal)
         self.resize(640, 400)
         v = QVBoxLayout(self)
-        self.input = QLineEdit(self); self.input.setPlaceholderText("Type a command…")
+        self.input = QLineEdit(self)
+        self.input.setPlaceholderText("Type a command…")
         v.addWidget(self.input)
         self.list = QListWidget(self)
         v.addWidget(self.list, 1)
         hb = QHBoxLayout()
         self.hint = QLabel("Enter to run • Esc to close")
-        hb.addWidget(self.hint); hb.addStretch(1)
+        hb.addWidget(self.hint)
+        hb.addStretch(1)
         v.addLayout(hb)
         self.input.textChanged.connect(self.refresh)
         self.list.itemActivated.connect(self._run_selected)
@@ -57,7 +68,8 @@ class CommandPalette(QDialog):
 
     def _run_selected(self, *_):
         it = self.list.currentItem()
-        if not it: return
+        if not it:
+            return
         cid = it.data(Qt.UserRole)
         registry.run(cid)
         self.accept()

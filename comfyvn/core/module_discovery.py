@@ -1,12 +1,15 @@
 from __future__ import annotations
+
+import importlib
+import json
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable
+
 from PySide6.QtGui import QAction
 
 # comfyvn/core/module_discovery.py
 # Dynamic menu discovery: reads extension manifests or Python MENU_HOOKS.
 
-import json, importlib
-from pathlib import Path
-from typing import Callable, Iterable, Dict, Any
 
 DYNAMIC_TAG = "dyn_menu_item"  # objectName used to track injected actions
 
@@ -14,6 +17,7 @@ DEFAULT_SEARCH_PATHS = [
     Path("extensions"),
     Path("comfyvn/modules"),
 ]
+
 
 def _get_or_create_menu(window, path_parts: list[str]):
     """
@@ -38,14 +42,23 @@ def _get_or_create_menu(window, path_parts: list[str]):
         for a in current.actions():
             m = a.menu()
             if m and m.title() == part:
-                found = m; break
+                found = m
+                break
         if found is None:
             found = current.addMenu(part)
         current = found
     return current
 
-def inject_menu_item(window, menu_path: str, label: str, callback: Callable, *,
-                     shortcut: str|None=None, checkable: bool=False):
+
+def inject_menu_item(
+    window,
+    menu_path: str,
+    label: str,
+    callback: Callable,
+    *,
+    shortcut: str | None = None,
+    checkable: bool = False,
+):
     """Insert one dynamic menu item."""
     parts = [p.strip() for p in menu_path.split("/") if p.strip()]
     if not parts:
@@ -63,16 +76,18 @@ def inject_menu_item(window, menu_path: str, label: str, callback: Callable, *,
         pass
     return act
 
+
 def clear_dynamic_menus(window):
     """Remove previously injected dynamic actions to avoid duplicates."""
     mb = window.menuBar()
     for a in list(mb.actions()):
         m = a.menu()
-        if not m: 
+        if not m:
             continue
         for act in list(m.actions()):
             if act.objectName() == DYNAMIC_TAG:
                 m.removeAction(act)
+
 
 def _load_manifest(fp: Path) -> list[dict]:
     try:
@@ -80,10 +95,13 @@ def _load_manifest(fp: Path) -> list[dict]:
         if isinstance(data, dict) and data.get("type") == "menu_hook":
             return [data]
         if isinstance(data, list):
-            return [d for d in data if isinstance(d, dict) and d.get("type") == "menu_hook"]
+            return [
+                d for d in data if isinstance(d, dict) and d.get("type") == "menu_hook"
+            ]
     except Exception:
         pass
     return []
+
 
 def _resolve_callable(module_name: str, callable_name: str):
     try:
@@ -92,7 +110,8 @@ def _resolve_callable(module_name: str, callable_name: str):
     except Exception:
         return None
 
-def discover_menus(window, search_paths: Iterable[Path]=DEFAULT_SEARCH_PATHS):
+
+def discover_menus(window, search_paths: Iterable[Path] = DEFAULT_SEARCH_PATHS):
     """
     Scan known locations for:
       1) manifest.json with {type:"menu_hook", menu,label,module,callable}

@@ -1,13 +1,16 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/lora_manager.py
 # 🧬 LoRA Manager – Search, Register, and Metadata Loader (Patch D)
 # ComfyVN Architect | Server Core Integration Sync
 # [⚙️ 3. Server Core Production Chat]
 
-import os, json
-from typing import List, Dict, Any
+import json
+import os
+from typing import Any, Dict, List
 
 
 class LoRAManager:

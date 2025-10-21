@@ -30,8 +30,12 @@ def client(monkeypatch: pytest.MonkeyPatch):
         yield c
 
 
-@pytest.mark.skipif(Image is None, reason="Pillow required for PNG provenance/thumbnail check")
-def test_upload_png_writes_sidecar_thumbnail_and_provenance_marker(client: TestClient, tmp_path: Path):
+@pytest.mark.skipif(
+    Image is None, reason="Pillow required for PNG provenance/thumbnail check"
+)
+def test_upload_png_writes_sidecar_thumbnail_and_provenance_marker(
+    client: TestClient, tmp_path: Path
+):
     buf = io.BytesIO()
     img = Image.new("RGB", (8, 8), color=(123, 45, 67))  # type: ignore[attr-defined]
     img.save(buf, format="PNG")  # type: ignore[attr-defined]
@@ -41,7 +45,10 @@ def test_upload_png_writes_sidecar_thumbnail_and_provenance_marker(client: TestC
         "/assets/upload",
         headers=_auth_headers(),
         files={"file": ("tiny.png", payload, "image/png")},
-        data={"asset_type": "images", "metadata": json.dumps({"license": "cc0", "user_id": "pytest"})},
+        data={
+            "asset_type": "images",
+            "metadata": json.dumps({"license": "cc0", "user_id": "pytest"}),
+        },
     )
     assert resp.status_code == 200, resp.text
     asset = resp.json()["asset"]
@@ -68,12 +75,15 @@ def test_upload_png_writes_sidecar_thumbnail_and_provenance_marker(client: TestC
 @pytest.mark.xfail(reason="ID3 provenance embedding not implemented yet", strict=False)
 def test_upload_audio_embeds_id3_provenance_marker(client: TestClient, tmp_path: Path):
     # Minimal fake MP3 payload; API should still accept and register
-    fake_mp3 = b"ID3\x03\x00\x00\x00\x00\x00\x0FTESTAUDIO"
+    fake_mp3 = b"ID3\x03\x00\x00\x00\x00\x00\x0fTESTAUDIO"
     resp = client.post(
         "/assets/upload",
         headers=_auth_headers(),
         files={"file": ("sample.mp3", fake_mp3, "audio/mpeg")},
-        data={"asset_type": "audio", "metadata": json.dumps({"license": "cc0", "user_id": "pytest"})},
+        data={
+            "asset_type": "audio",
+            "metadata": json.dumps({"license": "cc0", "user_id": "pytest"}),
+        },
     )
     assert resp.status_code == 200, resp.text
     asset = resp.json()["asset"]
@@ -87,4 +97,3 @@ def test_upload_audio_embeds_id3_provenance_marker(client: TestClient, tmp_path:
     saved = Path("data/assets") / asset["path"]
     data = saved.read_bytes()
     assert b"comfyvn_provenance" in data  # expected to fail until implemented
-

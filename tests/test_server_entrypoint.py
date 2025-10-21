@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-
 import sys
 import types
 
@@ -21,6 +20,7 @@ from comfyvn.app import create_app
 
 def test_health_routes_available():
     app = create_app()
+
     def _find(name: str) -> APIRoute:
         for route in app.routes:
             if isinstance(route, APIRoute) and route.endpoint.__name__ == name:

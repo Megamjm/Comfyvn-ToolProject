@@ -1,7 +1,12 @@
 from __future__ import annotations
+
+import collections
+import threading
+import time
+from typing import Any, Callable, Deque, Dict, List
+
 from PySide6.QtGui import QAction
-import threading, collections, time
-from typing import Callable, Dict, List, Deque, Any
+
 
 class EventBus:
     def __init__(self, max_events: int = 500):
@@ -15,8 +20,10 @@ class EventBus:
             self._buf.append(evt)
             subs = list(self._subs.get(topic, []))
         for cb in subs:
-            try: cb(data)
-            except Exception: pass
+            try:
+                cb(data)
+            except Exception:
+                pass
 
     def subscribe(self, topic: str, cb: Callable[[dict], None]):
         with self._lock:

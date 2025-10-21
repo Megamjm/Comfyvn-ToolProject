@@ -98,7 +98,9 @@ class _WarningLoggingHandler(logging.Handler):
             "pathname": record.pathname,
             "lineno": record.lineno,
         }
-        self._bus.record(message, level=record.levelname.lower(), source="logging", details=details)
+        self._bus.record(
+            message, level=record.levelname.lower(), source="logging", details=details
+        )
 
 
 warning_bus = WarningBus()

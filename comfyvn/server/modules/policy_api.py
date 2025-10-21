@@ -31,8 +31,12 @@ class EvaluateRequest(BaseModel):
 
 
 class FilterPreviewRequest(BaseModel):
-    items: List[Dict[str, Any]] = Field(default_factory=list, description="Items with `id` and `meta` payloads")
-    mode: Optional[str] = Field(None, description="Override filter mode for this preview")
+    items: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Items with `id` and `meta` payloads"
+    )
+    mode: Optional[str] = Field(
+        None, description="Override filter mode for this preview"
+    )
 
 
 @router.get("/status", response_model=GateResponse, summary="Get liability gate status")
@@ -50,7 +54,9 @@ def get_status() -> GateResponse:
     )
 
 
-@router.post("/ack", response_model=GateResponse, summary="Acknowledge legal terms with warning")
+@router.post(
+    "/ack", response_model=GateResponse, summary="Acknowledge legal terms with warning"
+)
 def acknowledge(payload: AckRequest = Body(...)) -> GateResponse:
     status = policy_gate.acknowledge(user=payload.user, notes=payload.notes)
     return GateResponse(

@@ -1,10 +1,15 @@
 from __future__ import annotations
+
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 # comfyvn/gui/windows/theme_editor_window.py
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QComboBox, QColorDialog, QFileDialog, QWidget, QFormLayout)
-from PySide6.QtCore import Qt
-from comfyvn.core.theme_manager import list_themes, load_palette, save_custom_theme, apply_theme, export_theme, import_theme
+from PySide6.QtWidgets import (QColorDialog, QComboBox, QDialog, QFileDialog,
+                               QFormLayout, QHBoxLayout, QLabel, QPushButton,
+                               QVBoxLayout, QWidget)
+
+from comfyvn.core.theme_manager import (apply_theme, export_theme,
+                                        import_theme, list_themes,
+                                        load_palette, save_custom_theme)
 
 _COLOR_KEYS = [
     ("bg", "Background"),
@@ -15,6 +20,7 @@ _COLOR_KEYS = [
     ("text2", "Secondary Text"),
     ("border", "Border"),
 ]
+
 
 class ThemeEditorWindow(QDialog):
     def __init__(self, parent=None):
@@ -35,7 +41,13 @@ class ThemeEditorWindow(QDialog):
         self.btn_saveas = QPushButton("Save As Preset…")
         self.btn_export = QPushButton("Export…")
         self.btn_import = QPushButton("Import…")
-        for b in (self.btn_load, self.btn_apply, self.btn_saveas, self.btn_export, self.btn_import):
+        for b in (
+            self.btn_load,
+            self.btn_apply,
+            self.btn_saveas,
+            self.btn_export,
+            self.btn_import,
+        ):
             top.addWidget(b)
 
         v.addLayout(top)
@@ -45,8 +57,12 @@ class ThemeEditorWindow(QDialog):
         for key, label in _COLOR_KEYS:
             btn = QPushButton("Pick")
             btn.clicked.connect(lambda _=False, k=key: self._pick_color(k))
-            row = QHBoxLayout(); row.addWidget(QLabel(label)); row.addStretch(1); row.addWidget(btn)
-            w = QWidget(); w.setLayout(row)
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addStretch(1)
+            row.addWidget(btn)
+            w = QWidget()
+            w.setLayout(row)
             self.form.addRow(w)
             self.pickers[key] = btn
 
@@ -73,6 +89,7 @@ class ThemeEditorWindow(QDialog):
 
     def _pick_color(self, key: str):
         from PySide6.QtGui import QColor
+
         cur = self._palette.get(key, "#000000")
         col = QColorDialog.getColor(QColor(cur), self, f"Pick {key}")
         if col.isValid():
@@ -84,7 +101,21 @@ class ThemeEditorWindow(QDialog):
         try:
             tmpname = "_live_custom"
             save_custom_theme(self._palette, tmpname)
-            apply_theme(self.parent().window().windowHandle().screen().virtualSiblings()[0].context().screen().virtualSiblings() if False else self.parent() or self, tmpname)
+            apply_theme(
+                (
+                    self.parent()
+                    .window()
+                    .windowHandle()
+                    .screen()
+                    .virtualSiblings()[0]
+                    .context()
+                    .screen()
+                    .virtualSiblings()
+                    if False
+                    else self.parent() or self
+                ),
+                tmpname,
+            )
         except Exception:
             try:
                 apply_theme(self, "_live_custom")
@@ -108,12 +139,17 @@ class ThemeEditorWindow(QDialog):
 
     def _on_saveas(self):
         from PySide6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(self, "Save Preset", "Preset name:", text="my_theme")
+
+        name, ok = QInputDialog.getText(
+            self, "Save Preset", "Preset name:", text="my_theme"
+        )
         if ok and name.strip():
             save_custom_theme(self._palette, name.strip())
 
     def _on_export(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Export Theme", "theme.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Theme", "theme.json", "JSON (*.json)"
+        )
         if path:
             export_theme(path, name=self.cmb.currentText())
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 # comfyvn/gui/windows/importers/vn_importer_window.py  [Phase 1.20]
 from pathlib import Path
 
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QFileDialog, QMessageBox
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (QDialog, QFileDialog, QLabel, QMessageBox,
+                               QPushButton, QVBoxLayout)
 
 from comfyvn.gui.services.server_bridge import ServerBridge
+
 
 class VNImporterWindow(QDialog):
     def __init__(self, parent=None, bridge: ServerBridge | None = None):
@@ -19,7 +22,11 @@ class VNImporterWindow(QDialog):
         self._poll_timer.setInterval(1500)
         self._poll_timer.timeout.connect(self._poll_job)
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel("Import .pak / zip visual novels.\nThis will extract assets, scenarios, characters."))
+        lay.addWidget(
+            QLabel(
+                "Import .pak / zip visual novels.\nThis will extract assets, scenarios, characters."
+            )
+        )
         btn = QPushButton("Choose File…")
         btn.clicked.connect(self._choose)
         lay.addWidget(btn)
@@ -27,8 +34,11 @@ class VNImporterWindow(QDialog):
         lay.addWidget(self.status_label)
 
     def _choose(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select VN Package", "", "Packages (*.pak *.zip);;All (*.*)")
-        if not path: return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select VN Package", "", "Packages (*.pak *.zip);;All (*.*)"
+        )
+        if not path:
+            return
         name = Path(path).name
         self._pending_name = name
         self.status_label.setText(f"Queuing import for {name}…")
@@ -41,7 +51,9 @@ class VNImporterWindow(QDialog):
 
     def _on_enqueued(self, result: dict, path: str, name: str):
         if not result.get("ok"):
-            msg = result.get("error") or f"Request failed (status {result.get('status')})"
+            msg = (
+                result.get("error") or f"Request failed (status {result.get('status')})"
+            )
             QMessageBox.warning(self, "Import Failed", msg)
             self.status_label.setText(f"Failed to queue {name}: {msg}")
             return
@@ -62,7 +74,9 @@ class VNImporterWindow(QDialog):
             return
 
         self._current_job_id = job_id
-        self.status_label.setText(f"Import queued ({job_id[:8]}) — awaiting completion…")
+        self.status_label.setText(
+            f"Import queued ({job_id[:8]}) — awaiting completion…"
+        )
         self._poll_timer.start()
         self._poll_job()
 
@@ -93,13 +107,17 @@ class VNImporterWindow(QDialog):
             return
         if not result.get("ok"):
             # keep polling but surface warning once
-            msg = result.get("error") or f"Status request failed ({result.get('status')})"
+            msg = (
+                result.get("error") or f"Status request failed ({result.get('status')})"
+            )
             self.status_label.setText(f"Waiting on {self._pending_name}: {msg}")
             return
 
         data = result.get("data") or {}
         if not isinstance(data, dict):
-            self.status_label.setText(f"Waiting on {self._pending_name}: invalid job response")
+            self.status_label.setText(
+                f"Waiting on {self._pending_name}: invalid job response"
+            )
             return
 
         job = data.get("job") or {}

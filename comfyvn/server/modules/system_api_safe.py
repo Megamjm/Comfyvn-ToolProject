@@ -1,8 +1,10 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
+import shutil
+
 # comfyvn/server/modules/system_api_safe.py
 from fastapi import APIRouter, HTTPException
-import shutil
+from PySide6.QtGui import QAction
 
 router = APIRouter(prefix="/system", tags=["SystemSafe"])
 
@@ -11,6 +13,7 @@ try:
     import psutil
 except Exception:
     psutil = None
+
 
 @router.get("/metrics")
 async def metrics():

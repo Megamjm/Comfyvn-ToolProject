@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,11 @@ class LiveMakerImporter:
             confidence += 0.5
         if extracted:
             confidence += 0.3
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.8), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.8),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -36,7 +40,9 @@ class LiveMakerImporter:
             "Normalize extracted assets (bg/, char/, scenario) into comfyvn-pack.",
             "Record node graph metadata (if available) in scene manifest.",
         ]
-        warnings = ["LiveMaker archives often compress aggressively; importer uses already-extracted data."]
+        warnings = [
+            "LiveMaker archives often compress aggressively; importer uses already-extracted data."
+        ]
         return PlanResult(steps=steps, warnings=warnings)
 
     def import_pack(
@@ -62,7 +68,9 @@ class LiveMakerImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("LiveMaker normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "LiveMaker normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

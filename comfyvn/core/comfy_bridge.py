@@ -29,7 +29,9 @@ class ComfyBridge:
         try:
             stats = await self._bridge.ping()
             return {"ok": True, "base": self.base_url, "stats": stats}
-        except Exception as exc:  # pragma: no cover - network failures depend on environment
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - network failures depend on environment
             LOGGER.warning("Comfy bridge ping failed: %s", exc)
             return {"ok": False, "base": self.base_url, "error": str(exc)}
 
@@ -100,10 +102,14 @@ class ComfyBridge:
             return payload["prompt"]
         if payload.get("workflow_path"):
             return Path(payload["workflow_path"]).expanduser()
-        raise ValueError("payload must include 'workflow', 'graph', 'prompt', or 'workflow_path'")
+        raise ValueError(
+            "payload must include 'workflow', 'graph', 'prompt', or 'workflow_path'"
+        )
 
     def _build_context(self, payload: Dict[str, Any]) -> RenderContext:
-        workflow_id = str(payload.get("workflow_id") or payload.get("id") or "comfyvn.workflow")
+        workflow_id = str(
+            payload.get("workflow_id") or payload.get("id") or "comfyvn.workflow"
+        )
         return RenderContext(
             workflow_id=workflow_id,
             inputs=dict(payload.get("inputs") or {}),

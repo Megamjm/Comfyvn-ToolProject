@@ -61,7 +61,9 @@ class PolicyGate:
         cfg["policy"] = {
             "ack_legal_v1": False,
             "ack_timestamp": None,
-            "warn_override_enabled": cfg.get("policy", {}).get("warn_override_enabled", True),
+            "warn_override_enabled": cfg.get("policy", {}).get(
+                "warn_override_enabled", True
+            ),
         }
         self.settings.save(cfg)
         LOGGER.info("Policy acknowledgement reset")
@@ -82,10 +84,14 @@ class PolicyGate:
         requires_block = gate_kind in {"export", "import"}
 
         if status.requires_ack:
-            warnings.append("Legal acknowledgement required before exporting or importing content.")
+            warnings.append(
+                "Legal acknowledgement required before exporting or importing content."
+            )
             if requires_block:
                 allow = False
-                LOGGER.warning("Policy gate blocked action=%s pending acknowledgement", action)
+                LOGGER.warning(
+                    "Policy gate blocked action=%s pending acknowledgement", action
+                )
         if override and status.warn_override_enabled:
             LOGGER.warning("Policy override requested for action=%s", action)
             warnings.append("User override requested; ensure legal terms are accepted.")

@@ -1,14 +1,20 @@
-from PySide6.QtGui import QAction
 # comfyvn/core/history_manager.py
 # [COMFYVN Architect | v1.4 | this chat]
-from typing import Callable, Optional, List, Dict
+from typing import Callable, Dict, List, Optional
+
+from PySide6.QtGui import QAction
+
 from comfyvn.core.event_bus import subscribe
 
+
 class HistoryAction:
-    def __init__(self, do_fn: Callable[[], None], undo_fn: Callable[[], None], desc: str = ""):
+    def __init__(
+        self, do_fn: Callable[[], None], undo_fn: Callable[[], None], desc: str = ""
+    ):
         self.do_fn = do_fn
         self.undo_fn = undo_fn
         self.desc = desc
+
 
 class HistoryManager:
     def __init__(self, max_depth: int = 500):
@@ -26,7 +32,8 @@ class HistoryManager:
             action.do_fn()
 
     def undo(self):
-        if not self.stack: return
+        if not self.stack:
+            return
         action = self.stack.pop()
         try:
             action.undo_fn()
@@ -34,12 +41,14 @@ class HistoryManager:
             self.redo_stack.append(action)
 
     def redo(self):
-        if not self.redo_stack: return
+        if not self.redo_stack:
+            return
         action = self.redo_stack.pop()
         try:
             action.do_fn()
         finally:
             self.stack.append(action)
+
 
 history = HistoryManager()
 

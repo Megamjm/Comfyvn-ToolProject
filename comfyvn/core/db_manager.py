@@ -336,4 +336,6 @@ class DBManager:
             if patch.name in existing:
                 continue
             LOGGER.debug("Applying column patch %s.%s", table_name, patch.name)
-            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {patch.name} {patch.ddl}")
+            conn.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {patch.name} {patch.ddl}"
+            )

@@ -1,9 +1,12 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import os, socket
+
+import os
+import socket
 from pathlib import Path
-from typing import Dict, Any, Iterable
+from typing import Any, Dict, Iterable
 from urllib.parse import urlparse
+
+from PySide6.QtGui import QAction
 
 DEFAULT_DIRS = [
     "data",
@@ -26,12 +29,14 @@ URL_VARS = [
     "RENPY_IPC",
 ]
 
+
 def _is_valid_url(u: str) -> bool:
     try:
         p = urlparse(u)
         return bool(p.scheme and p.netloc) or (p.scheme in {"file"} and bool(p.path))
     except Exception:
         return False
+
 
 def _is_free_port(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -42,6 +47,7 @@ def _is_free_port(port: int) -> bool:
         except Exception:
             return False
 
+
 class BootChecks:
     """Fail-fast environment and filesystem checks.
 
@@ -51,7 +57,9 @@ class BootChecks:
     """
 
     @staticmethod
-    def run(strict: bool = False, extra_dirs: Iterable[str] | None = None) -> Dict[str, Any]:
+    def run(
+        strict: bool = False, extra_dirs: Iterable[str] | None = None
+    ) -> Dict[str, Any]:
         created, warnings, errors = [], [], []
 
         dirs = list(DEFAULT_DIRS)
@@ -84,9 +92,15 @@ class BootChecks:
         # Optional: PORT checks
         api_port = int(os.environ.get("COMFYVN_PORT", "8000") or "8000")
         if not _is_free_port(api_port):
-            warnings.append(f"Port {api_port} not free; app may already run or another service bound.")
+            warnings.append(
+                f"Port {api_port} not free; app may already run or another service bound."
+            )
 
-        summary = {"created_or_checked": created, "warnings": warnings, "errors": errors}
+        summary = {
+            "created_or_checked": created,
+            "warnings": warnings,
+            "errors": errors,
+        }
         if strict and errors:
             raise RuntimeError("BootChecks failed: " + "; ".join(errors))
         return summary

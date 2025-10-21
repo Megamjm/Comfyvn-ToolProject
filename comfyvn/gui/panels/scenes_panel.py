@@ -3,17 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QListWidget,
-    QPushButton,
-    QLabel,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.studio.core.scene_registry import SceneRegistry
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +14,9 @@ LOGGER = logging.getLogger(__name__)
 class ScenesPanel(QWidget):
     """Minimal scene browser backed by the studio SceneRegistry."""
 
-    def __init__(self, registry: SceneRegistry, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, registry: SceneRegistry, parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self.registry = registry
 
@@ -62,4 +57,3 @@ class ScenesPanel(QWidget):
             self.list_widget.addItem(title)
         count = len(scenes)
         self.status_label.setText(f"Scenes loaded: {count}")
-

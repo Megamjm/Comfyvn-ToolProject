@@ -10,7 +10,9 @@ from comfyvn.core.music_remix import remix_track
 LOGGER = logging.getLogger(__name__)
 
 
-def build_translation_bundle(scene_paths: List[Path], import_root: Path, *, target_lang: str = "en") -> Dict[str, object]:
+def build_translation_bundle(
+    scene_paths: List[Path], import_root: Path, *, target_lang: str = "en"
+) -> Dict[str, object]:
     translations_dir = import_root / "translations"
     translations_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = translations_dir / "segments.json"
@@ -21,12 +23,16 @@ def build_translation_bundle(scene_paths: List[Path], import_root: Path, *, targ
 
     for scene_path in scene_paths:
         if not scene_path.exists():
-            LOGGER.debug("Skipping missing scene for translation bundle: %s", scene_path)
+            LOGGER.debug(
+                "Skipping missing scene for translation bundle: %s", scene_path
+            )
             continue
         try:
             data = json.loads(scene_path.read_text(encoding="utf-8"))
         except Exception as exc:
-            LOGGER.warning("Failed to parse scene %s for translation bundle: %s", scene_path, exc)
+            LOGGER.warning(
+                "Failed to parse scene %s for translation bundle: %s", scene_path, exc
+            )
             continue
         scene_id = data.get("scene_id") or scene_path.stem
         lines = data.get("lines") or []
@@ -56,7 +62,9 @@ def build_translation_bundle(scene_paths: List[Path], import_root: Path, *, targ
         "segments": segments,
         "tm_hits": tm_hits,
     }
-    bundle_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    bundle_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     return {
         "bundle_path": bundle_path.as_posix(),
@@ -67,7 +75,9 @@ def build_translation_bundle(scene_paths: List[Path], import_root: Path, *, targ
     }
 
 
-def plan_remix_tasks(manifest: Dict[str, object], scenes: List[str], import_root: Path) -> Dict[str, object]:
+def plan_remix_tasks(
+    manifest: Dict[str, object], scenes: List[str], import_root: Path
+) -> Dict[str, object]:
     remix_dir = import_root / "remix"
     remix_dir.mkdir(parents=True, exist_ok=True)
     plan_path = remix_dir / "remix_plan.json"
@@ -104,10 +114,16 @@ def plan_remix_tasks(manifest: Dict[str, object], scenes: List[str], import_root
         )
 
     exports = [
-        {"type": "renpy_loose", "notes": "Generate loose script/asset files for Ren'Py"},
+        {
+            "type": "renpy_loose",
+            "notes": "Generate loose script/asset files for Ren'Py",
+        },
         {"type": "renpy_rpa", "notes": "Bundle assets via user-supplied RPA hook"},
         {"type": "kirikiri_overlay", "notes": "Produce XP3 overlay patch"},
-        {"type": "tyrano_data", "notes": "Rebuild Tyrano data/ structure for quick preview"},
+        {
+            "type": "tyrano_data",
+            "notes": "Rebuild Tyrano data/ structure for quick preview",
+        },
     ]
 
     music: List[Dict[str, object]] = []
@@ -119,7 +135,9 @@ def plan_remix_tasks(manifest: Dict[str, object], scenes: List[str], import_root
             LOGGER.warning("Music remix stub failed for scene %s: %s", scenes[0], exc)
 
     plan_payload = {"tasks": tasks, "exports": exports, "music": music}
-    plan_path.write_text(json.dumps(plan_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    plan_path.write_text(
+        json.dumps(plan_payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     return {
         "plan_path": plan_path.as_posix(),

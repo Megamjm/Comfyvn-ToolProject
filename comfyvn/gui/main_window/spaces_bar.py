@@ -1,9 +1,11 @@
 # comfyvn/gui/main_window/spaces_bar.py
-from PySide6.QtWidgets import QToolBar
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QToolBar
+
 
 class SpacesBar(QToolBar):
     """Top bar with workspace shortcuts."""
+
     def __init__(self, main):
         super().__init__("Spaces")
         self.main = main

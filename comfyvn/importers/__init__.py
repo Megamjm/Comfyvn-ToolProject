@@ -1,15 +1,15 @@
 """Importer registry for ComfyVN."""
 
-from comfyvn.importers.renpy import RenpyImporter
-from comfyvn.importers.kirikiri import KiriKiriImporter
-from comfyvn.importers.nscripter import NscripterImporter
-from comfyvn.importers.yuris import YuRISImporter
-from comfyvn.importers.catsystem2 import CatSystem2Importer
 from comfyvn.importers.bgi import BGIImporter
-from comfyvn.importers.reallive import RealLiveImporter
-from comfyvn.importers.unity import UnityVNImporter
-from comfyvn.importers.tyrano import TyranoImporter
+from comfyvn.importers.catsystem2 import CatSystem2Importer
+from comfyvn.importers.kirikiri import KiriKiriImporter
 from comfyvn.importers.livemaker import LiveMakerImporter
+from comfyvn.importers.nscripter import NscripterImporter
+from comfyvn.importers.reallive import RealLiveImporter
+from comfyvn.importers.renpy import RenpyImporter
+from comfyvn.importers.tyrano import TyranoImporter
+from comfyvn.importers.unity import UnityVNImporter
+from comfyvn.importers.yuris import YuRISImporter
 
 ALL_IMPORTERS = [
     RenpyImporter(),

@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +18,11 @@ class BGIImporter:
         root_path = Path(root)
         reasons: list[str] = []
         arc_files = list(root_path.glob("data*.arc"))
-        org_files = list((root_path / "_bp").glob("*.org")) if (root_path / "_bp").exists() else []
+        org_files = (
+            list((root_path / "_bp").glob("*.org"))
+            if (root_path / "_bp").exists()
+            else []
+        )
         if arc_files:
             reasons.append(f"{len(arc_files)}x data*.arc")
         if org_files:
@@ -32,7 +36,11 @@ class BGIImporter:
             confidence += 0.3
         if (root_path / "bgi.exe").exists():
             confidence += 0.2
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.9), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.9),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [

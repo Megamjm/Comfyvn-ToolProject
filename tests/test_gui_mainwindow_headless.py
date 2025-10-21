@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
@@ -39,7 +40,9 @@ class _StubSceneRegistry:
     def list_scenes(self) -> list[dict]:
         return list(self._scenes)
 
-    def upsert_scene(self, title: str, body: str, meta: dict, scene_id: int | None = None) -> int:
+    def upsert_scene(
+        self, title: str, body: str, meta: dict, scene_id: int | None = None
+    ) -> int:
         if scene_id is None:
             scene_id = len(self._scenes) + 1
         record = {"id": scene_id, "title": title, "body": body, "meta": meta}
@@ -74,7 +77,14 @@ class _StubTimelineRegistry:
     def list_timelines(self) -> list[dict]:
         return list(self._timelines.values())
 
-    def save_timeline(self, *, name: str, scene_order: list, meta: dict | None = None, timeline_id: int | None = None) -> int:
+    def save_timeline(
+        self,
+        *,
+        name: str,
+        scene_order: list,
+        meta: dict | None = None,
+        timeline_id: int | None = None,
+    ) -> int:
         if timeline_id is None:
             timeline_id = self._counter
             self._counter += 1
@@ -125,22 +135,26 @@ def test_main_window_headless_smoke(monkeypatch: pytest.MonkeyPatch, qt_app):
         assert characters_panel.list_widget.count() == 1
 
         history_len = len(notifier.history)
-        window.bridge.warnings_updated.emit([
-            {
-                "id": "w-test",
-                "level": "warn",
-                "message": "Headless warning",
-                "source": "test",
-                "details": {},
-                "timestamp": 0.0,
-            }
-        ])
+        window.bridge.warnings_updated.emit(
+            [
+                {
+                    "id": "w-test",
+                    "level": "warn",
+                    "message": "Headless warning",
+                    "source": "test",
+                    "details": {},
+                    "timestamp": 0.0,
+                }
+            ]
+        )
         assert len(notifier.history) == history_len + 1
         assert notifier.history[-1]["msg"] == "Headless warning"
         assert window._warning_log[-1]["id"] == "w-test"
 
         # Ensure extension callbacks registered via menu registry.
-        callback_items = [item for item in mw.menu_registry.items if item.callback is not None]
+        callback_items = [
+            item for item in mw.menu_registry.items if item.callback is not None
+        ]
         assert callback_items, "Expected at least one callback-driven menu item"
     finally:
         window.close()

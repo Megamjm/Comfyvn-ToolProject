@@ -1,8 +1,11 @@
-from PySide6.QtGui import QAction
 # comfyvn/core/command_registry.py
 # [COMFYVN Architect | v2.0 | this chat]
 from typing import Callable, Dict
+
+from PySide6.QtGui import QAction
+
 from comfyvn.core.log_bus import log
+
 
 class Command:
     def __init__(self, id: str, title: str, cb: Callable, shortcut: str = ""):
@@ -10,6 +13,7 @@ class Command:
         self.title = title
         self.cb = cb
         self.shortcut = shortcut
+
 
 class CommandRegistry:
     def __init__(self):
@@ -30,7 +34,9 @@ class CommandRegistry:
         if cmd:
             return cmd.cb()
 
+
 registry = CommandRegistry()
+
 
 def register_command(parent, id: str, title: str, cb, shortcut: str = ""):
     registry.register(parent, id, title, cb, shortcut)

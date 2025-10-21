@@ -1,19 +1,14 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/world_ui.py
 # 🌍 World Manager GUI with integrated StatusBar feedback
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QComboBox,
-    QPushButton,
-    QFileDialog,
-    QLineEdit,
-    QMessageBox,
-)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QLabel, QLineEdit,
+                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
+
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.core.world_loader import WorldLoader
 from comfyvn.gui.status_bar import StatusBar

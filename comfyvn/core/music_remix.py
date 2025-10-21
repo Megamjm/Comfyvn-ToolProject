@@ -6,21 +6,18 @@ import logging
 import math
 import os
 import random
+import shutil
 import time
 import wave
 from array import array
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import shutil
-
 from comfyvn.config.runtime_paths import music_cache_file
-from comfyvn.core.comfyui_audio import (
-    ComfyUIAudioRunner,
-    ComfyUIWorkflowConfig,
-    ComfyUIWorkflowError,
-)
+from comfyvn.core.comfyui_audio import (ComfyUIAudioRunner,
+                                        ComfyUIWorkflowConfig,
+                                        ComfyUIWorkflowError)
 from comfyvn.core.settings_manager import SettingsManager
 
 LOGGER = logging.getLogger("comfyvn.audio.music")
@@ -118,7 +115,9 @@ class MusicCacheManager:
 music_cache = MusicCacheManager()
 
 
-def _style_profile(style: str, mood_tags: Optional[List[str]], rand: random.Random) -> Dict[str, float]:
+def _style_profile(
+    style: str, mood_tags: Optional[List[str]], rand: random.Random
+) -> Dict[str, float]:
     lowered = style.lower()
     tempo = 96.0
     root_freq = 180.0
@@ -177,7 +176,9 @@ def _generate_music_samples(
     layers: List[Dict[str, float]] = []
 
     for idx in range(layer_count):
-        freq_multiplier = 1 + rand.uniform(-style_profile["harmony_spread"], style_profile["harmony_spread"])
+        freq_multiplier = 1 + rand.uniform(
+            -style_profile["harmony_spread"], style_profile["harmony_spread"]
+        )
         layer = {
             "freq": style_profile["root_freq"] * freq_multiplier * (1 + idx * 0.05),
             "phase": rand.random() * 2 * math.pi,
@@ -197,7 +198,10 @@ def _generate_music_samples(
         for layer in layers:
             lfo = math.sin(2 * math.pi * layer["lfo_freq"] * t) * layer["lfo_depth"]
             swing = math.sin(2 * math.pi * (layer["freq"] / 4) * t) * layer["swing"]
-            sample_value = math.sin(2 * math.pi * (layer["freq"] + layer["freq"] * (lfo + swing)) * t + layer["phase"])
+            sample_value = math.sin(
+                2 * math.pi * (layer["freq"] + layer["freq"] * (lfo + swing)) * t
+                + layer["phase"]
+            )
             value += sample_value * layer["volume"]
 
         value /= max(layer_count, 1)
@@ -389,7 +393,9 @@ def remix_track(
             wav_file.writeframes(stereo.tobytes())
 
     created_at = time.time()
-    payload.update({"created_at": created_at, "cache_key": cache_key, "provider": "synthetic"})
+    payload.update(
+        {"created_at": created_at, "cache_key": cache_key, "provider": "synthetic"}
+    )
     sidecar = artifact.with_suffix(".json")
     sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

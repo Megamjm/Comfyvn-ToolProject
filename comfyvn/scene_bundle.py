@@ -1,8 +1,12 @@
 # comfyvn/scene_bundle.py
 # [S2 Scene Bundle Export — ComfyVN Architect | 2025-10-20 | chat: S2]
 from __future__ import annotations
-import json, logging, re, pathlib
-from typing import Dict, List, Tuple, Optional
+
+import json
+import logging
+import pathlib
+import re
+from typing import Dict, List, Optional, Tuple
 
 # Optional jsonschema validation (present if requirements were applied)
 try:
@@ -13,7 +17,10 @@ except Exception:
 SCHEMA_PATH_DEFAULT = "docs/scene_bundle.schema.json"
 ASSETS_MANIFEST_DEFAULT = "assets/assets.manifest.json"
 
-_TAG_RE = re.compile(r"\[\[\s*(?P<key>bg|label|goto|expr)\s*:\s*(?P<val>[^\]]+)\]\]", re.I)
+_TAG_RE = re.compile(
+    r"\[\[\s*(?P<key>bg|label|goto|expr)\s*:\s*(?P<val>[^\]]+)\]\]", re.I
+)
+
 
 def _load_json(path: str) -> Optional[dict]:
     p = pathlib.Path(path)
@@ -24,23 +31,28 @@ def _load_json(path: str) -> Optional[dict]:
     except Exception:
         return None
 
+
 def _canon_name(name: str) -> str:
     return (name or "").strip().lower()
 
-def _strip_stage_tags(text: str) -> Tuple[str, List[Tuple[str,str]]]:
+
+def _strip_stage_tags(text: str) -> Tuple[str, List[Tuple[str, str]]]:
     """Remove [[bg:X]], [[label:X]], [[goto:X]], [[expr:X]] and return clean text + tags."""
-    tags: List[Tuple[str,str]] = []
+    tags: List[Tuple[str, str]] = []
     if not text:
         return text, tags
+
     def _collect(m: re.Match) -> str:
         tags.append((m.group("key").lower(), m.group("val").strip()))
         return ""
+
     cleaned = _TAG_RE.sub(_collect, text).strip()
     return cleaned, tags
 
+
 def _infer_emotion_from_text(text: str) -> Optional[str]:
     """Very light heuristic as a fallback if no emotion provided."""
-    if not text: 
+    if not text:
         return None
     t = text.strip()
     if t.endswith("!?") or t.endswith("?!"):
@@ -53,6 +65,7 @@ def _infer_emotion_from_text(text: str) -> Optional[str]:
         return "pensive"
     return "neutral"
 
+
 def _gather_characters_and_expressions(raw: dict) -> Dict[str, set]:
     """
     Returns {character_name: {expressions}}.
@@ -63,7 +76,11 @@ def _gather_characters_and_expressions(raw: dict) -> Dict[str, set]:
         if it.get("type") != "line":
             continue
         name = (it.get("speaker") or "Narrator").strip()
-        emo = it.get("emotion") or _infer_emotion_from_text(it.get("text", "")) or "neutral"
+        emo = (
+            it.get("emotion")
+            or _infer_emotion_from_text(it.get("text", ""))
+            or "neutral"
+        )
         mapping.setdefault(name, set()).add(emo)
     # Normalize: ensure each has at least 'neutral'
     for k in list(mapping.keys()):
@@ -71,7 +88,10 @@ def _gather_characters_and_expressions(raw: dict) -> Dict[str, set]:
             mapping[k].add("neutral")
     return mapping
 
-def _link_assets_for_characters(char_exprs: Dict[str, set], manifest: Optional[dict]) -> Dict[str, Dict[str, str]]:
+
+def _link_assets_for_characters(
+    char_exprs: Dict[str, set], manifest: Optional[dict]
+) -> Dict[str, Dict[str, str]]:
     """
     From manifest['by_character'] choose best matching assets by expression.
     Case-insensitive character matching. If expression missing, leave unresolved.
@@ -81,7 +101,7 @@ def _link_assets_for_characters(char_exprs: Dict[str, set], manifest: Optional[d
         return result
     idx = manifest.get("by_character", {})
     # Build lowercase index for name-insensitive lookup
-    lower_idx = { _canon_name(k): v for k, v in idx.items() }
+    lower_idx = {_canon_name(k): v for k, v in idx.items()}
     for char, exprs in char_exprs.items():
         found = lower_idx.get(_canon_name(char))
         if not found:
@@ -100,18 +120,20 @@ def _link_assets_for_characters(char_exprs: Dict[str, set], manifest: Optional[d
                     result[char][e] = found["neutral"]
     return result
 
+
 def _link_backgrounds(bg_names: List[str], manifest: Optional[dict]) -> Dict[str, str]:
     result: Dict[str, str] = {}
     if not manifest or not bg_names:
         return result
     idx = manifest.get("by_background", {})
     # try case-insensitive resolves
-    lower_idx = { _canon_name(k): v for k, v in idx.items() }
+    lower_idx = {_canon_name(k): v for k, v in idx.items()}
     for b in set(bg_names):
         rp = lower_idx.get(_canon_name(b))
         if rp:
             result[b] = rp
     return result
+
 
 def _build_dialogue(raw: dict) -> Tuple[List[dict], List[str]]:
     """
@@ -126,7 +148,7 @@ def _build_dialogue(raw: dict) -> Tuple[List[dict], List[str]]:
         text = it.get("text", "")
         clean, tags = _strip_stage_tags(text)
         # inject stage tags as separate events
-        for (k, v) in tags:
+        for k, v in tags:
             if k == "bg":
                 out.append({"type": "scene", "target_bg": v})
                 bgs_used.append(v)
@@ -138,15 +160,24 @@ def _build_dialogue(raw: dict) -> Tuple[List[dict], List[str]]:
                 # expr hint as a show event on current speaker
                 out.append({"type": "show", "speaker": it.get("speaker"), "emotion": v})
         # push the line
-        out.append({
-            "type": "line",
-            "speaker": it.get("speaker"),
-            "text": clean,
-            "emotion": it.get("emotion") or _infer_emotion_from_text(clean) or "neutral",
-        })
+        out.append(
+            {
+                "type": "line",
+                "speaker": it.get("speaker"),
+                "text": clean,
+                "emotion": it.get("emotion")
+                or _infer_emotion_from_text(clean)
+                or "neutral",
+            }
+        )
     return out, bgs_used
 
-def build_bundle(raw: dict, assets_manifest: Optional[dict] = None, schema_path: str = SCHEMA_PATH_DEFAULT) -> dict:
+
+def build_bundle(
+    raw: dict,
+    assets_manifest: Optional[dict] = None,
+    schema_path: str = SCHEMA_PATH_DEFAULT,
+) -> dict:
     # 1) Characters & expressions
     char_exprs = _gather_characters_and_expressions(raw)
     # 2) Dialogue + bg usage
@@ -157,29 +188,25 @@ def build_bundle(raw: dict, assets_manifest: Optional[dict] = None, schema_path:
     # 4) Assemble bundle
     bundle = {
         "id": raw.get("id") or "scene-untitled",
-        "meta": { "style": raw.get("title") or "", "seed": None },
+        "meta": {"style": raw.get("title") or "", "seed": None},
         "characters": [
             {
                 "name": c,
                 "expressions": sorted(list(exprs)),
-                "assets": char_assets.get(c, {})
-            } for c, exprs in sorted(char_exprs.items(), key=lambda kv: kv[0].lower())
+                "assets": char_assets.get(c, {}),
+            }
+            for c, exprs in sorted(char_exprs.items(), key=lambda kv: kv[0].lower())
         ],
         "backgrounds": [
-            {
-                "name": b,
-                "asset": bg_assets.get(b)
-            } for b in sorted(set(bg_names))
+            {"name": b, "asset": bg_assets.get(b)} for b in sorted(set(bg_names))
         ],
         "dialogue": dialogue,
-        "assets": {
-            "characters": char_assets,
-            "backgrounds": bg_assets
-        }
+        "assets": {"characters": char_assets, "backgrounds": bg_assets},
     }
     # 5) Validate if schema available
     _validate_bundle(bundle, schema_path)
     return bundle
+
 
 def _validate_bundle(bundle: dict, schema_path: str = SCHEMA_PATH_DEFAULT) -> None:
     if not jsonschema:
@@ -189,10 +216,13 @@ def _validate_bundle(bundle: dict, schema_path: str = SCHEMA_PATH_DEFAULT) -> No
         return
     jsonschema.validate(instance=bundle, schema=schema)
 
-def convert_file(raw_path: str,
-                 out_path: str,
-                 manifest_path: str = ASSETS_MANIFEST_DEFAULT,
-                 schema_path: str = SCHEMA_PATH_DEFAULT) -> dict:
+
+def convert_file(
+    raw_path: str,
+    out_path: str,
+    manifest_path: str = ASSETS_MANIFEST_DEFAULT,
+    schema_path: str = SCHEMA_PATH_DEFAULT,
+) -> dict:
     logger = logging.getLogger(__name__)
     logger.info("Converting raw scene -> bundle: %s", raw_path)
     raw = _load_json(raw_path)

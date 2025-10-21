@@ -1,15 +1,18 @@
-from PySide6.QtGui import QAction
 # comfyvn/core/event_bus.py
 # [COMFYVN Architect | v1.3 | this chat]
 import threading
-from typing import Callable, Dict, List, Any
+from typing import Any, Callable, Dict, List
+
+from PySide6.QtGui import QAction
 
 _lock = threading.Lock()
 _subs: Dict[str, List[Callable[[Any], None]]] = {}
 
+
 def subscribe(event: str, fn: Callable[[Any], None]):
     with _lock:
         _subs.setdefault(event, []).append(fn)
+
 
 def unsubscribe(event: str, fn: Callable[[Any], None]):
     with _lock:
@@ -17,6 +20,7 @@ def unsubscribe(event: str, fn: Callable[[Any], None]):
             _subs[event].remove(fn)
             if not _subs[event]:
                 _subs.pop(event, None)
+
 
 def emit(event: str, data=None):
     with _lock:

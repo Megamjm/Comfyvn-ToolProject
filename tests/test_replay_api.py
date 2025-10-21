@@ -9,7 +9,6 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-
 # Minimal PySide6 stub for modules that import QAction
 if "PySide6" not in sys.modules:
     pyside6 = types.ModuleType("PySide6")
@@ -32,8 +31,12 @@ def test_replay_auto_deterministic():
     ]
 
     seed_choice = 1
-    r1 = client.post("/replay/auto", json={"branches": branches, "seed_choice": seed_choice})
-    r2 = client.post("/replay/auto", json={"branches": branches, "seed_choice": seed_choice})
+    r1 = client.post(
+        "/replay/auto", json={"branches": branches, "seed_choice": seed_choice}
+    )
+    r2 = client.post(
+        "/replay/auto", json={"branches": branches, "seed_choice": seed_choice}
+    )
     assert r1.status_code == 200 and r2.status_code == 200
     p1 = r1.json()["path"]
     p2 = r2.json()["path"]
@@ -42,4 +45,3 @@ def test_replay_auto_deterministic():
     r3 = client.post("/replay/auto", json={"branches": branches, "seed_choice": 0})
     assert r3.status_code == 200
     assert r3.json()["path"] != p1  # different seed -> different path
-

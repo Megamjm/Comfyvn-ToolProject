@@ -4,17 +4,10 @@ import json
 import logging
 from typing import Optional
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QListWidget,
-    QPushButton,
-    QLabel,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.studio.core.character_registry import CharacterRegistry
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,7 +15,9 @@ LOGGER = logging.getLogger(__name__)
 class CharactersPanel(QWidget):
     """Displays characters from the studio registry."""
 
-    def __init__(self, registry: CharacterRegistry, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, registry: CharacterRegistry, parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self.registry = registry
 
@@ -72,4 +67,3 @@ class CharactersPanel(QWidget):
             self.list_widget.addItem(name + detail)
         count = len(characters)
         self.status_label.setText(f"Characters loaded: {count}")
-

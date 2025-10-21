@@ -1,9 +1,9 @@
-from PySide6.QtGui import QAction
-
 # comfyvn/gui/core/dock_manager.py  [Studio-090]
 from collections import defaultdict
-from PySide6.QtWidgets import QDockWidget
+
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QDockWidget
 
 
 class DockManager:
@@ -19,7 +19,9 @@ class DockManager:
             dock = QDockWidget(title, self.window)
             dock.setWidget(widget)
         dock.setFeatures(QDockWidget.DockWidgetMovable)
-        dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea)
+        dock.setAllowedAreas(
+            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea
+        )
         existing = self._area_map.get(area)
         if existing:
             self.window.addDockWidget(area, dock)

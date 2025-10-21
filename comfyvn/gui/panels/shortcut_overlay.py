@@ -1,7 +1,11 @@
 # comfyvn/gui/panels/shortcut_overlay.py
 from __future__ import annotations
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem
+
+from PySide6.QtWidgets import (QLabel, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
+
 from comfyvn.core.shortcut_registry import shortcut_registry
+
 
 class ShortcutOverlay(QWidget):
     def __init__(self):

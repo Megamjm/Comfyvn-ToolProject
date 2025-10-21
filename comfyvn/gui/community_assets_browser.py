@@ -1,26 +1,21 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/community_assets_browser.py
 # Community Assets Browser Dock (Safe Mode + Legal + Update Check)
 # ComfyVN_Architect (Asset Sprite Research Branch)
 
-import os, json, requests
-from PySide6.QtWidgets import (
-    QDockWidget,
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QTextEdit,
-    QHBoxLayout,
-    QMessageBox,
-    QLineEdit,
-    QCheckBox,
-)
+import json
+import os
+
+import requests
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QCheckBox, QDockWidget, QHBoxLayout, QLabel,
+                               QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QTextEdit,
+                               QVBoxLayout, QWidget)
 
 
 class CommunityAssetsBrowser(QDockWidget):

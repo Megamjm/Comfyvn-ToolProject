@@ -47,8 +47,13 @@ class SillyTavernBridge:
     ) -> None:
         self.settings = settings or SettingsManager()
         self._load_settings_defaults()
-        self.base_url = _normalize_base(base_url or self._config.get("base_url", "http://127.0.0.1:8000"))
-        self.plugin_base = _normalize_plugin(plugin_base or self._config.get("plugin_base", "/api/plugins/comfyvn-data-exporter"))
+        self.base_url = _normalize_base(
+            base_url or self._config.get("base_url", "http://127.0.0.1:8000")
+        )
+        self.plugin_base = _normalize_plugin(
+            plugin_base
+            or self._config.get("plugin_base", "/api/plugins/comfyvn-data-exporter")
+        )
         self.token = token if token is not None else self._config.get("token")
         self.user_id = user_id if user_id is not None else self._config.get("user_id")
         self.timeout = timeout
@@ -117,7 +122,9 @@ class SillyTavernBridge:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers
 
-    def _params(self, extra: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
+    def _params(
+        self, extra: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         params: Dict[str, Any] = {}
         effective_user = user_id if user_id is not None else self.user_id
         if effective_user:
@@ -189,7 +196,9 @@ class SillyTavernBridge:
             worlds.append({"id": name, "data": data, "path": entry.get("path")})
         return worlds
 
-    def download_world(self, world_id: str, save_path: str | Path, *, user_id: Optional[str] = None) -> Optional[str]:
+    def download_world(
+        self, world_id: str, save_path: str | Path, *, user_id: Optional[str] = None
+    ) -> Optional[str]:
         try:
             data = self.get_world(world_id, user_id=user_id)
             destination = Path(save_path)
@@ -197,13 +206,17 @@ class SillyTavernBridge:
             path = destination / world_id
             if not path.name.lower().endswith(".json"):
                 path = path.with_suffix(".json")
-            path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
             LOGGER.debug("Downloaded SillyTavern world %s → %s", world_id, path)
             return str(path)
         except SillyTavernBridgeError:
             raise
         except Exception as exc:
-            raise SillyTavernBridgeError(f"Failed to download world {world_id}: {exc}") from exc
+            raise SillyTavernBridgeError(
+                f"Failed to download world {world_id}: {exc}"
+            ) from exc
 
     # --- Characters ---------------------------------------------------
     def list_characters(self, *, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -216,7 +229,9 @@ class SillyTavernBridge:
             for name in names
         ]
 
-    def get_character(self, name: str, *, user_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_character(
+        self, name: str, *, user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         return self._get(f"characters/{name}", user_id=user_id)
 
     # --- Personas -----------------------------------------------------
@@ -226,11 +241,16 @@ class SillyTavernBridge:
         roots = self.get_roots(user_id=user_id)
         persona_root = roots.get("personas")
         return [
-            {"name": name, "path": str(Path(persona_root) / name) if persona_root else None}
+            {
+                "name": name,
+                "path": str(Path(persona_root) / name) if persona_root else None,
+            }
             for name in names
         ]
 
-    def get_persona(self, name: str, *, user_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_persona(
+        self, name: str, *, user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         return self._get(f"personas/{name}", user_id=user_id)
 
     # --- Active snapshot ----------------------------------------------
@@ -239,4 +259,3 @@ class SillyTavernBridge:
 
 
 __all__ = ["SillyTavernBridge", "SillyTavernBridgeError"]
-

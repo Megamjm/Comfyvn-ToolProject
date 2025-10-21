@@ -144,7 +144,10 @@ class ExternalExtractorManager:
 
         cmd = [str(tool.path), str(source), "-o", str(output_dir)]
         LOGGER.info("Running extractor %s -> %s", name, cmd)
-        legal = tool.warning or "Verify extraction is legal in your region before proceeding."
+        legal = (
+            tool.warning
+            or "Verify extraction is legal in your region before proceeding."
+        )
         LOGGER.warning("[Extractor:%s] %s", name, legal)
 
         result = subprocess.run(

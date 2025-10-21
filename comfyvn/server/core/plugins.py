@@ -1,11 +1,19 @@
-from PySide6.QtGui import QAction
-
+import importlib.util
+import sys
+import types
 # comfyvn/server/core/plugins.py
 from pathlib import Path
-import importlib.util, sys, types
-from typing import Dict, Callable, Any, List
+from typing import Any, Callable, Dict, List
 
-HOOKS = ["on_scene_build", "on_render_start", "on_character_load", "on_asset_registered"]
+from PySide6.QtGui import QAction
+
+HOOKS = [
+    "on_scene_build",
+    "on_render_start",
+    "on_character_load",
+    "on_asset_registered",
+]
+
 
 class PluginHost:
     def __init__(self, root="plugins"):
@@ -36,5 +44,7 @@ class PluginHost:
         for m in self.plugins:
             fn = getattr(m, hook, None)
             if callable(fn):
-                try: fn(*args, **kwargs)
-                except Exception: pass
+                try:
+                    fn(*args, **kwargs)
+                except Exception:
+                    pass

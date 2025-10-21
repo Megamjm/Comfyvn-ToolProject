@@ -85,7 +85,9 @@ class JobRegistry(BaseRegistry):
         )
         return dict(row) if row else None
 
-    def list_jobs(self, job_type: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+    def list_jobs(
+        self, job_type: Optional[str] = None, limit: int = 20
+    ) -> List[Dict[str, Any]]:
         params: List[Any] = [self.project_id]
         where = ""
         if job_type:

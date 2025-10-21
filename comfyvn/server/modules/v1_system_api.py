@@ -1,6 +1,8 @@
-from PySide6.QtGui import QAction
 from fastapi import APIRouter
+from PySide6.QtGui import QAction
+
 router = APIRouter()
+
 
 @router.get("/system/health")
 def v1_system_health():

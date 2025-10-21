@@ -1,14 +1,22 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
+import heapq
+import json
+import threading
 # comfyvn/server/core/job_manager.py
-import time, threading, heapq, uuid, json
-from comfyvn.core.event_hub import EventHub
+import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, List, Optional
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from PySide6.QtGui import QAction
+
+from comfyvn.core.event_hub import EventHub
 from comfyvn.ext.plugins import PluginManager
 
 DEFAULT_QUEUE = "default"
+
 
 @dataclass(order=True)
 class QItem:
@@ -24,12 +32,14 @@ class QItem:
     backoff: float = field(compare=False, default=1.5)
     attempts: int = field(compare=False, default=0)
 
+
 class RateLimiter:
     def __init__(self, rate_per_sec: float):
         self.rate = float(rate_per_sec)
         self.tokens = float(rate_per_sec)
         self.last = time.time()
         self.lock = threading.Lock()
+
     def allow(self) -> bool:
         with self.lock:
             now = time.time()
@@ -40,9 +50,11 @@ class RateLimiter:
                 return True
             return False
 
+
 class JobManager:
     """Advanced orchestrated job manager with DLQ, rate limits, retries, and snapshot state."""
-    def __init__(self, *, event_bus=None, plugins: PluginManager|None=None):
+
+    def __init__(self, *, event_bus=None, plugins: PluginManager | None = None):
         self.pm = plugins or PluginManager()
         self.event_bus = event_bus
         self.lock = threading.RLock()
@@ -62,28 +74,47 @@ class JobManager:
     # --- queue control ---
     def set_rate_limit(self, queue: str, per_sec: float):
         self.rate_limits[queue] = RateLimiter(per_sec)
+
     def acquire_lock(self, name: str, ttl: float) -> bool:
         with self.lock:
             now = time.time()
             cur = self.locks.get(name, 0)
-            if cur > now: return False
+            if cur > now:
+                return False
             self.locks[name] = now + ttl
             return True
+
     def release_lock(self, name: str):
-        with self.lock: self.locks.pop(name, None)
+        with self.lock:
+            self.locks.pop(name, None)
 
     # --- enqueue & worker ---
-    def enqueue(self, typ: str, payload: dict, *, retries: int=0, priority: int=0, delay: float=0.0,
-                queue: str=DEFAULT_QUEUE, backoff: float=1.5) -> str:
+    def enqueue(
+        self,
+        typ: str,
+        payload: dict,
+        *,
+        retries: int = 0,
+        priority: int = 0,
+        delay: float = 0.0,
+        queue: str = DEFAULT_QUEUE,
+        backoff: float = 1.5,
+    ) -> str:
         with self.lock:
             jid = payload.get("id") or uuid.uuid4().hex[:12]
             due = time.time() + max(0.0, float(delay))
             self.seq += 1
             qi = QItem(
-                due=due, priority=-int(priority), seq=self.seq,
-                queue=queue or DEFAULT_QUEUE, id=jid, type=typ,
+                due=due,
+                priority=-int(priority),
+                seq=self.seq,
+                queue=queue or DEFAULT_QUEUE,
+                id=jid,
+                type=typ,
                 payload=dict(payload or {}, id=jid),
-                retries=int(retries), max_retries=int(retries), backoff=float(backoff)
+                retries=int(retries),
+                max_retries=int(retries),
+                backoff=float(backoff),
             )
             heapq.heappush(self.q, qi)
             self._jobs[jid] = dict(qi.payload, status="queued", created=time.time())
@@ -92,9 +123,11 @@ class JobManager:
 
     def _pop_ready(self) -> Optional[QItem]:
         now = time.time()
-        if not self.q: return None
+        if not self.q:
+            return None
         qi = self.q[0]
-        if qi.due > now: return None
+        if qi.due > now:
+            return None
         heapq.heappop(self.q)
         return qi
 
@@ -124,17 +157,38 @@ class JobManager:
                 self._jobs[qi.id] = job
             if not ok:
                 if qi.retries > 0:
-                    qi.retries -= 1; qi.attempts += 1
-                    delay = (qi.backoff ** qi.attempts)
+                    qi.retries -= 1
+                    qi.attempts += 1
+                    delay = qi.backoff**qi.attempts
                     with self.lock:
                         qi.due = time.time() + delay
                         heapq.heappush(self.q, qi)
                 else:
-                    self._emit_event("dlq", {"id": qi.id, "type": qi.type, "payload": qi.payload, "error": err, "when": time.time()})
+                    self._emit_event(
+                        "dlq",
+                        {
+                            "id": qi.id,
+                            "type": qi.type,
+                            "payload": qi.payload,
+                            "error": err,
+                            "when": time.time(),
+                        },
+                    )
                     with self.lock:
-                        self.dlq.append({"id": qi.id, "type": qi.type, "payload": qi.payload, "error": err, "when": time.time()})
+                        self.dlq.append(
+                            {
+                                "id": qi.id,
+                                "type": qi.type,
+                                "payload": qi.payload,
+                                "error": err,
+                                "when": time.time(),
+                            }
+                        )
             else:
-                self._emit_event("done", {"id": qi.id, "type": qi.type, "result": res, "when": time.time()})
+                self._emit_event(
+                    "done",
+                    {"id": qi.id, "type": qi.type, "result": res, "when": time.time()},
+                )
 
     def _emit_event(self, kind: str, data: dict):
         try:
@@ -156,7 +210,7 @@ class JobManager:
         except Exception as e:
             return False, {}, str(e)
 
-    def shutdown(self, timeout: float=2.0):
+    def shutdown(self, timeout: float = 2.0):
         self.running = False
         with self.lock:
             self.cond.notify_all()
@@ -166,6 +220,7 @@ class JobManager:
     def size(self) -> int:
         with self.lock:
             return len(self.q)
+
     def get_dlq(self) -> List[dict]:
         with self.lock:
             return list(self.dlq)

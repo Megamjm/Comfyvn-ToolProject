@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,11 @@ class YuRISImporter:
             confidence += 0.5
         if ybn_files:
             confidence += 0.4
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.9), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.9),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -65,7 +69,9 @@ class YuRISImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("Yu-RIS normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "Yu-RIS normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

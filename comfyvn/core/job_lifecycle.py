@@ -1,15 +1,20 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import time, json
+
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
+
 from comfyvn.core.feedback_tracker import FeedbackTracker
 from comfyvn.core.render_cache import RenderCache
 
-    #Tracks active jobs, completion, and auto-refresh for scenes.
+# Tracks active jobs, completion, and auto-refresh for scenes.
+
 
 class JobLifecycle:
-    def __init__(self, root: str|Path = "data/jobs/state"):
+    def __init__(self, root: str | Path = "data/jobs/state"):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.fb = FeedbackTracker()
@@ -47,7 +52,9 @@ class JobLifecycle:
                     pass
 
     def _save(self, job_id: str, data: Dict[str, Any]):
-        (self.root / f"{job_id}.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+        (self.root / f"{job_id}.json").write_text(
+            json.dumps(data, indent=2), encoding="utf-8"
+        )
 
     def load(self, job_id: str) -> Dict[str, Any]:
         p = self.root / f"{job_id}.json"

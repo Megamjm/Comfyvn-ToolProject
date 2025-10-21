@@ -1,5 +1,7 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/assets_menu.py
 from comfyvn.gui.menus.menu_utils import make_action

@@ -1,14 +1,23 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import requests
+
 from typing import Any
+
+import requests
+from PySide6.QtGui import QAction
+
 try:
-    from comfyvn.core.log_bus import log   # optional
+    from comfyvn.core.log_bus import log  # optional
 except Exception:
+
     class _L:
-        def info(self, *a, **k): print(*a)
-        def error(self, *a, **k): print(*a)
+        def info(self, *a, **k):
+            print(*a)
+
+        def error(self, *a, **k):
+            print(*a)
+
     log = _L()
+
 
 def send_job(endpoint: str, payload: dict[str, Any]):
     """Send a render/offload job to a remote endpoint; returns {ok, status, error?}."""

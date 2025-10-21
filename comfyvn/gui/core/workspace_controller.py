@@ -1,9 +1,10 @@
-from PySide6.QtGui import QAction
-
+import json
 # comfyvn/gui/core/workspace_controller.py  [Studio-090]
 from pathlib import Path
+
 from PySide6.QtCore import QByteArray
-import json
+from PySide6.QtGui import QAction
+
 
 class WorkspaceController:
     def __init__(self, window, store_dir: Path):

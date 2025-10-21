@@ -1,14 +1,19 @@
 from __future__ import annotations
+
+import asyncio
+import time
+import uuid
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Body, WebSocket, WebSocketDisconnect
 from PySide6.QtGui import QAction
-import asyncio, time, uuid
-from typing import Dict, Any, List
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body
 
 jobs = APIRouter(prefix="/jobs", tags=["Jobs"])
 root = APIRouter(tags=["Jobs"])
 
 _QUEUE: List[Dict[str, Any]] = []
 _SUBS: List[WebSocket] = []
+
 
 def _event(e: Dict[str, Any]):
     for ws in list(_SUBS):
@@ -20,9 +25,11 @@ def _event(e: Dict[str, Any]):
             except ValueError:
                 pass
 
+
 @jobs.get("/poll")
 def poll():
     return {"items": list(_QUEUE)}
+
 
 @jobs.post("/submit")
 def submit(payload: Dict[str, Any] = Body(...)):
@@ -31,6 +38,7 @@ def submit(payload: Dict[str, Any] = Body(...)):
     _QUEUE.append(item)
     _event({"type": "queued", "job": item})
     return {"ok": True, "id": jid}
+
 
 async def _ws_handler(ws: WebSocket):
     await ws.accept()
@@ -48,15 +56,19 @@ async def _ws_handler(ws: WebSocket):
         if ws in _SUBS:
             _SUBS.remove(ws)
 
+
 @jobs.websocket("/ws")
 async def ws_jobs_prefixed(ws: WebSocket):
     await _ws_handler(ws)
+
 
 @root.websocket("/ws/jobs")
 async def ws_jobs_root(ws: WebSocket):
     await _ws_handler(ws)
 
+
 from fastapi import APIRouter as _APIR
+
 router = _APIR()
 router.include_router(jobs)
 router.include_router(root)

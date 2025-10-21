@@ -1,12 +1,17 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/core/event_bridge.py
 # 🌐 Playground Event Bridge (GUI → Server)
 # Sends broadcast updates to /playground/notify
 # [ComfyVN_Architect | Phase 3.8-G]
 
-import json, threading, requests
+import json
+import threading
+
+import requests
 
 
 class EventBridge:

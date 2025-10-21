@@ -12,26 +12,16 @@ import threading
 from typing import Any, Dict, Mapping, Optional
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtWidgets import (
-    QAction,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QMainWindow,
-    QStackedWidget,
-    QStatusBar,
-    QStyle,
-    QToolBar,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QAction, QHBoxLayout, QInputDialog, QLabel,
+                               QListWidget, QListWidgetItem, QMainWindow,
+                               QStackedWidget, QStatusBar, QStyle, QToolBar,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.gui.panels.characters_panel import CharactersPanel
 from comfyvn.gui.panels.scenes_panel import ScenesPanel
 from comfyvn.gui.services.server_bridge import ServerBridge
-from comfyvn.gui.views import AssetSummaryView, ImportsJobsView, TimelineSummaryView
+from comfyvn.gui.views import (AssetSummaryView, ImportsJobsView,
+                               TimelineSummaryView)
 from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
 from comfyvn.studio.core.asset_registry import AssetRegistry
 from comfyvn.studio.core.character_registry import CharacterRegistry

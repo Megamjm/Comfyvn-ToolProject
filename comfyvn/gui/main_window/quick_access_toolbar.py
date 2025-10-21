@@ -1,7 +1,7 @@
-
 # comfyvn/gui/main_window/quick_access_toolbar.py  [Studio-090]
-from PySide6.QtWidgets import QToolBar
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QToolBar
+
 
 class QuickAccessToolbarMixin:
     """Mixin to expose a Quick Access toolbar for frequently used actions."""

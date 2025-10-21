@@ -4,9 +4,10 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
-from comfyvn.importers.renpy_setup import ensure_renpy_sdk, get_renpy_executable
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
+from comfyvn.importers.renpy_setup import (ensure_renpy_sdk,
+                                           get_renpy_executable)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +40,11 @@ class RenpyImporter:
             confidence += 0.3
         if scripts:
             confidence += 0.2
-        return DetectResult(engine="Ren'Py", confidence=min(confidence, 0.99), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine="Ren'Py",
+            confidence=min(confidence, 0.99),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -74,7 +79,10 @@ class RenpyImporter:
                 "hooks": hooks or {},
                 "renpy_home": str(renpy_home),
             },
-            "notes": ["Ren'Py importer executed", f"Ren'Py SDK ensured at {renpy_home}"],
+            "notes": [
+                "Ren'Py importer executed",
+                f"Ren'Py SDK ensured at {renpy_home}",
+            ],
         }
         if renpy_exec:
             manifest["sources"]["renpy_executable"] = str(renpy_exec)
@@ -88,7 +96,9 @@ class RenpyImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("Ren'Py normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "Ren'Py normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

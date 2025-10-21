@@ -1,11 +1,14 @@
 from __future__ import annotations
+
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 # comfyvn/gui/windows/extension_manager_window.py
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QListWidget, QListWidgetItem, QMessageBox, QWidget)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QMessageBox, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.core.extension_gui_bridge import bridge
+
 
 class ExtensionManagerWindow(QDialog):
     def __init__(self, parent=None):
@@ -44,8 +47,10 @@ class ExtensionManagerWindow(QDialog):
         self.list.clear()
         info = bridge.info()
         for e in info.get("extensions", []):
-            item = QListWidgetItem(f"{e['name']}  v{e.get('version','?')}  "
-                                   f"{'ENABLED' if e['enabled'] else 'DISABLED'}")
+            item = QListWidgetItem(
+                f"{e['name']}  v{e.get('version','?')}  "
+                f"{'ENABLED' if e['enabled'] else 'DISABLED'}"
+            )
             if e.get("reload_required"):
                 item.setText(item.text() + "  [RESTART REQUIRED]")
             self.list.addItem(item)
@@ -67,15 +72,17 @@ class ExtensionManagerWindow(QDialog):
         # Persist state, let outer app decide how to restart
         try:
             bridge.save_state()
-            QMessageBox.information(self, "Restart", "State saved. Please restart Studio.")
+            QMessageBox.information(
+                self, "Restart", "State saved. Please restart Studio."
+            )
             self.close()
         except Exception as e:
             QMessageBox.critical(self, "Restart", str(e))
 
-
         # [Phase 2.90] runtime wiring (safe if already present)
         try:
             from comfyvn.core import extension_runtime as _ext_rt
+
             _ext_rt.load_all()
             self._runtime = _ext_rt
         except Exception:

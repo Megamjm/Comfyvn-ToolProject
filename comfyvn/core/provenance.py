@@ -87,7 +87,9 @@ def build_stamp_payload(
         user_id=user_id,
         file_hash=digest,
     )
-    LOGGER.debug("Built provenance stamp target=%s source=%s", payload.target, payload.source)
+    LOGGER.debug(
+        "Built provenance stamp target=%s source=%s", payload.target, payload.source
+    )
     return payload
 
 
@@ -117,7 +119,9 @@ def _embed_png_text(path: Path, stamp: ProvenanceStamp) -> bool:
                         continue
                 elif isinstance(value, str):
                     info.add_text(key, value)
-            info.add_text("comfyvn_provenance", json.dumps(stamp.to_dict(), ensure_ascii=False))
+            info.add_text(
+                "comfyvn_provenance", json.dumps(stamp.to_dict(), ensure_ascii=False)
+            )
             image.save(path, pnginfo=info)
         LOGGER.debug("Embedded PNG provenance marker into %s", path)
         return True

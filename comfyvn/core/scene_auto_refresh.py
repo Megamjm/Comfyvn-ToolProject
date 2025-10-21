@@ -1,13 +1,18 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import time, json
+
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
+
 #   \"\"\"Tracks scenes needing refresh when render or job completes.\"\"\"
+
 
 class SceneAutoRefresh:
 
-    def __init__(self, root: str|Path = "data/scene_refresh"):
+    def __init__(self, root: str | Path = "data/scene_refresh"):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self._pending: Dict[str, Dict[str, Any]] = {}

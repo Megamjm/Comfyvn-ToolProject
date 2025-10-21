@@ -1,13 +1,17 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import time, json
+
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
 
 DEFAULT_DIR = Path("./data/replays")
 
+
 class ReplayMemory:
-    def __init__(self, root: str|Path = DEFAULT_DIR):
+    def __init__(self, root: str | Path = DEFAULT_DIR):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -21,14 +25,17 @@ class ReplayMemory:
         with self._path(name).open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-    def read(self, name: str, limit: int|None=None) -> List[Dict[str, Any]]:
+    def read(self, name: str, limit: int | None = None) -> List[Dict[str, Any]]:
         p = self._path(name)
-        if not p.exists(): return []
+        if not p.exists():
+            return []
         out: List[Dict[str, Any]] = []
         with p.open("r", encoding="utf-8") as f:
             for line in f:
-                try: out.append(json.loads(line))
-                except Exception: pass
+                try:
+                    out.append(json.loads(line))
+                except Exception:
+                    pass
         return out[-limit:] if limit else out
 
     def list(self) -> list[str]:

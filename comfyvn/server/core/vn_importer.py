@@ -17,7 +17,8 @@ from comfyvn.core.file_importer import FileImporter, log_license_issues
 from comfyvn.core.normalizer import NormalizerResult, normalize_tree
 from comfyvn.importers import ALL_IMPORTERS, get_importer
 from comfyvn.server.core.external_extractors import extractor_manager
-from comfyvn.server.core.translation_pipeline import build_translation_bundle, plan_remix_tasks
+from comfyvn.server.core.translation_pipeline import (build_translation_bundle,
+                                                      plan_remix_tasks)
 
 logger = logging.getLogger(__name__)
 _ALLOWED_ROOTS = {"scenes", "characters", "assets", "timelines", "licenses"}
@@ -126,7 +127,9 @@ def _normalise_member(path: str) -> Optional[Path]:
     return Path(*trimmed)
 
 
-def _infer_adapter(manifest: Optional[Dict[str, object]], members: Iterable[str]) -> str:
+def _infer_adapter(
+    manifest: Optional[Dict[str, object]], members: Iterable[str]
+) -> str:
     manifest_engine = str(manifest.get("engine") or "").lower() if manifest else ""
     if "renpy" in manifest_engine:
         return "renpy"
@@ -147,12 +150,22 @@ def _detect_importer(stage_root: Path, manifest: Optional[Dict[str, object]]):
         try:
             importer = get_importer(engine_hint)
             detections.append(
-                {"id": importer.id, "label": importer.label, "confidence": 1.0, "reasons": ["manifest hint"]}
+                {
+                    "id": importer.id,
+                    "label": importer.label,
+                    "confidence": 1.0,
+                    "reasons": ["manifest hint"],
+                }
             )
             return importer, detections
         except KeyError:
             detections.append(
-                {"id": engine_hint, "label": engine_hint, "confidence": 0.0, "reasons": ["unknown manifest engine"]}
+                {
+                    "id": engine_hint,
+                    "label": engine_hint,
+                    "confidence": 0.0,
+                    "reasons": ["unknown manifest engine"],
+                }
             )
 
     for importer in ALL_IMPORTERS:
@@ -185,7 +198,9 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_json_bytes(content: bytes, *, source: str, warnings: List[str]) -> Optional[Dict[str, object]]:
+def _load_json_bytes(
+    content: bytes, *, source: str, warnings: List[str]
+) -> Optional[Dict[str, object]]:
     try:
         text = content.decode("utf-8")
         return json.loads(text)
@@ -218,7 +233,9 @@ def _entries_from_zip(package_path: Path) -> List[tuple[str, bytes]]:
     return entries
 
 
-def _entries_from_extractor(tool_name: str, package_path: Path) -> tuple[List[tuple[str, bytes]], str, Optional[str]]:
+def _entries_from_extractor(
+    tool_name: str, package_path: Path
+) -> tuple[List[tuple[str, bytes]], str, Optional[str]]:
     tool = extractor_manager.get(tool_name)
     if not tool:
         raise VNImportError(f"extractor '{tool_name}' not registered")
@@ -239,7 +256,9 @@ def _entries_from_extractor(tool_name: str, package_path: Path) -> tuple[List[tu
     return entries, tool.name, warning
 
 
-def _gather_entries(package_path: Path, *, tool_hint: Optional[str] = None) -> tuple[List[tuple[str, bytes]], Optional[str], Optional[str]]:
+def _gather_entries(
+    package_path: Path, *, tool_hint: Optional[str] = None
+) -> tuple[List[tuple[str, bytes]], Optional[str], Optional[str]]:
     if tool_hint:
         return _entries_from_extractor(tool_hint, package_path)
     if zipfile.is_zipfile(package_path):
@@ -268,13 +287,19 @@ def import_vn_package(
     import_id = f"{package_path.stem}-{int(time.time())}"
     importer_paths = FileImporter("vn", data_root=root)
     try:
-        session = importer_paths.new_session(package_path, import_id=import_id, metadata={"tool": tool})
+        session = importer_paths.new_session(
+            package_path, import_id=import_id, metadata={"tool": tool}
+        )
     except FileNotFoundError as exc:  # pragma: no cover - defensive
         raise VNImportError(str(exc)) from exc
 
-    entries, extractor_name, extractor_warning = _gather_entries(package_path, tool_hint=tool)
+    entries, extractor_name, extractor_warning = _gather_entries(
+        package_path, tool_hint=tool
+    )
 
-    summary = ImportSummary(import_id=import_id, package_path=str(package_path), data_root=str(root))
+    summary = ImportSummary(
+        import_id=import_id, package_path=str(package_path), data_root=str(root)
+    )
     summary.raw_path = session.raw_path.as_posix()
     summary.extracted_path = session.extracted_dir.as_posix()
     summary.converted_path = session.converted_dir.as_posix()
@@ -317,23 +342,39 @@ def import_vn_package(
         seen_member_names.append(safe_rel.as_posix())
 
         if head == "manifest.json":
-            manifest = _load_json_bytes(stage_path.read_bytes(), source=safe_rel.as_posix(), warnings=summary.warnings)
+            manifest = _load_json_bytes(
+                stage_path.read_bytes(),
+                source=safe_rel.as_posix(),
+                warnings=summary.warnings,
+            )
             if manifest:
                 original_manifest = manifest
                 summary.manifest = manifest
-                summary.licenses = list(manifest.get("licenses", [])) if isinstance(manifest.get("licenses"), list) else []
+                summary.licenses = (
+                    list(manifest.get("licenses", []))
+                    if isinstance(manifest.get("licenses"), list)
+                    else []
+                )
                 _write_json(manifest_path, manifest)
                 logger.debug("Loaded manifest from %s", safe_rel)
             continue
 
         if head == "scenes":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel).with_suffix("")
+            rel = (
+                Path(*normalised.parts[1:])
+                if len(normalised.parts) > 1
+                else Path(safe_rel).with_suffix("")
+            )
             dest = scenes_dir / rel
             if dest.suffix.lower() != ".json":
                 dest = dest.with_suffix(".json")
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            data = _load_json_bytes(stage_path.read_bytes(), source=str(normalised), warnings=summary.warnings)
+            data = _load_json_bytes(
+                stage_path.read_bytes(),
+                source=str(normalised),
+                warnings=summary.warnings,
+            )
             if data is None:
                 continue
             _write_json(dest, data)
@@ -342,13 +383,21 @@ def import_vn_package(
             continue
 
         if head == "characters":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel).with_suffix("")
+            rel = (
+                Path(*normalised.parts[1:])
+                if len(normalised.parts) > 1
+                else Path(safe_rel).with_suffix("")
+            )
             dest = characters_dir / rel
             if dest.suffix.lower() != ".json":
                 dest = dest.with_suffix(".json")
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            data = _load_json_bytes(stage_path.read_bytes(), source=str(normalised), warnings=summary.warnings)
+            data = _load_json_bytes(
+                stage_path.read_bytes(),
+                source=str(normalised),
+                warnings=summary.warnings,
+            )
             if data is None:
                 continue
             _write_json(dest, data)
@@ -357,13 +406,21 @@ def import_vn_package(
             continue
 
         if head == "timelines":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel).with_suffix("")
+            rel = (
+                Path(*normalised.parts[1:])
+                if len(normalised.parts) > 1
+                else Path(safe_rel).with_suffix("")
+            )
             dest = timelines_dir / rel
             if dest.suffix.lower() != ".json":
                 dest = dest.with_suffix(".json")
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
-            data = _load_json_bytes(stage_path.read_bytes(), source=str(normalised), warnings=summary.warnings)
+            data = _load_json_bytes(
+                stage_path.read_bytes(),
+                source=str(normalised),
+                warnings=summary.warnings,
+            )
             if data is None:
                 continue
             _write_json(dest, data)
@@ -383,7 +440,11 @@ def import_vn_package(
             continue
 
         if head == "licenses":
-            rel = Path(*normalised.parts[1:]) if len(normalised.parts) > 1 else Path(safe_rel)
+            rel = (
+                Path(*normalised.parts[1:])
+                if len(normalised.parts) > 1
+                else Path(safe_rel)
+            )
             dest = licenses_dir / rel
             if not overwrite and _disallow_overwrite(dest, warnings=summary.warnings):
                 continue
@@ -400,7 +461,9 @@ def import_vn_package(
         summary.extractor_warning = extractor_warning
         summary.warnings.append(extractor_warning)
 
-    importer, detections = _detect_importer(stage_root, original_manifest or summary.manifest)
+    importer, detections = _detect_importer(
+        stage_root, original_manifest or summary.manifest
+    )
     summary.detections = detections
     normalizer_result: Optional[NormalizerResult] = None
     adapter_id: Optional[str] = importer.id if importer else None
@@ -412,17 +475,29 @@ def import_vn_package(
         else:
             fallback_adapter = _infer_adapter(original_manifest, seen_member_names)
             adapter_id = fallback_adapter
-            fallback_engine = fallback_adapter if fallback_adapter != "generic" else "Generic"
+            fallback_engine = (
+                fallback_adapter if fallback_adapter != "generic" else "Generic"
+            )
             fallback_patch: Dict[str, object] = {
                 "sources": {"root": str(stage_root)},
                 "notes": ["Generic normalizer fallback"],
             }
             if original_manifest:
                 fallback_patch["original_manifest"] = original_manifest
-            normalizer_result = normalize_tree(stage_root, session.converted_dir, engine=fallback_engine, manifest_patch=fallback_patch)
+            normalizer_result = normalize_tree(
+                stage_root,
+                session.converted_dir,
+                engine=fallback_engine,
+                manifest_patch=fallback_patch,
+            )
     except Exception as exc:
         summary.warnings.append(f"normalizer failed: {exc}")
-        logger.warning("Normalizer execution failed during import %s: %s", import_id, exc, exc_info=True)
+        logger.warning(
+            "Normalizer execution failed during import %s: %s",
+            import_id,
+            exc,
+            exc_info=True,
+        )
         normalizer_result = None
 
     if normalizer_result:
@@ -451,14 +526,18 @@ def import_vn_package(
 
     try:
         scene_paths = [scenes_dir / f"{scene}.json" for scene in summary.scenes]
-        summary.translation = build_translation_bundle(scene_paths, session.converted_dir)
+        summary.translation = build_translation_bundle(
+            scene_paths, session.converted_dir
+        )
     except Exception as exc:
         summary.warnings.append(f"translation bundle failed: {exc}")
         logger.warning("Translation bundle failed for %s: %s", import_id, exc)
 
     try:
         manifest_for_remix = summary.manifest or {}
-        summary.remix = plan_remix_tasks(manifest_for_remix, summary.scenes, session.converted_dir)
+        summary.remix = plan_remix_tasks(
+            manifest_for_remix, summary.scenes, session.converted_dir
+        )
     except Exception as exc:
         summary.warnings.append(f"remix planning failed: {exc}")
         logger.warning("Remix planning failed for %s: %s", import_id, exc)

@@ -1,4 +1,5 @@
 import logging
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/menus/menu_utils.py
 # 🪄 Menu Utilities — icon + shortcut helpers

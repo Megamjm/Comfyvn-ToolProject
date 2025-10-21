@@ -3,7 +3,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from comfyvn.server.core.manga_importer import MangaImportError, import_manga_archive
+from comfyvn.server.core.manga_importer import (MangaImportError,
+                                                import_manga_archive)
 
 
 def _make_manga_archive(tmp_path: Path) -> Path:
@@ -19,7 +20,9 @@ def test_import_manga_archive(tmp_path: Path):
     archive_path = _make_manga_archive(tmp_path)
     data_root = tmp_path / "data_root"
 
-    summary = import_manga_archive(archive_path, data_root=data_root, translation_lang="en")
+    summary = import_manga_archive(
+        archive_path, data_root=data_root, translation_lang="en"
+    )
 
     assert summary["scenes"]
     assert summary["timelines"]
@@ -52,7 +55,9 @@ def test_import_manga_archive_with_license_hint(tmp_path: Path):
 
     assert summary["licenses"]
     assert summary["licenses"][0]["name"] == "CC-BY"
-    assert summary["advisories"] == [], "open license hint should suppress advisory warnings"
+    assert (
+        summary["advisories"] == []
+    ), "open license hint should suppress advisory warnings"
 
 
 def test_import_manga_archive_missing_file(tmp_path: Path):

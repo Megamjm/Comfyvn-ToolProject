@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
-from comfyvn.core.db_manager import DBManager, DEFAULT_DB_PATH
+from comfyvn.core.db_manager import DEFAULT_DB_PATH, DBManager
 
 LOGGER = logging.getLogger("comfyvn.advisory")
 
@@ -149,7 +149,12 @@ class FindingsStore:
                     timestamp = COALESCE(timestamp, ?)  -- preserve initial timestamp if present
                 WHERE project_id = ? AND issue_id = ?
                 """,
-                (json.dumps(note_list, ensure_ascii=False), float(time.time()), self.project_id, issue_id),
+                (
+                    json.dumps(note_list, ensure_ascii=False),
+                    float(time.time()),
+                    self.project_id,
+                    issue_id,
+                ),
             )
         return True
 
@@ -204,7 +209,9 @@ class AdvisoryScanner:
             )
         return issues
 
-    def scan(self, target_id: str, text: str, *, license_scan: bool = False) -> List[AdvisoryIssue]:
+    def scan(
+        self, target_id: str, text: str, *, license_scan: bool = False
+    ) -> List[AdvisoryIssue]:
         issues = self.scan_text(target_id, text)
         if license_scan:
             issues.extend(self.scan_license(target_id, text))
@@ -245,7 +252,9 @@ def list_logs(*, resolved: Optional[bool] = None) -> List[Dict[str, Any]]:
     return findings_store.list(resolved=resolved)
 
 
-def scan_text(target_id: str, text: str, *, license_scan: bool = False) -> List[Dict[str, Any]]:
+def scan_text(
+    target_id: str, text: str, *, license_scan: bool = False
+) -> List[Dict[str, Any]]:
     issues = scanner.scan(target_id, text, license_scan=license_scan)
     logged: List[Dict[str, Any]] = []
     for issue in issues:

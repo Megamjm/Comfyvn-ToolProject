@@ -1,8 +1,12 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 import os
+
 from fastapi import APIRouter
+from PySide6.QtGui import QAction
+
 router = APIRouter()
+
 
 @router.get("/status")
 async def status():

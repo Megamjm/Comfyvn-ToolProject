@@ -27,13 +27,16 @@ def test_incompatible_manifest_is_flagged(tmp_path):
         "requires": {"comfyvn": ">=999.0"},
     }
     (ext_dir / "extension.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (ext_dir / "extension.py").write_text("""
+    (ext_dir / "extension.py").write_text(
+        """
 from comfyvn.core.menu_runtime_bridge import MenuRegistry
 
 
 def register(registry: MenuRegistry) -> None:
     registry.add("Placeholder", handler="noop")
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
     metadata = load_extension_metadata(ext_dir.parent)
     bad = next(meta for meta in metadata if meta.id == "bad_ext")

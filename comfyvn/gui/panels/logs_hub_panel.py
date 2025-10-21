@@ -1,11 +1,14 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 # comfyvn/gui/panels/logs_hub_panel.py
 from pathlib import Path
 from typing import List
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QPlainTextEdit, QPushButton, QHBoxLayout
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (QHBoxLayout, QPlainTextEdit, QPushButton,
+                               QTabWidget, QVBoxLayout, QWidget)
+
 
 class _TailView(QPlainTextEdit):
     def __init__(self, path: Path, parent=None):
@@ -33,15 +36,19 @@ class _TailView(QPlainTextEdit):
                     except Exception:
                         pass
                     if self._follow:
-                        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+                        self.verticalScrollBar().setValue(
+                            self.verticalScrollBar().maximum()
+                        )
         except Exception:
             pass
 
     def toggle_follow(self):
         self._follow = not self._follow
 
+
 class LogsHubPanel(QWidget):
     """Tabbed live-tail across common log files."""
+
     def __init__(self, log_dir: Path = Path("logs"), parent=None):
         super().__init__(parent)
         self.log_dir = log_dir
@@ -82,7 +89,10 @@ class LogsHubPanel(QWidget):
 
     def _open_dir(self):
         try:
-            import os, subprocess, platform
+            import os
+            import platform
+            import subprocess
+
             d = str(self.log_dir.resolve())
             if platform.system() == "Windows":
                 os.startfile(d)  # type: ignore

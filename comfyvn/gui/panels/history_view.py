@@ -1,13 +1,17 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 # comfyvn/gui/panels/history_view.py
 # [COMFYVN Architect | v1.5 | this chat]
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QLabel, QPushButton, QHBoxLayout
-from PySide6.QtCore import Qt
-from comfyvn.core.history_manager import history
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QPushButton,
+                               QVBoxLayout, QWidget)
+
 from comfyvn.core.event_bus import subscribe
+from comfyvn.core.history_manager import history
+
 
 class HistoryView(QWidget):
     """Visual stack viewer for HistoryManager."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         v = QVBoxLayout(self)
@@ -15,8 +19,10 @@ class HistoryView(QWidget):
         self.list = QListWidget()
         v.addWidget(self.list, 1)
         hb = QHBoxLayout()
-        self.btn_undo = QPushButton("Undo"); self.btn_redo = QPushButton("Redo")
-        hb.addWidget(self.btn_undo); hb.addWidget(self.btn_redo)
+        self.btn_undo = QPushButton("Undo")
+        self.btn_redo = QPushButton("Redo")
+        hb.addWidget(self.btn_undo)
+        hb.addWidget(self.btn_redo)
         v.addLayout(hb)
 
         self.btn_undo.clicked.connect(lambda: (history.undo(), self.refresh()))

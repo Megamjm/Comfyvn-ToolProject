@@ -1,12 +1,16 @@
-from PySide6.QtGui import QAction
-import time, threading
+import threading
+import time
 from collections import deque
+
+from PySide6.QtGui import QAction
+
 
 class Orchestrator:
     """Minimal central coordinator.
     - queue: generic orchestration work units
     - tick(): runs lightweight maintenance each second via app hook
     """
+
     def __init__(self):
         self.queue = deque()
         self.last_tick = 0

@@ -1,25 +1,19 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/lora_manager_ui.py
 # 🧬 LoRA Manager UI — v1.0 (Phase 3)
 # Chat Source: 🧬 9. LoRA System Production Chat
 
-import os, threading
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QLineEdit,
-    QTextEdit,
-    QFileDialog,
-    QListWidget,
-    QListWidgetItem,
-    QMessageBox,
-)
+import os
+import threading
+
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QMessageBox,
+                               QPushButton, QTextEdit, QVBoxLayout, QWidget)
 
 from comfyvn.assets.lora_manager import LoRAManager
 from comfyvn.comfyui.scripts.train_lora import LoRATrainerWithSignals

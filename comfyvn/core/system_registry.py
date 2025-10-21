@@ -1,6 +1,10 @@
+import json
+import os
+import platform
+import time
+
 from PySide6.QtGui import QAction
 
-import platform, os, json, time
 
 class SystemRegistry:
     def __init__(self):
@@ -12,5 +16,9 @@ class SystemRegistry:
             "ts": time.time(),
         }
         self._devices = {}
-    def update_devices(self, devices: dict): self._devices = devices or {}
-    def info(self): return {"meta": self._meta, "devices": self._devices}
+
+    def update_devices(self, devices: dict):
+        self._devices = devices or {}
+
+    def info(self):
+        return {"meta": self._meta, "devices": self._devices}

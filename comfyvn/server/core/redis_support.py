@@ -1,12 +1,19 @@
-from PySide6.QtGui import QAction
-import os, time, json, queue, threading
+import json
+import os
+import queue
+import threading
+import time
 from pathlib import Path
+
+from PySide6.QtGui import QAction
+
 try:
     import redis as _redis  # type: ignore
 except Exception:
     _redis = None
 
 REDIS_URL = os.getenv("REDIS_URL", "").strip() or ""
+
 
 class InMemoryQueue:
     def __init__(self):
@@ -20,6 +27,7 @@ class InMemoryQueue:
             return self.q.get(timeout=timeout)
         except queue.Empty:
             return None
+
 
 class RedisQueue:
     def __init__(self, key="comfyvn:jobs"):
@@ -39,16 +47,19 @@ class RedisQueue:
 
     def get(self, timeout=1.0):
         if self.cl:
-            r = self.cl.brpop(self.key, timeout=max(1,int(timeout)))
-            if r: return r[1]
+            r = self.cl.brpop(self.key, timeout=max(1, int(timeout)))
+            if r:
+                return r[1]
             return None
         else:
             return self.mem.get(timeout=timeout)
 
+
 class RedisEventsBridge:
     def __init__(self, event_bus, dir_path: str = "./data/jobs"):
         self.event_bus = event_bus
-        self.dir = Path(dir_path); self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir = Path(dir_path)
+        self.dir.mkdir(parents=True, exist_ok=True)
 
     def pump_once(self, limit=1000):
         # bridge files from data/jobs/ to event_bus handlers
@@ -58,5 +69,7 @@ class RedisEventsBridge:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 self.event_bus.emit("job_event", data)
             finally:
-                try: f.unlink()
-                except Exception: pass
+                try:
+                    f.unlink()
+                except Exception:
+                    pass

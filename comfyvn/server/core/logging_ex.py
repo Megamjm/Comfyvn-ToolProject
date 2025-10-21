@@ -1,9 +1,14 @@
 from __future__ import annotations
+
+import json
 # comfyvn/server/core/logging_ex.py
-import logging, os, sys, json
+import logging
+import os
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -19,21 +24,31 @@ class JsonFormatter(logging.Formatter):
             payload["extra"] = record.__dict__["extra"]
         return json.dumps(payload, ensure_ascii=False)
 
+
 def _mk_handler(to_file: Optional[str], level: int) -> logging.Handler:
     fmt = JsonFormatter()
     if to_file:
         os.makedirs(os.path.dirname(to_file) or ".", exist_ok=True)
-        h = RotatingFileHandler(to_file, maxBytes=int(os.getenv("COMFYVN_LOG_MAXBYTES", "10485760")), backupCount=int(os.getenv("COMFYVN_LOG_BACKUPS", "5")))
+        h = RotatingFileHandler(
+            to_file,
+            maxBytes=int(os.getenv("COMFYVN_LOG_MAXBYTES", "10485760")),
+            backupCount=int(os.getenv("COMFYVN_LOG_BACKUPS", "5")),
+        )
     else:
         h = logging.StreamHandler(sys.stdout)
     h.setLevel(level)
     h.setFormatter(fmt)
     return h
 
-def _attach_special_logger(logger_name: str, file_path: Path, level: int, tag: str) -> None:
+
+def _attach_special_logger(
+    logger_name: str, file_path: Path, level: int, tag: str
+) -> None:
     logger = logging.getLogger(logger_name)
     existing = [
-        handler for handler in logger.handlers if getattr(handler, "_comfyvn_tag", None) == tag
+        handler
+        for handler in logger.handlers
+        if getattr(handler, "_comfyvn_tag", None) == tag
     ]
     for handler in existing:
         logger.removeHandler(handler)
@@ -43,6 +58,7 @@ def _attach_special_logger(logger_name: str, file_path: Path, level: int, tag: s
     if logger.level == logging.NOTSET or logger.level > level:
         logger.setLevel(level)
     logger.propagate = True
+
 
 def setup_logging() -> None:
     level_name = os.getenv("COMFYVN_LOG_LEVEL", "INFO").upper()
@@ -67,7 +83,9 @@ def setup_logging() -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     audio_path = Path(os.getenv("COMFYVN_AUDIO_LOG_FILE", str(log_dir / "audio.log")))
-    policy_path = Path(os.getenv("COMFYVN_POLICY_LOG_FILE", str(log_dir / "advisory.log")))
+    policy_path = Path(
+        os.getenv("COMFYVN_POLICY_LOG_FILE", str(log_dir / "advisory.log"))
+    )
 
     for name in (
         "comfyvn.audio",

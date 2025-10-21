@@ -94,7 +94,9 @@ class ComfyUIAudioRunner:
                 LOGGER.warning("ComfyUI output missing on disk: %s", src)
 
         if not resolved_files:
-            raise ComfyUIWorkflowError("comfyui outputs missing from configured output directory")
+            raise ComfyUIWorkflowError(
+                "comfyui outputs missing from configured output directory"
+            )
 
         return resolved_files, {
             "prompt_id": prompt_id,
@@ -128,7 +130,9 @@ class ComfyUIAudioRunner:
 
     def _apply_replacements(self, payload: Any, replacements: Dict[str, str]) -> Any:
         if isinstance(payload, dict):
-            return {k: self._apply_replacements(v, replacements) for k, v in payload.items()}
+            return {
+                k: self._apply_replacements(v, replacements) for k, v in payload.items()
+            }
         if isinstance(payload, list):
             return [self._apply_replacements(item, replacements) for item in payload]
         if isinstance(payload, str):
@@ -153,12 +157,18 @@ class ComfyUIAudioRunner:
                 if status in {"completed", "success", "finished"}:
                     return record
                 if status in {"failed", "error", "canceled"}:
-                    raise ComfyUIWorkflowError(f"workflow failed: {record.get('status')}")
+                    raise ComfyUIWorkflowError(
+                        f"workflow failed: {record.get('status')}"
+                    )
                 last_status = status
             time.sleep(self.config.poll_interval)
-        raise ComfyUIWorkflowError(f"workflow timeout after {self.config.timeout}s (last status={last_status})")
+        raise ComfyUIWorkflowError(
+            f"workflow timeout after {self.config.timeout}s (last status={last_status})"
+        )
 
-    def _collect_outputs(self, record: Dict[str, Any], kinds: Iterable[str]) -> List[Dict[str, Any]]:
+    def _collect_outputs(
+        self, record: Dict[str, Any], kinds: Iterable[str]
+    ) -> List[Dict[str, Any]]:
         desired = {kind.lower() for kind in kinds}
         outputs = record.get("outputs") or {}
         matches: List[Dict[str, Any]] = []

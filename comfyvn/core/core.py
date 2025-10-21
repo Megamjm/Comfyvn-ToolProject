@@ -1,4 +1,5 @@
 from PySide6.QtGui import QAction
+
 """Auto-generated module exports."""
 
 __all__ = [
@@ -15,13 +16,16 @@ __all__ = [
     "world_loader",
 ]
 
+
 # ---- Back-compat hook registry (added by Main window update chat) ----
 class HookRegistry:
     def __init__(self):
         self._handlers = {}  # name -> list[callable]
+
     def register(self, name: str, fn):
         self._handlers.setdefault(name, []).append(fn)
         return fn
+
     def emit(self, name: str, *args, **kwargs):
         for fn in self._handlers.get(name, []):
             try:
@@ -29,20 +33,28 @@ class HookRegistry:
             except Exception:
                 # swallow to avoid crashing UI; log here if you have a logger
                 pass
+
     def listeners(self, name: str):
         return list(self._handlers.get(name, []))
+
     def clear(self, name: str | None = None):
         if name is None:
             self._handlers.clear()
         else:
             self._handlers.pop(name, None)
 
+
 hooks = HookRegistry()
+
 
 def on(name: str):
     """Decorator to register a hook handler: @on('menu.populate')"""
+
     def _wrap(fn):
         hooks.register(name, fn)
         return fn
+
     return _wrap
+
+
 # ----------------------------------------------------------------------

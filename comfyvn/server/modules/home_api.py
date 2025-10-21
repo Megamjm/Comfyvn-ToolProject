@@ -1,8 +1,9 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 # comfyvn/server/modules/home_api.py
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
+from PySide6.QtGui import QAction
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ code{background:#f2f2f2;padding:2px 4px;border-radius:4px}
   <li><a href="/meta/health">/meta/health</a>, <a href="/meta/info">/meta/info</a>, <a href="/meta/routes">/meta/routes</a></li>
 </ul>
 </body></html>"""  # noqa: E501
+
 
 @router.get("/", response_class=HTMLResponse)
 def root():

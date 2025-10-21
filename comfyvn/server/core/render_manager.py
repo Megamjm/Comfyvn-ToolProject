@@ -1,11 +1,16 @@
 from __future__ import annotations
+
+import heapq
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
 from PySide6.QtGui import QAction
 
-import time, threading, heapq, uuid
-from dataclasses import dataclass, field
-from typing import Optional, Dict, List, Tuple
-
 DEFAULT_QUEUE = "render"
+
 
 @dataclass(order=True)
 class QItem:
@@ -17,6 +22,7 @@ class QItem:
     queue: str = field(compare=False, default=DEFAULT_QUEUE)
     device: str = field(compare=False, default="cpu")
     payload: dict = field(compare=False, default_factory=dict)
+
 
 class RenderManager:
     def __init__(self):
@@ -38,9 +44,16 @@ class RenderManager:
         jid = payload.get("id") or uuid.uuid4().hex[:12]
         with self.lock:
             self.seq += 1
-            qi = QItem(due=time.time(), priority=-prio, seq=self.seq,
-                       id=jid, type=t, queue=q, device=dev,
-                       payload=dict(payload, id=jid))
+            qi = QItem(
+                due=time.time(),
+                priority=-prio,
+                seq=self.seq,
+                id=jid,
+                type=t,
+                queue=q,
+                device=dev,
+                payload=dict(payload, id=jid),
+            )
             heapq.heappush(self.q, qi)
             self.registry[jid] = qi
             self.cond.notify_all()
@@ -49,8 +62,13 @@ class RenderManager:
     def list(self) -> List[dict]:
         with self.lock:
             return [
-                {"id": x.id, "type": x.type, "queue": x.queue,
-                 "priority": -x.priority, "device": x.device}
+                {
+                    "id": x.id,
+                    "type": x.type,
+                    "queue": x.queue,
+                    "priority": -x.priority,
+                    "device": x.device,
+                }
                 for x in sorted(self.q)
             ]
 

@@ -1,11 +1,16 @@
 import logging
+
 logger = logging.getLogger(__name__)
 # comfyvn/tools/check_imports_autoheal.py
 # 🧩 ComfyVN Import Auto-Heal v0.9 — Self-Healing Edition
 # Detects invalid imports, missing __init__ paths, and self-import loops.
 # Supports --deep, --sync, and hybrid adaptive modes.
 
-import os, sys, re, importlib, argparse
+import argparse
+import importlib
+import os
+import re
+import sys
 from pathlib import Path
 from shutil import copyfile
 

@@ -1,10 +1,15 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/server/core/ws_handlers.py
 # 🔌 Shared WebSocket & SSE handler registration for Playground & Jobs
 
-import asyncio, json, time
+import asyncio
+import json
+import time
+
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 

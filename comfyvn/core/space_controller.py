@@ -1,23 +1,26 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 # comfyvn/core/space_controller.py
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 
+from comfyvn.gui.panels.gpu_manager_panel import GPUManagerPanel
+from comfyvn.gui.panels.importer_panel import ImporterPanel
+from comfyvn.gui.panels.render_dashboard_panel import RenderDashboardPanel
+from comfyvn.gui.panels.system_monitor_panel import SystemMonitorPanel
 # Panels used as central views
 from comfyvn.gui.panels.vn_viewport_panel import VNViewportPanel
-from comfyvn.gui.panels.render_dashboard_panel import RenderDashboardPanel
-from comfyvn.gui.panels.importer_panel import ImporterPanel
-from comfyvn.gui.panels.gpu_manager_panel import GPUManagerPanel
-from comfyvn.gui.panels.system_monitor_panel import SystemMonitorPanel
+
 
 class SpaceController:
     """
     Manages the 'central space' (main viewport) and attaches common side panels.
     Spaces: 'VN', 'Render', 'Import', 'GPU', 'System'
     """
+
     def __init__(self, main_window, dockman):
         self.w = main_window
         self.dockman = dockman

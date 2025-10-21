@@ -1,13 +1,17 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import json, time
+
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
 
 DEFAULT_DIR = Path("./data/scenes")
 
+
 class SceneStore:
-    def __init__(self, root: str|Path = DEFAULT_DIR):
+    def __init__(self, root: str | Path = DEFAULT_DIR):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -21,7 +25,8 @@ class SceneStore:
 
     def load(self, scene_id: str) -> Dict[str, Any]:
         p = self.root / f"{scene_id}.json"
-        if not p.exists(): return {}
+        if not p.exists():
+            return {}
         return json.loads(p.read_text(encoding="utf-8"))
 
     def list(self) -> List[str]:

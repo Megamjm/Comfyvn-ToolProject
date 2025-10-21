@@ -1,8 +1,12 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import io, time, tarfile
+
+import io
+import tarfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
 
 try:
     import psutil  # optional
@@ -20,6 +24,7 @@ from comfyvn.core.health import aggregate as _aggregate
 
 LOG_DIRS = [Path("logs")]
 DATA_DIRS = [Path("data")]
+
 
 def _metrics() -> Dict[str, Any]:
     m: Dict[str, Any] = {"time": int(time.time())}
@@ -46,12 +51,19 @@ def _metrics() -> Dict[str, Any]:
                 continue
     except Exception:
         pass
-    m.update({
-        "cpu_percent": cpu,
-        "mem": {"total": getattr(vm, "total", 0), "used": getattr(vm, "used", 0), "percent": getattr(vm, "percent", 0.0)},
-        "disk": disks,
-    })
+    m.update(
+        {
+            "cpu_percent": cpu,
+            "mem": {
+                "total": getattr(vm, "total", 0),
+                "used": getattr(vm, "used", 0),
+                "percent": getattr(vm, "percent", 0.0),
+            },
+            "disk": disks,
+        }
+    )
     return m
+
 
 def _routes(app) -> List[Dict[str, Any]]:
     items = []
@@ -62,6 +74,7 @@ def _routes(app) -> List[Dict[str, Any]]:
         items.append({"path": str(path), "methods": methods, "name": name})
     items.sort(key=lambda x: x["path"])
     return items
+
 
 def _diag_bundle() -> bytes:
     memfile = io.BytesIO()
@@ -76,6 +89,7 @@ def _diag_bundle() -> bytes:
                             continue
     memfile.seek(0)
     return memfile.read()
+
 
 def get_ops_router(app_ref=None) -> "APIRouter":
     if APIRouter is None:
@@ -96,7 +110,9 @@ def get_ops_router(app_ref=None) -> "APIRouter":
 
     @r.get("/routes")
     def routes():
-        from comfyvn.server.app import app as _app  # local import to avoid cycles
+        from comfyvn.server.app import \
+            app as _app  # local import to avoid cycles
+
         return {"routes": _routes(_app)}
 
     @r.get("/diag.tar.gz")
@@ -104,6 +120,10 @@ def get_ops_router(app_ref=None) -> "APIRouter":
         if StreamingResponse is None:
             return {"ok": False, "reason": "no StreamingResponse"}
         data = _diag_bundle()
-        return StreamingResponse(io.BytesIO(data), media_type="application/gzip",
-                                 headers={"Content-Disposition": "attachment; filename=diag.tar.gz"})
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/gzip",
+            headers={"Content-Disposition": "attachment; filename=diag.tar.gz"},
+        )
+
     return r

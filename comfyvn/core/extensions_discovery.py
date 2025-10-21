@@ -78,7 +78,13 @@ def _hooks_from_manifest(path: Path) -> List[Dict[str, Any]]:
         if payload.get("type") == "menu_hook":
             hooks.append(payload)
     elif isinstance(payload, list):
-        hooks.extend([item for item in payload if isinstance(item, dict) and item.get("type") == "menu_hook"])
+        hooks.extend(
+            [
+                item
+                for item in payload
+                if isinstance(item, dict) and item.get("type") == "menu_hook"
+            ]
+        )
     return hooks
 
 
@@ -119,7 +125,9 @@ def _build_metadata_from_folder(ext_dir: Path) -> ExtensionMetadata:
                 entrypoint = candidate
                 break
     if entrypoint is None:
-        warnings.append("No Python entrypoint discovered; extension will not be loaded.")
+        warnings.append(
+            "No Python entrypoint discovered; extension will not be loaded."
+        )
         compatible = False
 
     requires = data.get("requires")

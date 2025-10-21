@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +38,11 @@ class CatSystem2Importer:
         if image_hits:
             reasons.append(f"{len(image_hits)}x proprietary images (.hg2/.hg3)")
             confidence += 0.2
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.85), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.85),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -75,7 +79,9 @@ class CatSystem2Importer:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("CatSystem2 normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "CatSystem2 normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

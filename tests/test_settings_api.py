@@ -34,7 +34,9 @@ def test_settings_save_deep_merge(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     app = create_app()
     with TestClient(app) as client:
-        resp = client.post("/settings/save", json={"ui": {"menu_sort_mode": "alphabetical"}})
+        resp = client.post(
+            "/settings/save", json={"ui": {"menu_sort_mode": "alphabetical"}}
+        )
         assert resp.status_code == 200, resp.text
         saved = manager.load()
         assert saved["ui"]["menu_sort_mode"] == "alphabetical"

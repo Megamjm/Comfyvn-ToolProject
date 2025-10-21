@@ -5,21 +5,11 @@ from pathlib import Path
 from typing import List
 
 import requests
-
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTableWidget,
-    QTableWidgetItem,
-    QPushButton,
-    QLabel,
-    QMessageBox,
-)
-from PySide6.QtCore import QUrl
-
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QPushButton,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout,
+                               QWidget)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +23,9 @@ class ImportsPanel(QWidget):
 
         self.status_label = QLabel("Imports — loading", self)
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["ID", "Kind", "Status", "Progress", "Message"])
+        self.table.setHorizontalHeaderLabels(
+            ["ID", "Kind", "Status", "Progress", "Message"]
+        )
         self.table.horizontalHeader().setStretchLastSection(True)
 
         refresh_btn = QPushButton("Refresh", self)
@@ -71,7 +63,12 @@ class ImportsPanel(QWidget):
     def refresh(self) -> None:
         payload = self._get("/jobs/all")
         jobs = payload.get("jobs") or []
-        filtered = [job for job in jobs if str(job.get("kind", "")).startswith("vn") or job.get("kind") in {"roleplay_import"}]
+        filtered = [
+            job
+            for job in jobs
+            if str(job.get("kind", "")).startswith("vn")
+            or job.get("kind") in {"roleplay_import"}
+        ]
         self.jobs = filtered
         self._render()
 
@@ -82,7 +79,13 @@ class ImportsPanel(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(job.get("kind", "")))
             self.table.setItem(row, 2, QTableWidgetItem(job.get("status", "")))
             progress = job.get("progress")
-            self.table.setItem(row, 3, QTableWidgetItem(f"{progress:.0%}" if isinstance(progress, float) else ""))
+            self.table.setItem(
+                row,
+                3,
+                QTableWidgetItem(
+                    f"{progress:.0%}" if isinstance(progress, float) else ""
+                ),
+            )
             self.table.setItem(row, 4, QTableWidgetItem(job.get("message", "")))
 
         if self.jobs:
@@ -105,4 +108,6 @@ class ImportsPanel(QWidget):
         if summary_path and Path(summary_path).exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(summary_path))
         else:
-            QMessageBox.information(self, "Open Summary", "Summary path unavailable; check server logs.")
+            QMessageBox.information(
+                self, "Open Summary", "Summary path unavailable; check server logs."
+            )

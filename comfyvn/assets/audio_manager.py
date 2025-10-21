@@ -1,6 +1,9 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/audio_manager.py
 # 🔊 Audio & Effects Production Chat — Harmonized Full Version
@@ -8,9 +11,10 @@ logger = logging.getLogger(__name__)
 # Compatible with: SceneManager, UIManager, SystemCore, ScriptParser
 # Last sync: 2025-10-12
 
-import os, json
+import json
+import os
 from pathlib import Path
-from typing import Optional, Dict, Literal, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 AudioKey = Literal["sound", "music", "voice", "ambience", "fx"]
 Category = Literal["music", "ambience", "voice", "fx"]

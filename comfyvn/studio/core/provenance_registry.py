@@ -87,7 +87,12 @@ class ProvenanceRegistry(BaseRegistry):
         record["inputs"] = json.loads(record.pop("inputs_json") or "{}")
         record["c2pa_like"] = json.loads(record.pop("c2pa_like") or "{}")
 
-        LOGGER.debug("Recorded provenance id=%s asset_id=%s source=%s", provenance_id, asset_id, source)
+        LOGGER.debug(
+            "Recorded provenance id=%s asset_id=%s source=%s",
+            provenance_id,
+            asset_id,
+            source,
+        )
         return record
 
     def list_for_asset_uid(self, asset_uid: str) -> List[Dict[str, Any]]:
@@ -118,5 +123,7 @@ class ProvenanceRegistry(BaseRegistry):
             return None
         digest = hashlib.sha256()
         digest.update(source.strip().encode("utf-8"))
-        digest.update(json.dumps(inputs, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+        digest.update(
+            json.dumps(inputs, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        )
         return digest.hexdigest()

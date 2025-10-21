@@ -1,8 +1,11 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import os, time
-from typing import Dict, Any
+
+import os
+import time
+from typing import Any, Dict
 from urllib.parse import urlparse
+
+from PySide6.QtGui import QAction
 
 try:
     import httpx
@@ -18,6 +21,7 @@ from comfyvn.core.boot_checks import BootChecks
 
 DEFAULT_TIMEOUT = 1.0
 
+
 def _probe_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> Dict[str, Any]:
     if not url:
         return {"ok": False, "reason": "empty"}
@@ -31,12 +35,18 @@ def _probe_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> Dict[str, Any]:
         return {"ok": None, "reason": "httpx-missing", "url": url}
     try:
         r = httpx.get(url, timeout=timeout)
-        return {"ok": bool(r.status_code and r.status_code < 500), "status": r.status_code, "url": url}
+        return {
+            "ok": bool(r.status_code and r.status_code < 500),
+            "status": r.status_code,
+            "url": url,
+        }
     except Exception as e:
         return {"ok": False, "reason": e.__class__.__name__, "url": url}
 
+
 def _env(k: str, default: str = "") -> str:
     return os.environ.get(k, default).strip()
+
 
 def aggregate(probe: bool = False) -> Dict[str, Any]:
     checks = BootChecks.run(strict=False)
@@ -57,16 +67,26 @@ def aggregate(probe: bool = False) -> Dict[str, Any]:
             else:
                 deps[k]["probe"] = {"ok": None, "reason": "unset"}
     ok = not checks.get("errors")
-    return {"ok": ok, "boot": checks, "deps": deps, "ts": int(time.time()), "version": os.environ.get("COMFYVN_VERSION", "")}
+    return {
+        "ok": ok,
+        "boot": checks,
+        "deps": deps,
+        "ts": int(time.time()),
+        "version": os.environ.get("COMFYVN_VERSION", ""),
+    }
+
 
 def get_health_router() -> "APIRouter":
     if APIRouter is None:
         raise RuntimeError("FastAPI not installed")
     r = APIRouter(prefix="/system", tags=["System"])
+
     @r.get("/ping")
     def ping():
         return {"pong": True}
+
     @r.get("/health")
     def health(probe: bool = Query(False, description="If true, probe dependencies")):
         return aggregate(probe=probe)
+
     return r

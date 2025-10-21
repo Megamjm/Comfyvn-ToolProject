@@ -1,5 +1,7 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/server/core/manager_loader.py
 # 🧩 Central Manager Loader — audio, lora, playground, persona, etc.
@@ -9,19 +11,19 @@ import os
 
 def load_managers():
     """Initialize all ComfyVN core managers safely."""
-    from comfyvn.core.mode_manager import ModeManager
+    from comfyvn.assets.audio_manager import AudioManager
+    from comfyvn.assets.cache_manager import CacheManager
+    from comfyvn.assets.character_manager import CharacterManager
+    from comfyvn.assets.export_manager import ExportManager
+    from comfyvn.assets.lora_manager import LoRAManager
+    from comfyvn.assets.model_discovery import safe_mode_enabled
+    from comfyvn.assets.npc_manager import NPCManager
+    from comfyvn.assets.persona_manager import PersonaManager
+    from comfyvn.assets.playground_manager import PlaygroundManager
     from comfyvn.core.event_bus import EventBus
     from comfyvn.core.job_manager import JobManager
+    from comfyvn.core.mode_manager import ModeManager
     from comfyvn.core.st_sync_manager import STSyncManager
-    from comfyvn.assets.audio_manager import AudioManager
-    from comfyvn.assets.lora_manager import LoRAManager
-    from comfyvn.assets.playground_manager import PlaygroundManager
-    from comfyvn.assets.character_manager import CharacterManager
-    from comfyvn.assets.persona_manager import PersonaManager
-    from comfyvn.assets.npc_manager import NPCManager
-    from comfyvn.assets.export_manager import ExportManager
-    from comfyvn.assets.cache_manager import CacheManager
-    from comfyvn.assets.model_discovery import safe_mode_enabled
 
     managers = {}
     managers["audio_manager"] = AudioManager()

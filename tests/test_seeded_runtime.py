@@ -9,7 +9,6 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-
 # Minimal PySide6 stub for modules that import QAction
 if "PySide6" not in sys.modules:
     pyside6 = types.ModuleType("PySide6")
@@ -44,7 +43,13 @@ def test_workflow_seeded_runs_identical_outputs():
     wf = {
         "name": "seeded-echo",
         "nodes": [
-            {"id": "n1", "type": "echo", "params": {"message": "${input.msg}"}, "inputs": {}, "outputs": {"out": "$output.result"}}
+            {
+                "id": "n1",
+                "type": "echo",
+                "params": {"message": "${input.msg}"},
+                "inputs": {},
+                "outputs": {"out": "$output.result"},
+            }
         ],
         "outputs": {"final": "n1.out"},
         "inputs": {"msg": {"type": "string"}},
@@ -60,11 +65,15 @@ def test_workflow_failure_on_bad_source_reference():
         "nodes": [
             {"id": "n1", "type": "echo", "params": {"message": "ok"}},
             # n2 incorrectly references missing port on n1
-            {"id": "n2", "type": "concat", "params": {"a": "x"}, "inputs": {"b": "n1.missing"}},
+            {
+                "id": "n2",
+                "type": "concat",
+                "params": {"a": "x"},
+                "inputs": {"b": "n1.missing"},
+            },
         ],
         "outputs": {"final": "n2.out"},
     }
     rt = WorkflowRuntime(wf, run_id="E2E")
     with pytest.raises(Exception):
         rt.run()
-

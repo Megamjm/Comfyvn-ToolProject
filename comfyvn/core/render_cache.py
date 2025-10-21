@@ -1,14 +1,19 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import json, time
+
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
+from PySide6.QtGui import QAction
+
 from comfyvn.config.runtime_paths import render_cache_dir
 
 DEFAULT_DIR = render_cache_dir()
 
+
 class RenderCache:
-    def __init__(self, root: str|Path = DEFAULT_DIR):
+    def __init__(self, root: str | Path = DEFAULT_DIR):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 

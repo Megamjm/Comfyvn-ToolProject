@@ -10,9 +10,11 @@ import time
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi import Depends, HTTPException, Request
+
 try:  # pragma: no cover - optional dependency
     from passlib.hash import bcrypt
 except Exception:  # pragma: no cover - lightweight fallback
+
     class _FallbackBcrypt:
         @staticmethod
         def hash(value: str) -> str:
@@ -21,15 +23,8 @@ except Exception:  # pragma: no cover - lightweight fallback
     bcrypt = _FallbackBcrypt()  # type: ignore
 from sqlalchemy.orm import Session
 
-from comfyvn.server.core.db import (
-    ApiTokenRow,
-    MembershipRow,
-    OrgRow,
-    UserRow,
-    get_db,
-    init_db,
-    is_enabled,
-)
+from comfyvn.server.core.db import (ApiTokenRow, MembershipRow, OrgRow,
+                                    UserRow, get_db, init_db, is_enabled)
 
 # Role -> scopes mapping used for coarse-grained authorisation.
 ROLE_SCOPES: Dict[str, List[str]] = {
@@ -107,7 +102,8 @@ def require_scope(required: List[str] | str, cost: int = 1):
         token = db.query(ApiTokenRow).filter_by(hash=token_hash, revoked=0).first()
 
         try:
-            from comfyvn.server.core.ratelimit import enforce as _rl_enforce  # type: ignore
+            from comfyvn.server.core.ratelimit import \
+                enforce as _rl_enforce  # type: ignore
 
             if token:
                 _rl_enforce(db, token, cost=cost)
@@ -140,6 +136,7 @@ def require_scope(required: List[str] | str, cost: int = 1):
 
 
 # Helper for auth API
+
 
 def init_first_admin(db: Session) -> Optional[Dict[str, Any]]:
     init_db()

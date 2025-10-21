@@ -7,11 +7,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from comfyvn.bridge.comfy import ComfyBridgeError
-from comfyvn.core.comfyui_audio import (
-    ComfyUIAudioRunner,
-    ComfyUIWorkflowConfig,
-    ComfyUIWorkflowError,
-)
+from comfyvn.core.comfyui_audio import (ComfyUIAudioRunner,
+                                        ComfyUIWorkflowConfig,
+                                        ComfyUIWorkflowError)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +68,9 @@ class TTSBridge:
         if not ready:
             raise ComfyBridgeError(reason or "ComfyUI voice workflow unavailable")
 
-        context = self._build_context(clip, character=character, scene=scene, extra=extra_context)
+        context = self._build_context(
+            clip, character=character, scene=scene, extra=extra_context
+        )
         LOGGER.debug(
             "Submitting TTS clip %s (%s) to ComfyUI via %s",
             clip.get("id"),
@@ -116,13 +116,18 @@ class TTSBridge:
             "text": clip.get("text"),
             "lang": clip.get("lang") or character.get("voice", {}).get("lang") or "en",
             "engine": clip.get("engine") or self._select_engine(clip),
-            "speaker": clip.get("speaker") or character.get("display_name") or character.get("name"),
+            "speaker": clip.get("speaker")
+            or character.get("display_name")
+            or character.get("name"),
             "character_id": character.get("id"),
             "scene_id": scene.get("id"),
-            "rvc_model": clip.get("post", {}).get("rvc_model") or character.get("voice", {}).get("rvc_model"),
+            "rvc_model": clip.get("post", {}).get("rvc_model")
+            or character.get("voice", {}).get("rvc_model"),
             "rvc_mix": clip.get("post", {}).get("mix"),
             "target_ms": clip.get("timing", {}).get("target_ms"),
-            "voice_refs": clip.get("ref_audio") or character.get("voice", {}).get("voice_refs") or [],
+            "voice_refs": clip.get("ref_audio")
+            or character.get("voice", {}).get("voice_refs")
+            or [],
             "style_tags": character.get("style", {}).get("tags") or [],
             "seed": clip.get("seed"),
         }
@@ -155,4 +160,3 @@ class TTSBridge:
 
 
 __all__ = ["TTSBridge", "TTSBridgeConfig", "TTSBridgeResult"]
-

@@ -1,14 +1,19 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/cache_manager.py
 # 🧩 Cache Manager – Persistent Asset Caching + TTL Cleanup (Patch P)
 # ComfyVN Architect | Server Core Integration Sync
 # [⚙️ 3. Server Core Production Chat]
 
-import os, json, time
+import json
+import os
+import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from comfyvn.config.runtime_paths import cache_dir
 
 
@@ -16,7 +21,9 @@ class CacheManager:
     """Caches sprites and scene data for reuse and performance."""
 
     def __init__(
-        self, cache_path: str | os.PathLike[str] | None = None, index_file: str = "cache_index.json"
+        self,
+        cache_path: str | os.PathLike[str] | None = None,
+        index_file: str = "cache_index.json",
     ):
         base = cache_dir("sprites") if cache_path is None else Path(cache_path)
         self.cache_path = os.path.abspath(str(base))

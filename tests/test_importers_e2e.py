@@ -13,7 +13,6 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-
 # Provide a minimal PySide6 stub so dynamic router imports do not fail in tests.
 if "PySide6" not in sys.modules:
     pyside6 = types.ModuleType("PySide6")
@@ -39,8 +38,13 @@ def _make_demo_package(path: Path) -> Path:
     pkg = path / "demo.cvnpack"
     with zipfile.ZipFile(pkg, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", json.dumps({"name": "demo", "licenses": []}))
-        z.writestr("scenes/intro.json", json.dumps({"id": "intro", "title": "Intro", "nodes": []}))
-        z.writestr("characters/alice.json", json.dumps({"id": "alice", "name": "Alice"}))
+        z.writestr(
+            "scenes/intro.json",
+            json.dumps({"id": "intro", "title": "Intro", "nodes": []}),
+        )
+        z.writestr(
+            "characters/alice.json", json.dumps({"id": "alice", "name": "Alice"})
+        )
         z.writestr("assets/readme.txt", b"hello")
     return pkg
 

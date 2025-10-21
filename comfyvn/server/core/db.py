@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import os
 import time
@@ -9,11 +10,15 @@ from sqlalchemy import Boolean, Float, Integer, String, Text, create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-DB_URL = os.getenv("DB_URL", "")  # e.g., postgresql+psycopg2://user:pass@host/db or sqlite:///./data/app.db
-ECHO = bool(int(os.getenv("DB_ECHO","0")))
+DB_URL = os.getenv(
+    "DB_URL", ""
+)  # e.g., postgresql+psycopg2://user:pass@host/db or sqlite:///./data/app.db
+ECHO = bool(int(os.getenv("DB_ECHO", "0")))
+
 
 class Base(DeclarativeBase):
     pass
+
 
 class SceneRow(Base):
     __tablename__ = "scenes"
@@ -24,6 +29,7 @@ class SceneRow(Base):
     created: Mapped[float] = mapped_column(Float, default=lambda: time.time())
     updated: Mapped[float] = mapped_column(Float, default=lambda: time.time())
 
+
 class CharacterRow(Base):
     __tablename__ = "characters"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -32,6 +38,7 @@ class CharacterRow(Base):
     tags: Mapped[str] = mapped_column(Text, default="[]")
     created: Mapped[float] = mapped_column(Float, default=lambda: time.time())
     updated: Mapped[float] = mapped_column(Float, default=lambda: time.time())
+
 
 class TokenRow(Base):
     __tablename__ = "tokens"
@@ -43,13 +50,13 @@ class TokenRow(Base):
     created: Mapped[float] = mapped_column(Float, default=lambda: time.time())
 
 
-
 class OrgRow(Base):
     __tablename__ = "orgs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     org_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     created: Mapped[float] = mapped_column(Float, default=lambda: time.time())
+
 
 class UserRow(Base):
     __tablename__ = "users"
@@ -62,12 +69,14 @@ class UserRow(Base):
     created: Mapped[float] = mapped_column(Float, default=lambda: time.time())
     last_login: Mapped[float] = mapped_column(Float, default=0.0)
 
+
 class MembershipRow(Base):
     __tablename__ = "memberships"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(64), index=True)
     org_id: Mapped[str] = mapped_column(String(64), index=True)
     role: Mapped[str] = mapped_column(String(64), default="viewer")
+
 
 class ApiTokenRow(Base):
     __tablename__ = "api_tokens"
@@ -83,6 +92,7 @@ class ApiTokenRow(Base):
     last_used: Mapped[float] = mapped_column(Float, default=0.0)
     revoked: Mapped[int] = mapped_column(Integer, default=0)
 
+
 class ArtifactRow(Base):
     __tablename__ = "artifacts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -96,6 +106,7 @@ class ArtifactRow(Base):
     meta: Mapped[str] = mapped_column(Text, default="{}")
     created: Mapped[float] = mapped_column(Float, default=lambda: time.time())
 
+
 class RunRow(Base):
     __tablename__ = "runs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -106,23 +117,30 @@ class RunRow(Base):
     ok: Mapped[bool] = mapped_column(Boolean, default=False)
     outputs: Mapped[str] = mapped_column(Text, default="{}")
 
+
 _engine = None
 SessionLocal = None
 
+
 def _ensure_engine():
     global _engine, SessionLocal
-    if _engine is not None: return _engine
+    if _engine is not None:
+        return _engine
     url = DB_URL.strip()
     if not url:
         # default to sqlite under data for convenience if DB_URL not set but module used directly
         url = "sqlite:///./data/app.db"
     from sqlalchemy.pool import StaticPool
+
     if url.startswith("sqlite"):
         _engine = create_engine(url, echo=ECHO, future=True)
     else:
         _engine = create_engine(url, echo=ECHO, future=True, pool_pre_ping=True)
-    SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
+    SessionLocal = sessionmaker(
+        bind=_engine, autoflush=False, autocommit=False, future=True
+    )
     return _engine
+
 
 def init_db() -> bool:
     try:
@@ -134,23 +152,32 @@ def init_db() -> bool:
     except Exception:
         return False
 
+
 def get_db() -> Generator:
-    if SessionLocal is None: _ensure_engine()
+    if SessionLocal is None:
+        _ensure_engine()
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
+
 # --- helpers ---
 def is_enabled() -> bool:
     return bool(DB_URL.strip())
 
+
 def as_json_str(obj: Any) -> str:
     import json as _json
+
     return _json.dumps(obj, ensure_ascii=False)
+
 
 def from_json_str(s: str) -> Any:
     import json as _json
-    try: return _json.loads(s or "{}")
-    except Exception: return {}
+
+    try:
+        return _json.loads(s or "{}")
+    except Exception:
+        return {}

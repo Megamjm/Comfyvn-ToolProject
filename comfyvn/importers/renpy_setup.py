@@ -36,7 +36,11 @@ def discover_latest_version(client: httpx.Client) -> str:
     try:
         response = client.get(REN_PY_BASE_URL, timeout=_TIMEOUT)
     except Exception as exc:
-        LOGGER.warning("Failed to fetch Ren'Py release list (%s); falling back to %s", exc, REN_PY_DEFAULT_VERSION)
+        LOGGER.warning(
+            "Failed to fetch Ren'Py release list (%s); falling back to %s",
+            exc,
+            REN_PY_DEFAULT_VERSION,
+        )
         return REN_PY_DEFAULT_VERSION
 
     if response.status_code >= 400:
@@ -49,7 +53,10 @@ def discover_latest_version(client: httpx.Client) -> str:
 
     versions = _parse_versions(response.text or "")
     if not versions:
-        LOGGER.warning("Ren'Py release index yielded no versions; falling back to %s", REN_PY_DEFAULT_VERSION)
+        LOGGER.warning(
+            "Ren'Py release index yielded no versions; falling back to %s",
+            REN_PY_DEFAULT_VERSION,
+        )
         return REN_PY_DEFAULT_VERSION
 
     return versions[-1]
@@ -88,7 +95,9 @@ def _download_archive(version: str, client: httpx.Client, *, tmp_dir: Path) -> P
         raise RuntimeError(
             f"Unable to download Ren'Py SDK {version}; attempts: {', '.join(errors)}"
         )
-    raise RuntimeError(f"Unable to download Ren'Py SDK {version}; no candidate archives succeeded.")
+    raise RuntimeError(
+        f"Unable to download Ren'Py SDK {version}; no candidate archives succeeded."
+    )
 
 
 def _locate_install_root(path: Path) -> Path:
@@ -217,10 +226,14 @@ def ensure_renpy_sdk(
             archive_path = _download_archive(resolved_version, client, tmp_dir=tmp_path)
             installed_dir = _extract_archive(archive_path, target_dir)
 
-        _write_metadata(target_dir, version=resolved_version, archive_name=archive_path.name)
+        _write_metadata(
+            target_dir, version=resolved_version, archive_name=archive_path.name
+        )
         _ensure_exec_bits(installed_dir)
         executable = get_renpy_executable(installed_dir)
-        LOGGER.info("Ren'Py SDK ready at %s (version %s)", installed_dir, resolved_version)
+        LOGGER.info(
+            "Ren'Py SDK ready at %s (version %s)", installed_dir, resolved_version
+        )
         return installed_dir
     finally:
         if created_client:

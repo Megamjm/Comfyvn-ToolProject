@@ -30,7 +30,13 @@ class SceneRegistry(BaseRegistry):
         )
         return dict(row) if row else None
 
-    def upsert_scene(self, title: str, body: str, meta: Dict[str, Any], scene_id: Optional[int] = None) -> int:
+    def upsert_scene(
+        self,
+        title: str,
+        body: str,
+        meta: Dict[str, Any],
+        scene_id: Optional[int] = None,
+    ) -> int:
         """Insert or update a scene; returns the database ID."""
         meta_json = self.dumps(meta or {})
         payload = (self.project_id, title, body, meta_json)

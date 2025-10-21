@@ -1,14 +1,17 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/server/routes/st_bridge.py
 # 🌉 SillyTavern → ComfyVN Bridge Importer
 # [🌍 World Lore Production Chat | v1.0.3 Stable Panel Integration]
 
 from fastapi import APIRouter, Request
-from comfyvn.core.world_loader import WorldLoader
+
 from comfyvn.assets.persona_manager import PersonaManager
 from comfyvn.assets.playground_manager import PlaygroundManager
+from comfyvn.core.world_loader import WorldLoader
 
 router = APIRouter(prefix="/st", tags=["SillyTavern Bridge"])
 
@@ -33,7 +36,8 @@ async def import_from_st(request: Request):
     elif dtype == "characters":
         # Optional: write to /data/characters/
         path = "./data/characters"
-        import os, json
+        import json
+        import os
 
         os.makedirs(path, exist_ok=True)
         for cname, cdata in data.items():

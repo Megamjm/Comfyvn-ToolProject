@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from comfyvn.config.runtime_paths import settings_file
-from comfyvn.core.provider_profiles import CURATED_PROVIDER_PROFILES, ProviderProfile
+from comfyvn.core.provider_profiles import (CURATED_PROVIDER_PROFILES,
+                                            ProviderProfile)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -148,7 +149,9 @@ class ComputeProviderRegistry:
                     "name": template.name if template else "Local GPU",
                     "kind": template.kind if template else "local",
                     "service": template.service if template else "comfyui",
-                    "base_url": template.base_url if template else "http://127.0.0.1:8188",
+                    "base_url": (
+                        template.base_url if template else "http://127.0.0.1:8188"
+                    ),
                     "active": True,
                     "priority": 0,
                     "meta": meta,
@@ -263,7 +266,8 @@ class ComputeProviderRegistry:
                 priority = payload.get("priority")
                 if priority is None:
                     priorities = [
-                        row.get("priority", 0) for row in self._data.get("providers", [])
+                        row.get("priority", 0)
+                        for row in self._data.get("providers", [])
                     ]
                     priority = (max(priorities) + 10) if priorities else 10
                 entry = {
@@ -389,13 +393,15 @@ class ComputeProviderRegistry:
                 provider_id = entry.get("id")
                 base_url = entry.get("base_url")
                 if not provider_id or not base_url:
-                    LOGGER.debug("Skipping provider import missing id/base_url: %s", entry)
+                    LOGGER.debug(
+                        "Skipping provider import missing id/base_url: %s", entry
+                    )
                     continue
-                if (
-                    not overwrite
-                    and self._find_index_locked(provider_id) is not None
-                ):
-                    LOGGER.debug("Skipping provider '%s' (exists and overwrite disabled)", provider_id)
+                if not overwrite and self._find_index_locked(provider_id) is not None:
+                    LOGGER.debug(
+                        "Skipping provider '%s' (exists and overwrite disabled)",
+                        provider_id,
+                    )
                     continue
 
                 payload = {
@@ -461,7 +467,9 @@ class ComputeProviderRegistry:
             self._save_locked()
             return self.list()
 
-    def record_health(self, provider_id: str, status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def record_health(
+        self, provider_id: str, status: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         with self._lock:
             idx = self._find_index_locked(provider_id)
             if idx is None:

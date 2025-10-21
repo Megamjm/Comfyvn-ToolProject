@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/integrations/st", tags=["Integrations"])
@@ -21,4 +22,3 @@ async def st_bridge_health() -> dict[str, object]:
         details.update({"module": "available", "has_main": hasattr(module, "main")})
 
     return {"status": status, "details": details}
-

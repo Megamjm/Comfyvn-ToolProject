@@ -36,7 +36,9 @@ class ImportRegistry(BaseRegistry):
         LOGGER.debug("Recorded import %s (%s)", import_id, kind)
         return int(import_id)
 
-    def mark_processed(self, import_id: int, *, meta: Optional[Dict[str, Any]] = None) -> None:
+    def mark_processed(
+        self, import_id: int, *, meta: Optional[Dict[str, Any]] = None
+    ) -> None:
         fields = ["processed = 1"]
         params: list[Any] = []
         if meta is not None:

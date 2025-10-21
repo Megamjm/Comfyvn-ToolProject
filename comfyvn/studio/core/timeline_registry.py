@@ -64,7 +64,9 @@ class TimelineRegistry(BaseRegistry):
             "WHERE project_id = ? AND id = ?"
         )
         with self.connection() as conn:
-            conn.execute(sql, (name, order_json, meta_json, self.project_id, timeline_id))
+            conn.execute(
+                sql, (name, order_json, meta_json, self.project_id, timeline_id)
+            )
         return timeline_id
 
     def delete_timeline(self, timeline_id: int) -> None:

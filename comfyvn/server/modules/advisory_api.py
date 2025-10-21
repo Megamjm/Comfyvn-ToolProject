@@ -36,7 +36,9 @@ def scan(payload: AdvisoryScanRequest = Body(...)) -> AdvisoryScanResponse:
         payload.license_scan,
     )
     if not payload.text.strip():
-        LOGGER.warning("Advisory scan rejected: empty text target=%s", payload.target_id)
+        LOGGER.warning(
+            "Advisory scan rejected: empty text target=%s", payload.target_id
+        )
         raise HTTPException(status_code=400, detail="text must not be empty")
 
     issues = scan_text(

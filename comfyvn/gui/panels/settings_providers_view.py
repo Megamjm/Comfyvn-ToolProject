@@ -1,8 +1,12 @@
+import json
+
 from PySide6.QtGui import QAction
 # comfyvn/gui/panels/settings_providers_view.py
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QTextEdit, QHBoxLayout, QPushButton, QMessageBox
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QPushButton,
+                               QTextEdit, QVBoxLayout, QWidget)
+
 from comfyvn.core.settings_manager import SettingsManager
-import json
+
 
 class SettingsProvidersView(QWidget):
     # Plain JSON editor for provider configs. Validate/Apply/Revert supported.
@@ -11,13 +15,18 @@ class SettingsProvidersView(QWidget):
         self.sm = SettingsManager()
         v = QVBoxLayout(self)
         v.addWidget(QLabel("Remote GPU & Provider Settings (JSON)"))
-        self.edit = QTextEdit(); v.addWidget(self.edit, 1)
+        self.edit = QTextEdit()
+        v.addWidget(self.edit, 1)
 
-        btns = QHBoxLayout(); v.addLayout(btns)
+        btns = QHBoxLayout()
+        v.addLayout(btns)
         self.btn_validate = QPushButton("Validate JSON")
-        self.btn_load     = QPushButton("Revert")
-        self.btn_save     = QPushButton("Apply")
-        btns.addStretch(1); btns.addWidget(self.btn_load); btns.addWidget(self.btn_validate); btns.addWidget(self.btn_save)
+        self.btn_load = QPushButton("Revert")
+        self.btn_save = QPushButton("Apply")
+        btns.addStretch(1)
+        btns.addWidget(self.btn_load)
+        btns.addWidget(self.btn_validate)
+        btns.addWidget(self.btn_save)
 
         self.btn_validate.clicked.connect(self._validate)
         self.btn_save.clicked.connect(self.apply)
@@ -41,7 +50,9 @@ class SettingsProvidersView(QWidget):
 
     def revert(self):
         cfg = self.sm.load()
-        txt = cfg.get("providers_json", "{\n  \"priority_order\": [\"local\"],\n  \"providers\": {}\n}")
+        txt = cfg.get(
+            "providers_json", '{\n  "priority_order": ["local"],\n  "providers": {}\n}'
+        )
         if not isinstance(txt, str):
             try:
                 txt = json.dumps(txt, indent=2)

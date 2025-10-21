@@ -1,7 +1,10 @@
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 # comfyvn/gui/panels/settings_hub_view.py
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QListWidget, QStackedWidget, QListWidgetItem, QVBoxLayout, QFrame, QPushButton
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QListWidget,
+                               QListWidgetItem, QPushButton, QStackedWidget,
+                               QVBoxLayout, QWidget)
+
 
 class SettingsHub(QWidget):
     # Unified settings hub with section list left, panels right, footer with Apply/Revert.
@@ -13,7 +16,7 @@ class SettingsHub(QWidget):
         self.sections = sections
 
         root = QHBoxLayout(self)
-        root.setContentsMargins(8,8,8,8)
+        root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
         self.list = QListWidget(self)
@@ -25,9 +28,10 @@ class SettingsHub(QWidget):
         right.addWidget(self.stack, 1)
 
         footer = QHBoxLayout()
-        footer.setContentsMargins(0,0,0,0)
+        footer.setContentsMargins(0, 0, 0, 0)
         footer.setSpacing(8)
-        footer_frame = QFrame(); footer_frame.setLayout(footer)
+        footer_frame = QFrame()
+        footer_frame.setLayout(footer)
         self.btn_apply = QPushButton("Apply")
         self.btn_revert = QPushButton("Revert")
         footer.addStretch(1)

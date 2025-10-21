@@ -1,7 +1,9 @@
+# comfyvn/gui/main_window/extensions_bridge.py  [OptionA-088]
+import importlib
+import pkgutil
+
 from PySide6.QtGui import QAction
 
-# comfyvn/gui/main_window/extensions_bridge.py  [OptionA-088]
-import importlib, pkgutil
 
 class ExtensionsBridgeMixin:
     def _init_extensions_bridge(self):

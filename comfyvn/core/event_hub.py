@@ -1,4 +1,5 @@
 from PySide6.QtGui import QAction
+
 # comfyvn/core/event_hub.py
 # Compat shim # [Main window update chat]
 try:

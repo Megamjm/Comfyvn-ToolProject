@@ -1,9 +1,15 @@
-from PySide6.QtGui import QAction
+import platform
+import shutil
+import socket
+import time
+
 # comfyvn/server/modules/diagnostics_api.py
-import psutil, platform, shutil, time, socket
+import psutil
 from fastapi import APIRouter
+from PySide6.QtGui import QAction
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
+
 
 @router.get("/summary")
 def summary():
@@ -19,9 +25,11 @@ def summary():
         "disk_free_gb": round(disk.free / 1024**3, 2),
     }
 
+
 @router.get("/queues")
 def queue_stats():
     from comfyvn.server.app import app
+
     jm = getattr(app.state, "job_manager", None)
     rm = getattr(app.state, "render_manager", None)
     return {
@@ -34,5 +42,6 @@ def queue_stats():
 @router.get("/registry")
 def registry_snapshot():
     from comfyvn.server.app import app
+
     reg = getattr(app.state, "system_registry", None)
     return {"ok": True, "registry": reg.info() if reg else {}}

@@ -1,9 +1,11 @@
-from PySide6.QtGui import QAction
 import time
 from typing import Callable
+
 from fastapi import Request
+from PySide6.QtGui import QAction
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+
 
 class TokenBucket:
     def __init__(self, capacity: int, refill_per_min: int):
@@ -14,12 +16,15 @@ class TokenBucket:
 
     def allow(self) -> bool:
         now = time.time()
-        self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.refill_rate)
+        self.tokens = min(
+            self.capacity, self.tokens + (now - self.last) * self.refill_rate
+        )
         self.last = now
         if self.tokens >= 1.0:
             self.tokens -= 1.0
             return True
         return False
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, capacity: int = 240, refill_per_min: int = 240):

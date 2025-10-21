@@ -39,7 +39,9 @@ def swap(request: Request, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
             )
         else:
             if not character_id:
-                raise HTTPException(status_code=400, detail="character or persona required")
+                raise HTTPException(
+                    status_code=400, detail="character or persona required"
+                )
             state = manager.set_active_character(character_id, mode=mode, reason=reason)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

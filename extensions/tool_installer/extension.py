@@ -7,7 +7,6 @@ import webbrowser
 from comfyvn.core.menu_runtime_bridge import MenuRegistry
 from comfyvn.core.notifier import notifier
 
-
 DOC_URL = "https://github.com/vn-tools/arc_unpacker"
 
 
@@ -24,4 +23,6 @@ def _open_docs(window) -> None:
     if opened:
         notifier.toast("info", "Opening external tool installer documentation…")
     else:
-        notifier.toast("error", "Unable to launch default browser. Copy the URL manually.")
+        notifier.toast(
+            "error", "Unable to launch default browser. Copy the URL manually."
+        )

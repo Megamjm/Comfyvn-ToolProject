@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QWidget,
-    QToolButton,
-    QVBoxLayout,
-    QFrame,
-)
+from PySide6.QtWidgets import QFrame, QToolButton, QVBoxLayout, QWidget
 
 
 class Drawer(QWidget):
     """Simple collapsible drawer used to group related controls."""
 
-    def __init__(self, title: str, content: QWidget, *, start_open: bool = True, parent: QWidget | None = None):
+    def __init__(
+        self,
+        title: str,
+        content: QWidget,
+        *,
+        start_open: bool = True,
+        parent: QWidget | None = None,
+    ):
         super().__init__(parent)
         self._content = content
 

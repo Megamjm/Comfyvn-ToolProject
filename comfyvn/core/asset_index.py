@@ -1,11 +1,15 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import os, json
+
+import json
+import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
+
 
 class AssetIndex:
-    def __init__(self, root: str|Path = "data/assets"):
+    def __init__(self, root: str | Path = "data/assets"):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.index_file = self.root / "_index.json"

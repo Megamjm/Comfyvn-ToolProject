@@ -5,20 +5,10 @@ import logging
 from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QComboBox,
-    QDockWidget,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QMessageBox,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QComboBox, QDockWidget, QFileDialog,
+                               QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QMessageBox, QPushButton,
+                               QTextEdit, QVBoxLayout, QWidget)
 
 from comfyvn.gui.services.server_bridge import ServerBridge
 
@@ -121,7 +111,9 @@ class PlayerPersonaPanel(QDockWidget):
         self.btn_open_assets.clicked.connect(self._open_asset_manager)
         self.btn_playground.clicked.connect(self._enter_playground_mode)
 
-        self.character_list.currentItemChanged.connect(lambda *_: self._populate_personas())
+        self.character_list.currentItemChanged.connect(
+            lambda *_: self._populate_personas()
+        )
         self.persona_list.currentItemChanged.connect(self._update_details)
 
         self._refresh_roster()
@@ -131,17 +123,25 @@ class PlayerPersonaPanel(QDockWidget):
     # ------------------------------------------------------------------
     def _extract_payload(self, result: Any, context: str) -> Optional[Dict[str, Any]]:
         if not isinstance(result, dict) or not result.get("ok"):
-            error = (result or {}).get("error") if isinstance(result, dict) else "unknown error"
+            error = (
+                (result or {}).get("error")
+                if isinstance(result, dict)
+                else "unknown error"
+            )
             QMessageBox.warning(self, context.capitalize(), f"Request failed: {error}")
             return None
         payload = result.get("data")
         if not isinstance(payload, dict):
-            QMessageBox.warning(self, context.capitalize(), "Unexpected server response format.")
+            QMessageBox.warning(
+                self, context.capitalize(), "Unexpected server response format."
+            )
             return None
         return payload
 
     def _refresh_roster(self) -> None:
-        payload = self._extract_payload(self.bridge.get_json("/player/roster", timeout=8.0, default=None), "roster")
+        payload = self._extract_payload(
+            self.bridge.get_json("/player/roster", timeout=8.0, default=None), "roster"
+        )
         if payload is None:
             return
         self._roster = {
@@ -155,7 +155,10 @@ class PlayerPersonaPanel(QDockWidget):
         self._update_details()
 
     def _reload_state(self) -> None:
-        payload = self._extract_payload(self.bridge.post_json("/player/refresh", {}, timeout=8.0, default=None), "reload")
+        payload = self._extract_payload(
+            self.bridge.post_json("/player/refresh", {}, timeout=8.0, default=None),
+            "reload",
+        )
         if payload is None:
             return
         self._roster = {
@@ -198,7 +201,10 @@ class PlayerPersonaPanel(QDockWidget):
             persona_id = persona.get("id") or persona.get("name")
             if not persona_id:
                 continue
-            if selected_character and persona.get("character_id") not in {None, selected_character}:
+            if selected_character and persona.get("character_id") not in {
+                None,
+                selected_character,
+            }:
                 continue
             label = persona.get("display_name") or persona.get("name") or persona_id
             if persona_id == active_persona:
@@ -229,7 +235,9 @@ class PlayerPersonaPanel(QDockWidget):
             self.details.clear()
             return
         persona = item.data(Qt.UserRole + 1) or {}
-        detail_level = persona.get("detail_level") if isinstance(persona, dict) else None
+        detail_level = (
+            persona.get("detail_level") if isinstance(persona, dict) else None
+        )
         if isinstance(detail_level, str):
             idx = self.detail_combo.findData(detail_level.lower())
             if idx != -1:
@@ -260,25 +268,45 @@ class PlayerPersonaPanel(QDockWidget):
         character_id = self._selected_character_id()
         if character_id:
             payload["character"] = character_id
-        if self._extract_payload(self.bridge.post_json("/player/select", payload, timeout=5.0, default=None), "persona activation") is None:
+        if (
+            self._extract_payload(
+                self.bridge.post_json(
+                    "/player/select", payload, timeout=5.0, default=None
+                ),
+                "persona activation",
+            )
+            is None
+        ):
             return
         self._refresh_roster()
 
     def _activate_selected_character(self) -> None:
         character_id = self._selected_character_id()
         if not character_id:
-            QMessageBox.information(self, "Character", "Select a character to activate.")
+            QMessageBox.information(
+                self, "Character", "Select a character to activate."
+            )
             return
         payload = {
             "character": character_id,
             "detail_level": self.detail_combo.currentData(),
         }
-        if self._extract_payload(self.bridge.post_json("/player/select", payload, timeout=5.0, default=None), "character activation") is None:
+        if (
+            self._extract_payload(
+                self.bridge.post_json(
+                    "/player/select", payload, timeout=5.0, default=None
+                ),
+                "character activation",
+            )
+            is None
+        ):
             return
         self._refresh_roster()
 
     def _import_character(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select Character JSON", "", "JSON Files (*.json);;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Character JSON", "", "JSON Files (*.json);;All Files (*)"
+        )
         if not path:
             return
         try:
@@ -289,7 +317,15 @@ class PlayerPersonaPanel(QDockWidget):
             return
 
         body = {"character": payload, "auto_select": True}
-        if self._extract_payload(self.bridge.post_json("/player/import", body, timeout=10.0, default=None), "import") is None:
+        if (
+            self._extract_payload(
+                self.bridge.post_json(
+                    "/player/import", body, timeout=10.0, default=None
+                ),
+                "import",
+            )
+            is None
+        ):
             return
         QMessageBox.information(self, "Import", "Character imported successfully.")
         self._refresh_roster()
@@ -304,7 +340,12 @@ class PlayerPersonaPanel(QDockWidget):
             "detail_level": self.detail_combo.currentData(),
             "export": True,
         }
-        data = self._extract_payload(self.bridge.post_json("/player/process", payload, timeout=10.0, default=None), "process")
+        data = self._extract_payload(
+            self.bridge.post_json(
+                "/player/process", payload, timeout=10.0, default=None
+            ),
+            "process",
+        )
         if data is None:
             return
         try:
@@ -324,15 +365,28 @@ class PlayerPersonaPanel(QDockWidget):
             self._open_asset_cb()
 
     def _enter_playground_mode(self) -> None:
-        state = self._extract_payload(self.bridge.get_json("/player/state", timeout=5.0, default=None), "state")
+        state = self._extract_payload(
+            self.bridge.get_json("/player/state", timeout=5.0, default=None), "state"
+        )
         persona_id = state.get("persona_id") if state else None
-        payload: Dict[str, Any] = {"mode": "playground", "detail_level": self.detail_combo.currentData()}
+        payload: Dict[str, Any] = {
+            "mode": "playground",
+            "detail_level": self.detail_combo.currentData(),
+        }
         selected_persona = self._selected_persona_id()
         if selected_persona:
             payload["persona"] = selected_persona
         elif persona_id:
             payload["persona"] = persona_id
-        if self._extract_payload(self.bridge.post_json("/player/select", payload, timeout=5.0, default=None), "playground mode") is None:
+        if (
+            self._extract_payload(
+                self.bridge.post_json(
+                    "/player/select", payload, timeout=5.0, default=None
+                ),
+                "playground mode",
+            )
+            is None
+        ):
             return
         if callable(self._open_playground_cb):
             self._open_playground_cb()
@@ -340,4 +394,3 @@ class PlayerPersonaPanel(QDockWidget):
 
 
 __all__ = ["PlayerPersonaPanel"]
-

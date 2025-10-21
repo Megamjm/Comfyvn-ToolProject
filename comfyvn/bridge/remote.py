@@ -75,7 +75,9 @@ class RemoteBridge:
         else:
             remote_cmd = " ".join(shlex.quote(part) for part in command)
         args = self._build_ssh_args([remote_cmd])
-        LOGGER.debug("RemoteBridge executing: %s", " ".join(shlex.quote(a) for a in args))
+        LOGGER.debug(
+            "RemoteBridge executing: %s", " ".join(shlex.quote(a) for a in args)
+        )
         proc = subprocess.run(
             args,
             stdout=subprocess.PIPE,
@@ -148,16 +150,24 @@ class RemoteBridge:
         ok = True
 
         for command, parser in (
-            ("nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader", self._parse_gpu),
+            (
+                "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader",
+                self._parse_gpu,
+            ),
             ("ffmpeg -version", self._parse_ffmpeg),
-            ("python3 -c \"import torch, json; print(json.dumps({'cuda': torch.cuda.is_available(), 'version': torch.__version__}))\"", self._parse_torch),
+            (
+                "python3 -c \"import torch, json; print(json.dumps({'cuda': torch.cuda.is_available(), 'version': torch.__version__}))\"",
+                self._parse_torch,
+            ),
         ):
             try:
                 proc = self.run(command, check=False, timeout=20.0)
                 diagnostics.update(parser(proc))
                 if proc.returncode != 0:
                     ok = False
-            except Exception as exc:  # pragma: no cover - remote connectivity issues are environment-specific
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - remote connectivity issues are environment-specific
                 LOGGER.warning("Remote capability check failed (%s): %s", command, exc)
                 ok = False
 
@@ -213,4 +223,3 @@ class RemoteBridge:
 
 
 __all__ = ["RemoteBridge", "RemoteCapabilityReport"]
-

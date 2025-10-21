@@ -4,23 +4,10 @@ import logging
 from typing import Optional
 
 import requests
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTableWidget,
-    QTableWidgetItem,
-    QPushButton,
-    QLabel,
-    QComboBox,
-    QCheckBox,
-    QInputDialog,
-    QMessageBox,
-    QLineEdit,
-    QGroupBox,
-    QFormLayout,
-)
-
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox,
+                               QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+                               QMessageBox, QPushButton, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +33,9 @@ class AdvisoryPanel(QWidget):
         controls.addStretch(1)
 
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["ID", "Target", "Severity", "Message", "Resolved"])
+        self.table.setHorizontalHeaderLabels(
+            ["ID", "Target", "Severity", "Message", "Resolved"]
+        )
         self.table.horizontalHeader().setStretchLastSection(True)
 
         self.status_label = QLabel("Advisory scans", self)
@@ -56,7 +45,9 @@ class AdvisoryPanel(QWidget):
         self.policy_status_label = QLabel("Policy status unknown", self)
         self.policy_status_label.setWordWrap(True)
 
-        self.override_checkbox = QCheckBox("Request override when evaluating exports", self)
+        self.override_checkbox = QCheckBox(
+            "Request override when evaluating exports", self
+        )
 
         ack_button = QPushButton("Acknowledge Legal Terms…", self)
         ack_button.clicked.connect(self._acknowledge)
@@ -82,7 +73,9 @@ class AdvisoryPanel(QWidget):
         self.filter_mode_box.currentTextChanged.connect(self._set_filter_mode)
 
         self.preview_tags_input = QLineEdit(self)
-        self.preview_tags_input.setPlaceholderText("Comma-separated tags (e.g. nsfw,violence)")
+        self.preview_tags_input.setPlaceholderText(
+            "Comma-separated tags (e.g. nsfw,violence)"
+        )
 
         self.preview_nsfw_checkbox = QCheckBox("Mark sample as NSFW", self)
 
@@ -122,10 +115,14 @@ class AdvisoryPanel(QWidget):
         if resolved is not None:
             params["resolved"] = "true" if resolved else "false"
         try:
-            resp = requests.get(self.base + "/api/advisory/logs", params=params, timeout=3)
+            resp = requests.get(
+                self.base + "/api/advisory/logs", params=params, timeout=3
+            )
             if resp.status_code < 400:
                 return resp.json()
-            LOGGER.warning("Advisory logs request failed: %s %s", resp.status_code, resp.text)
+            LOGGER.warning(
+                "Advisory logs request failed: %s %s", resp.status_code, resp.text
+            )
         except Exception as exc:
             LOGGER.error("Advisory logs request error: %s", exc)
         return {}
@@ -146,7 +143,9 @@ class AdvisoryPanel(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(item.get("target_id", "")))
             self.table.setItem(row, 2, QTableWidgetItem(item.get("severity", "")))
             self.table.setItem(row, 3, QTableWidgetItem(item.get("message", "")))
-            self.table.setItem(row, 4, QTableWidgetItem(str(item.get("resolved", False))))
+            self.table.setItem(
+                row, 4, QTableWidgetItem(str(item.get("resolved", False)))
+            )
 
         self.status_label.setText(f"Advisory entries: {len(items)}")
         self._load_policy_status()
@@ -161,7 +160,9 @@ class AdvisoryPanel(QWidget):
             return
 
         if resp.status_code >= 400:
-            self.policy_status_label.setText(f"Policy status error: {resp.status_code} {resp.text}")
+            self.policy_status_label.setText(
+                f"Policy status error: {resp.status_code} {resp.text}"
+            )
             LOGGER.warning("Policy status failed: %s %s", resp.status_code, resp.text)
             return
 
@@ -177,10 +178,14 @@ class AdvisoryPanel(QWidget):
         self.policy_status_label.setText(f"{message}\n{details}")
 
     def _acknowledge(self) -> None:
-        user, ok = QInputDialog.getText(self, "Acknowledge Legal Terms", "Enter your name or initials:")
+        user, ok = QInputDialog.getText(
+            self, "Acknowledge Legal Terms", "Enter your name or initials:"
+        )
         if not ok:
             return
-        notes, _ = QInputDialog.getText(self, "Optional Notes", "Add acknowledgement notes (optional):")
+        notes, _ = QInputDialog.getText(
+            self, "Optional Notes", "Add acknowledgement notes (optional):"
+        )
         payload = {"user": user.strip() or "anonymous"}
         if notes.strip():
             payload["notes"] = notes.strip()
@@ -191,8 +196,14 @@ class AdvisoryPanel(QWidget):
             QMessageBox.warning(self, "Policy Gate", f"Acknowledgement failed: {exc}")
             return
         if resp.status_code >= 400:
-            QMessageBox.warning(self, "Policy Gate", f"Acknowledgement error: {resp.status_code} {resp.text}")
-            LOGGER.warning("Policy ack returned error %s: %s", resp.status_code, resp.text)
+            QMessageBox.warning(
+                self,
+                "Policy Gate",
+                f"Acknowledgement error: {resp.status_code} {resp.text}",
+            )
+            LOGGER.warning(
+                "Policy ack returned error %s: %s", resp.status_code, resp.text
+            )
             return
         self._load_policy_status()
         QMessageBox.information(self, "Policy Gate", "Acknowledgement recorded.")
@@ -203,14 +214,20 @@ class AdvisoryPanel(QWidget):
             "override": self.override_checkbox.isChecked(),
         }
         try:
-            resp = requests.post(self.base + "/api/policy/evaluate", json=payload, timeout=4)
+            resp = requests.post(
+                self.base + "/api/policy/evaluate", json=payload, timeout=4
+            )
         except Exception as exc:
             LOGGER.error("Policy evaluate failed: %s", exc)
             QMessageBox.warning(self, "Policy Gate", f"Evaluation failed: {exc}")
             return
         if resp.status_code >= 400:
-            QMessageBox.warning(self, "Policy Gate", f"Evaluation error: {resp.status_code} {resp.text}")
-            LOGGER.warning("Policy evaluate returned error %s: %s", resp.status_code, resp.text)
+            QMessageBox.warning(
+                self, "Policy Gate", f"Evaluation error: {resp.status_code} {resp.text}"
+            )
+            LOGGER.warning(
+                "Policy evaluate returned error %s: %s", resp.status_code, resp.text
+            )
             return
         data = resp.json()
         warnings = data.get("warnings") or []
@@ -224,19 +241,27 @@ class AdvisoryPanel(QWidget):
         if not mode:
             return
         try:
-            resp = requests.post(self.base + "/api/policy/filters", json={"mode": mode}, timeout=4)
+            resp = requests.post(
+                self.base + "/api/policy/filters", json={"mode": mode}, timeout=4
+            )
         except Exception as exc:
             LOGGER.error("Set filter mode failed: %s", exc)
             self.preview_result_label.setText(f"Failed to set mode: {exc}")
             return
         if resp.status_code >= 400:
-            LOGGER.warning("Filter mode change error %s: %s", resp.status_code, resp.text)
-            self.preview_result_label.setText(f"Filter mode error: {resp.status_code} {resp.text}")
+            LOGGER.warning(
+                "Filter mode change error %s: %s", resp.status_code, resp.text
+            )
+            self.preview_result_label.setText(
+                f"Filter mode error: {resp.status_code} {resp.text}"
+            )
             return
         self.preview_result_label.setText(f"Filter mode set to {mode}")
 
     def _preview_filter(self) -> None:
-        tags = [t.strip() for t in self.preview_tags_input.text().split(",") if t.strip()]
+        tags = [
+            t.strip() for t in self.preview_tags_input.text().split(",") if t.strip()
+        ]
         item = {
             "id": "sample",
             "meta": {
@@ -247,14 +272,20 @@ class AdvisoryPanel(QWidget):
             item["meta"]["nsfw"] = True
         payload = {"items": [item], "mode": self.filter_mode_box.currentText()}
         try:
-            resp = requests.post(self.base + "/api/policy/filter-preview", json=payload, timeout=4)
+            resp = requests.post(
+                self.base + "/api/policy/filter-preview", json=payload, timeout=4
+            )
         except Exception as exc:
             LOGGER.error("Filter preview failed: %s", exc)
             self.preview_result_label.setText(f"Filter preview error: {exc}")
             return
         if resp.status_code >= 400:
-            LOGGER.warning("Filter preview returned error %s: %s", resp.status_code, resp.text)
-            self.preview_result_label.setText(f"Filter preview error: {resp.status_code} {resp.text}")
+            LOGGER.warning(
+                "Filter preview returned error %s: %s", resp.status_code, resp.text
+            )
+            self.preview_result_label.setText(
+                f"Filter preview error: {resp.status_code} {resp.text}"
+            )
             return
         data = resp.json()
         warnings = data.get("warnings") or []
@@ -270,7 +301,9 @@ class AdvisoryPanel(QWidget):
             LOGGER.error("Fetch filter mode failed: %s", exc)
             return
         if resp.status_code >= 400:
-            LOGGER.warning("Fetch filter mode error %s: %s", resp.status_code, resp.text)
+            LOGGER.warning(
+                "Fetch filter mode error %s: %s", resp.status_code, resp.text
+            )
             return
         data = resp.json()
         mode = (data.get("mode") or "sfw").lower()

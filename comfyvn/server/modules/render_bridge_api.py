@@ -1,12 +1,16 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
 
-from fastapi import APIRouter, Body
-import time, json
+import json
+import time
 from pathlib import Path
 
+from fastapi import APIRouter, Body
+from PySide6.QtGui import QAction
+
 router = APIRouter()
-RENDERS = Path("data/renders"); RENDERS.mkdir(parents=True, exist_ok=True)
+RENDERS = Path("data/renders")
+RENDERS.mkdir(parents=True, exist_ok=True)
+
 
 @router.post("/render/scene")
 def render_scene(payload: dict = Body(...)):

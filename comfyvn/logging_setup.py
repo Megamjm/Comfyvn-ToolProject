@@ -40,5 +40,7 @@ def init_logging(run_tag: str = "session") -> Tuple[pathlib.Path, str]:
     console_handler.setFormatter(formatter)
     root.addHandler(console_handler)
 
-    logging.getLogger(__name__).info("Logging initialized (run_id=%s, tag=%s)", run_id, run_tag)
+    logging.getLogger(__name__).info(
+        "Logging initialized (run_id=%s, tag=%s)", run_id, run_tag
+    )
     return run_dir, run_id

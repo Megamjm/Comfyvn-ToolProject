@@ -87,7 +87,9 @@ class AWSProvisioner(Provisioner):
 class UnraidProvisioner(Provisioner):
     def deploy(self) -> str:
         LOGGER.info("[Unraid] using local docker runner …")
-        subprocess.Popen(["docker", "run", "-d", "-p", "8001:8001", "comfyvn/server:latest"])
+        subprocess.Popen(
+            ["docker", "run", "-d", "-p", "8001:8001", "comfyvn/server:latest"]
+        )
         endpoint = "http://127.0.0.1:8001"
         self._save_endpoint("Unraid / LAN", endpoint)
         return endpoint

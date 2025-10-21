@@ -3,18 +3,9 @@ from __future__ import annotations
 from typing import Iterable, Mapping
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QProgressBar,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
+                               QListWidget, QListWidgetItem, QProgressBar,
+                               QPushButton, QVBoxLayout, QWidget)
 
 
 class MetricsDashboard(QWidget):
@@ -100,7 +91,9 @@ class MetricsDashboard(QWidget):
         gpu_entries = payload.get("gpus") if isinstance(payload, Mapping) else []
         self._hydrate_gpu_list(gpu_entries)  # type: ignore[arg-type]
 
-    def update_health(self, info: Mapping[str, object] | None, *, fallback_ok: bool = False) -> None:
+    def update_health(
+        self, info: Mapping[str, object] | None, *, fallback_ok: bool = False
+    ) -> None:
         """Update the status badge based on /health response."""
         ok = fallback_ok
         status_text = "Disconnected"
@@ -110,7 +103,9 @@ class MetricsDashboard(QWidget):
             ok = bool(info.get("ok", False))
             data = info.get("data")
             if isinstance(data, Mapping):
-                status_text = str(data.get("status") or data.get("state") or ("OK" if ok else "Issue"))
+                status_text = str(
+                    data.get("status") or data.get("state") or ("OK" if ok else "Issue")
+                )
             elif isinstance(data, str):
                 status_text = data
             elif ok:
@@ -129,7 +124,9 @@ class MetricsDashboard(QWidget):
             self._message_label.hide()
             self._message_label.clear()
             return
-        self._message_label.setText(f"Retrying server start in {delay_seconds:.0f} seconds…")
+        self._message_label.setText(
+            f"Retrying server start in {delay_seconds:.0f} seconds…"
+        )
         self._message_label.show()
 
     def show_message(self, text: str | None) -> None:
@@ -163,7 +160,11 @@ class MetricsDashboard(QWidget):
             mem_used = entry.get("mem_used")
             mem_total = entry.get("mem_total")
             temp = entry.get("temp_c")
-            pieces = [f"GPU {idx}: {name}", f"Util {util}%", self._format_mem(mem_used, mem_total)]
+            pieces = [
+                f"GPU {idx}: {name}",
+                f"Util {util}%",
+                self._format_mem(mem_used, mem_total),
+            ]
             if isinstance(temp, (int, float)):
                 pieces.append(f"{temp}°C")
             item = QListWidgetItem(" • ".join(pieces))
@@ -172,7 +173,11 @@ class MetricsDashboard(QWidget):
 
     @staticmethod
     def _format_mem(used: object, total: object) -> str:
-        if not isinstance(used, (int, float)) or not isinstance(total, (int, float)) or total <= 0:
+        if (
+            not isinstance(used, (int, float))
+            or not isinstance(total, (int, float))
+            or total <= 0
+        ):
             return "Memory n/a"
         return f"Memory {used}/{total} MB"
 

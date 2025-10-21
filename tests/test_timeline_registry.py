@@ -26,7 +26,9 @@ def test_save_and_list_timelines(tmp_path):
 
     timeline_id = registry.save_timeline(
         name="Chapter 1",
-        scene_order=[{"scene_id": "intro", "title": "Intro", "notes": " Establish tone"}],
+        scene_order=[
+            {"scene_id": "intro", "title": "Intro", "notes": " Establish tone"}
+        ],
         meta={"notes": "opening arc"},
     )
 
@@ -40,7 +42,10 @@ def test_save_and_list_timelines(tmp_path):
     # Update timeline and ensure the change persists
     registry.save_timeline(
         name="Chapter 1",
-        scene_order=[{"scene_id": "intro", "title": "Intro", "notes": "start"}, {"scene_id": "scene-2", "title": "Dock", "notes": " Add conflict"}],
+        scene_order=[
+            {"scene_id": "intro", "title": "Intro", "notes": "start"},
+            {"scene_id": "scene-2", "title": "Dock", "notes": " Add conflict"},
+        ],
         meta={"notes": "expanded"},
         timeline_id=timeline_id,
     )

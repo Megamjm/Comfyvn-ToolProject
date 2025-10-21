@@ -28,7 +28,9 @@ class PoseManager:
         self.registry = registry or AssetRegistry(assets_root=assets_root)
         self.assets_root = self.registry.ASSETS_ROOT.resolve()
         default_dir = self.assets_root / "poses"
-        self.pose_root = Path(poses_dir).expanduser().resolve() if poses_dir else default_dir
+        self.pose_root = (
+            Path(poses_dir).expanduser().resolve() if poses_dir else default_dir
+        )
         self.pose_root.mkdir(parents=True, exist_ok=True)
         if not self._is_within_assets(self.pose_root):
             LOGGER.warning(
@@ -66,7 +68,11 @@ class PoseManager:
                 "id": pose_id,
                 "uid": asset.get("uid"),
                 "path": str(pose_path),
-                "sidecar": str((self.assets_root / sidecar_path).resolve()) if sidecar_path else None,
+                "sidecar": (
+                    str((self.assets_root / sidecar_path).resolve())
+                    if sidecar_path
+                    else None
+                ),
                 "preview": preview or None,
                 "meta": meta,
             }
@@ -125,7 +131,9 @@ class PoseManager:
         payload = dict(data or {})
         payload.setdefault("pose_id", pose_id)
         pose_path.parent.mkdir(parents=True, exist_ok=True)
-        pose_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        pose_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
         meta_payload = dict(metadata or {})
         meta_payload.setdefault("pose_id", pose_id)
@@ -153,7 +161,10 @@ class PoseManager:
         asset = self._find_pose_asset(pose_id)
         removed = False
         if asset and asset.get("uid"):
-            removed = self.registry.remove_asset(asset["uid"], delete_files=delete_asset) or removed
+            removed = (
+                self.registry.remove_asset(asset["uid"], delete_files=delete_asset)
+                or removed
+            )
         pose_path = self._pose_file(pose_id)
         if pose_path.exists():
             pose_path.unlink()

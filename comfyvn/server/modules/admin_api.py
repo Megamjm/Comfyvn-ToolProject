@@ -1,7 +1,11 @@
-from PySide6.QtGui import QAction
+import time
+
+import psutil
 from fastapi import APIRouter
-import psutil, time
+from PySide6.QtGui import QAction
+
 router = APIRouter()
+
 
 @router.get("/status")
 async def status():

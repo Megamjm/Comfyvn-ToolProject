@@ -1,15 +1,22 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/world_loader.py
 # 🌍 World Loader – Clean-State Sync + SillyTavern Integration (Synced v2.3)
 # ComfyVN Architect — Production Standard (2025-10)
 # [⚙️ 3. Server Core Production Chat]
 
-import os, json, hashlib, shutil
+import hashlib
+import json
+import os
+import shutil
 from pathlib import Path
-from comfyvn.integrations.sillytavern_bridge import SillyTavernBridge, SillyTavernBridgeError
+
 from comfyvn.config.runtime_paths import data_dir
+from comfyvn.integrations.sillytavern_bridge import (SillyTavernBridge,
+                                                     SillyTavernBridgeError)
 
 
 class WorldLoader:
@@ -183,7 +190,8 @@ class WorldLoader:
 
 def save_world(self, name: str, data: dict):
     """Save a world JSON file into data/worlds."""
-    import json, os
+    import json
+    import os
 
     os.makedirs(self.data_path, exist_ok=True)
     file_path = os.path.join(self.data_path, f"{name}.json")

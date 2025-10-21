@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QListWidget,
-    QHBoxLayout,
-    QPushButton,
-    QMessageBox,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QMessageBox,
+                               QPushButton, QVBoxLayout, QWidget)
 
 from comfyvn.core.compute_registry import get_provider_registry
 from comfyvn.core.gpu_manager import get_gpu_manager

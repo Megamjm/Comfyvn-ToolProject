@@ -1,5 +1,7 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/scene_compositor.py
 # Alpha-aware stacking of PNG layers for scene composition
@@ -7,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 import os
 from typing import List, Optional
+
 from PIL import Image
 
 

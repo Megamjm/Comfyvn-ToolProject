@@ -1,11 +1,15 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/modules/model_discovery.py
 # Model/Lora discovery + integrity scanning + Safe Mode filter
 # ComfyVN_Architect (Asset Sprite Research Branch)
 
-import os, hashlib, json
+import hashlib
+import json
+import os
 from typing import Dict, List, Optional
 
 DEFAULT_PATHS = {

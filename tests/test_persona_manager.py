@@ -15,7 +15,9 @@ def test_persona_manager_pose(tmp_path):
     pose_dir = tmp_path / "poses"
     pose_dir.mkdir(parents=True)
     pose_path = pose_dir / "hero_pose.json"
-    pose_path.write_text(json.dumps({"pose_id": "hero", "skeleton": {"root": {"x": 0, "y": 0}}}))
+    pose_path.write_text(
+        json.dumps({"pose_id": "hero", "skeleton": {"root": {"x": 0, "y": 0}}})
+    )
 
     manager = PersonaManager(
         data_path=tmp_path / "personas",

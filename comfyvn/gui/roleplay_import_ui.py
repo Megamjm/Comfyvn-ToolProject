@@ -1,28 +1,23 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/roleplay_import_ui.py
 # 🤝 Roleplay Import Panel — Phase 3.5 LLM Sampler
 # [ComfyVN_Architect | Roleplay Import & Collaboration Chat]
 
-import os, json, threading
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
-    QLineEdit,
-    QTextEdit,
-    QFileDialog,
-    QMessageBox,
-    QHBoxLayout,
-    QFormLayout,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
-    QComboBox,
-)
+import json
+import os
+import threading
+
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+                               QMessageBox, QPushButton, QTableWidget,
+                               QTableWidgetItem, QTextEdit, QVBoxLayout,
+                               QWidget)
+
 from comfyvn.gui.services.server_bridge import ServerBridge
 
 

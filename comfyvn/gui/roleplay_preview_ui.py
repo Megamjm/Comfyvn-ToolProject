@@ -1,24 +1,24 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/gui/roleplay_preview_ui.py
 # 🎭 Roleplay Scene Preview Player — Phase 3.7
 # [ComfyVN_Architect | Roleplay Import & Collaboration Chat]
 
-import os, json, threading, time, requests
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
-    QHBoxLayout,
-    QFileDialog,
-    QTextEdit,
-    QMessageBox,
-    QSlider,
-)
-from PySide6.QtGui import QPixmap
+import json
+import os
+import threading
+import time
+
+import requests
 from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox,
+                               QPushButton, QSlider, QTextEdit, QVBoxLayout,
+                               QWidget)
+
 from comfyvn.gui.widgets.progress_overlay import ProgressOverlay
 
 

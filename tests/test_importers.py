@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from comfyvn.importers.renpy import RenpyImporter
-from comfyvn.importers.kirikiri import KiriKiriImporter
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.kirikiri import KiriKiriImporter
+from comfyvn.importers.renpy import RenpyImporter
 
 
 def _write_file(path: Path, content: bytes | str = b"") -> None:
@@ -25,7 +25,9 @@ def test_renpy_detection(tmp_path: Path, monkeypatch):
     fake_sdk.mkdir()
     _write_file(fake_sdk / "renpy.sh", "#!/bin/sh\n")
     monkeypatch.setattr("comfyvn.importers.renpy.ensure_renpy_sdk", lambda: fake_sdk)
-    monkeypatch.setattr("comfyvn.importers.renpy.get_renpy_executable", lambda _: fake_sdk / "renpy.sh")
+    monkeypatch.setattr(
+        "comfyvn.importers.renpy.get_renpy_executable", lambda _: fake_sdk / "renpy.sh"
+    )
 
     importer = RenpyImporter()
     det = importer.detect(tmp_path)

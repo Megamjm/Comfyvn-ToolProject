@@ -14,7 +14,8 @@ try:  # torch is optional at runtime
 except Exception:  # pragma: no cover - optional dependency
     torch = None
 
-from comfyvn.core.compute_registry import ComputeProviderRegistry, get_provider_registry
+from comfyvn.core.compute_registry import (ComputeProviderRegistry,
+                                           get_provider_registry)
 
 LOGGER = logging.getLogger(__name__)
 

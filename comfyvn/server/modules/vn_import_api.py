@@ -11,11 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
-from comfyvn.server.core.external_extractors import extractor_manager
 from comfyvn.server.core import extractor_installer
+from comfyvn.server.core.external_extractors import extractor_manager
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
 from comfyvn.server.modules.auth import require_scope
-
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +37,9 @@ def _coerce_bool(value: Any) -> bool:
     return bool(value)
 
 
-def _execute_import(task_id: str, package_path: str, overwrite: bool, tool: Optional[str]) -> Dict[str, Any]:
+def _execute_import(
+    task_id: str, package_path: str, overwrite: bool, tool: Optional[str]
+) -> Dict[str, Any]:
     logger.info(
         "[VN Import] job=%s starting (overwrite=%s, tool=%s) -> %s",
         task_id,
@@ -46,13 +47,19 @@ def _execute_import(task_id: str, package_path: str, overwrite: bool, tool: Opti
         tool,
         package_path,
     )
-    task_registry.update(task_id, status="running", progress=0.05, message="Preparing import")
+    task_registry.update(
+        task_id, status="running", progress=0.05, message="Preparing import"
+    )
     try:
         summary = import_vn_package(package_path, overwrite=overwrite, tool=tool)
-    except Exception as exc:  # let caller convert to HTTP error, but make sure registry updated first
+    except (
+        Exception
+    ) as exc:  # let caller convert to HTTP error, but make sure registry updated first
         meta = _task_meta(task_id)
         meta["error"] = str(exc)
-        task_registry.update(task_id, status="error", progress=1.0, message=str(exc), meta=meta)
+        task_registry.update(
+            task_id, status="error", progress=1.0, message=str(exc), meta=meta
+        )
         logger.exception("[VN Import] job=%s failed: %s", task_id, exc)
         raise
 
@@ -80,7 +87,9 @@ def _execute_import(task_id: str, package_path: str, overwrite: bool, tool: Opti
     return summary
 
 
-def _spawn_import_job(task_id: str, package_path: str, overwrite: bool, tool: Optional[str]) -> None:
+def _spawn_import_job(
+    task_id: str, package_path: str, overwrite: bool, tool: Optional[str]
+) -> None:
     def _runner() -> None:
         try:
             _execute_import(task_id, package_path, overwrite, tool)
@@ -90,7 +99,9 @@ def _spawn_import_job(task_id: str, package_path: str, overwrite: bool, tool: Op
         except Exception:
             return
 
-    threading.Thread(target=_runner, name=f"VNImportJob-{task_id[:8]}", daemon=True).start()
+    threading.Thread(
+        target=_runner, name=f"VNImportJob-{task_id[:8]}", daemon=True
+    ).start()
 
 
 @router.post("/import")
@@ -153,7 +164,9 @@ async def import_vn(payload: Dict[str, Any]):
 
 
 @router.get("/import/{job_id}")
-async def import_status(job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))):
+async def import_status(
+    job_id: str, _: bool = Depends(require_scope(["content.read"], cost=1))
+):
     task = task_registry.get(job_id)
     if not task:
         raise HTTPException(status_code=404, detail="job not found")
@@ -224,7 +237,9 @@ def _load_history(limit: int = 20) -> List[Dict[str, Any]]:
 
 
 @router.get("/imports/history")
-async def import_history(limit: int = 20, _: bool = Depends(require_scope(["content.read"], cost=1))):
+async def import_history(
+    limit: int = 20, _: bool = Depends(require_scope(["content.read"], cost=1))
+):
     limit = max(1, min(int(limit), 200))
     history = _load_history(limit)
     return {"ok": True, "imports": history}
@@ -247,7 +262,9 @@ async def list_tools(_: bool = Depends(require_scope(["content.read"], cost=1)))
 
 
 @router.post("/tools/register")
-async def register_tool(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))):
+async def register_tool(
+    payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))
+):
     name = (payload.get("name") or "").strip()
     path_value = payload.get("path") or payload.get("binary")
     if not name or not path_value:
@@ -263,19 +280,25 @@ async def register_tool(payload: Dict[str, Any], _: bool = Depends(require_scope
     if not tool_path.exists():
         raise HTTPException(status_code=400, detail="tool path does not exist")
 
-    tool = extractor_manager.register(name, str(tool_path), extensions=extensions, notes=notes, warning=warning)
+    tool = extractor_manager.register(
+        name, str(tool_path), extensions=extensions, notes=notes, warning=warning
+    )
     return {"ok": True, "tool": _tool_to_dict(tool)}
 
 
 @router.delete("/tools/{name}")
-async def remove_tool(name: str, _: bool = Depends(require_scope(["content.write"], cost=5))):
+async def remove_tool(
+    name: str, _: bool = Depends(require_scope(["content.write"], cost=5))
+):
     if not extractor_manager.unregister(name):
         raise HTTPException(status_code=404, detail="tool not found")
     return {"ok": True}
 
 
 @router.post("/tools/install")
-async def install_tool(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))):
+async def install_tool(
+    payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))
+):
     name = (payload.get("name") or "").strip().lower()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")

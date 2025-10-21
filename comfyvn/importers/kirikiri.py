@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +36,11 @@ class KiriKiriImporter:
             confidence += 0.4
         if (root_path / "Config.tjs").exists():
             confidence += 0.2
-        return DetectResult(engine="KiriKiri/KAG", confidence=min(confidence, 0.99), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine="KiriKiri/KAG",
+            confidence=min(confidence, 0.99),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -74,7 +78,9 @@ class KiriKiriImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("KiriKiri normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "KiriKiri normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

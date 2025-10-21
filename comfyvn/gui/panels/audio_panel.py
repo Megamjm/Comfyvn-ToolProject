@@ -7,19 +7,9 @@ from typing import Any, Dict, Optional
 import requests
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QSpinBox,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
+                               QLabel, QLineEdit, QPushButton, QSpinBox,
+                               QTextEdit, QVBoxLayout, QWidget)
 
 from comfyvn.assets.character_manager import CharacterManager
 

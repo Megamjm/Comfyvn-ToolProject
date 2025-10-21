@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from comfyvn.core.advisory_hooks import BundleContext
 from comfyvn.core.advisory_hooks import scan as scan_bundle
-from comfyvn.core.file_importer import FileImporter, ImportSession, log_license_issues
+from comfyvn.core.file_importer import (FileImporter, ImportSession,
+                                        log_license_issues)
 from comfyvn.server.core.translation_pipeline import build_translation_bundle
 
 LOGGER = logging.getLogger(__name__)

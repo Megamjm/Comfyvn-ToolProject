@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +19,9 @@ class UnityVNImporter:
         reasons: list[str] = []
         data_dirs = list(root_path.glob("*_Data"))
         asset_files = list(root_path.rglob("*.assets"))
-        bundle_files = list(root_path.rglob("*.bundle")) + list(root_path.rglob("*.unity3d"))
+        bundle_files = list(root_path.rglob("*.bundle")) + list(
+            root_path.rglob("*.unity3d")
+        )
         if data_dirs:
             reasons.append(f"{len(data_dirs)}x *_Data folders")
         if asset_files:
@@ -31,7 +33,11 @@ class UnityVNImporter:
             confidence += 0.5
         if asset_files or bundle_files:
             confidence += 0.3
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.8), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.8),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -68,7 +74,9 @@ class UnityVNImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("Unity VN normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "Unity VN normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

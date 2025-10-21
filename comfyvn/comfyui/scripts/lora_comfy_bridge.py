@@ -1,14 +1,17 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
 # comfyvn/scripts/lora_comfy_bridge.py
 # 🧬 LoRA ↔ ComfyUI Integration Bridge (v1.0)
 # Chat Source: 🧬 9. LoRA System Production Chat
 
-import os
 import json
+import os
+from typing import Dict, List, Optional
+
 import requests
-from typing import List, Dict, Optional
 
 from comfyvn.assets.lora_manager import LoRAManager
 

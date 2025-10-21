@@ -14,11 +14,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from comfyvn.core.audio_cache import AudioCacheEntry, audio_cache
-from comfyvn.core.comfyui_audio import (
-    ComfyUIAudioRunner,
-    ComfyUIWorkflowConfig,
-    ComfyUIWorkflowError,
-)
+from comfyvn.core.comfyui_audio import (ComfyUIAudioRunner,
+                                        ComfyUIWorkflowConfig,
+                                        ComfyUIWorkflowError)
 from comfyvn.core.settings_manager import SettingsManager
 
 LOGGER = logging.getLogger("comfyvn.audio.pipeline")

@@ -5,18 +5,9 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
-    QHBoxLayout,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
-    QTextEdit,
-    QSizePolicy,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QPushButton,
+                               QSizePolicy, QTableWidget, QTableWidgetItem,
+                               QTextEdit, QVBoxLayout, QWidget)
 
 from comfyvn.core.notifier import notifier
 from comfyvn.gui.services.server_bridge import ServerBridge
@@ -32,7 +23,9 @@ class RoleplayImportView(QWidget):
     error_raised = Signal(str)
     refresh_complete = Signal()
 
-    def __init__(self, server: Optional[ServerBridge] = None, base: Optional[str] = None):
+    def __init__(
+        self, server: Optional[ServerBridge] = None, base: Optional[str] = None
+    ):
         super().__init__()
         self.setWindowTitle("Roleplay Import Jobs")
         self._server = server or ServerBridge(base)
@@ -95,7 +88,9 @@ class RoleplayImportView(QWidget):
         root.addWidget(QLabel("<b>Importer Log</b>"))
         self.log_view = QTextEdit(self)
         self.log_view.setReadOnly(True)
-        self.log_view.setPlaceholderText("Select a job and fetch the log to inspect importer output…")
+        self.log_view.setPlaceholderText(
+            "Select a job and fetch the log to inspect importer output…"
+        )
         self.log_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root.addWidget(self.log_view)
 
@@ -200,7 +195,9 @@ class RoleplayImportView(QWidget):
         self.status_label.setText(f"Fetching log for job {job_id}…")
 
         def worker():
-            result = self._server.get_json(f"/roleplay/imports/{job_id}/log", timeout=5.0)
+            result = self._server.get_json(
+                f"/roleplay/imports/{job_id}/log", timeout=5.0
+            )
             if not isinstance(result, dict):
                 self.error_raised.emit("Invalid log response.")
                 return

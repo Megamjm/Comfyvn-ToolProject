@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +15,7 @@ from comfyvn.config.runtime_paths import data_dir
 from comfyvn.server.app import create_app
 from comfyvn.server.modules.roleplay.roleplay_api import _asset_registry
 from setup.apply_phase06_rebuild import ensure_db, ensure_dirs
+
 # Ensure required folders/tables exist before exercising APIs.
 ensure_dirs()
 ensure_db()
@@ -46,8 +47,12 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert len(scene["nodes"]) == 3
     assert scene["meta"]["participants"] == ["Alice", "Bob", "Narrator"]
     advisories = data["advisory_flags"]
-    assert any((issue.get("detail") or {}).get("field") == "license" for issue in advisories)
-    assert any((issue.get("detail") or {}).get("field") == "safety" for issue in advisories)
+    assert any(
+        (issue.get("detail") or {}).get("field") == "license" for issue in advisories
+    )
+    assert any(
+        (issue.get("detail") or {}).get("field") == "safety" for issue in advisories
+    )
     assert "preview_path" in data
     assert "status" in data
 

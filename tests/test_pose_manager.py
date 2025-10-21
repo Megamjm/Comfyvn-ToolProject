@@ -20,7 +20,9 @@ def test_pose_manager_registers_and_lists_poses(tmp_path):
     manager = PoseManager(poses_dir=pose_dir, registry=registry)
 
     pose_payload = {"pose_id": "hero_stand", "x": 42, "y": -7}
-    result = manager.add_pose("hero_stand", pose_payload, metadata={"origin": "test-suite"})
+    result = manager.add_pose(
+        "hero_stand", pose_payload, metadata={"origin": "test-suite"}
+    )
     assert result["uid"]
     assert result["sidecar"].endswith(".json.asset.json")
 

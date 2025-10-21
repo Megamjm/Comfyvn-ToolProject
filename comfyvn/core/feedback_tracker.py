@@ -1,13 +1,17 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import json, time
+
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from PySide6.QtGui import QAction
 
 DEFAULT_DIR = Path("./data/jobs/feedback")
 
+
 class FeedbackTracker:
-    def __init__(self, root: str|Path = DEFAULT_DIR):
+    def __init__(self, root: str | Path = DEFAULT_DIR):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -20,10 +24,15 @@ class FeedbackTracker:
         with self._file(job_id).open("a", encoding="utf-8") as f:
             f.write(json.dumps(msg, ensure_ascii=False) + "\n")
 
-    def read(self, job_id: str, limit: int|None = None) -> List[Dict[str, Any]]:
+    def read(self, job_id: str, limit: int | None = None) -> List[Dict[str, Any]]:
         p = self._file(job_id)
-        if not p.exists(): return []
-        lines = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
+        if not p.exists():
+            return []
+        lines = [
+            json.loads(x)
+            for x in p.read_text(encoding="utf-8").splitlines()
+            if x.strip()
+        ]
         return lines[-limit:] if limit else lines
 
     def list_jobs(self) -> List[str]:

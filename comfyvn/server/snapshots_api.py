@@ -1,26 +1,38 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import os, tarfile, time
+
+import os
+import tarfile
+import time
 from pathlib import Path
+
 from fastapi import APIRouter, Body, HTTPException
+from PySide6.QtGui import QAction
 
 router = APIRouter(prefix="/snapshot", tags=["Snapshots"])
 
 SNAP_DIR = Path("data/snapshots")
 SNAP_DIR.mkdir(parents=True, exist_ok=True)
 
+
 def _snap_path(name: str) -> Path:
-    safe = "".join(c for c in name if c.isalnum() or c in ("-","_",".")).strip() or "snapshot"
+    safe = (
+        "".join(c for c in name if c.isalnum() or c in ("-", "_", ".")).strip()
+        or "snapshot"
+    )
     return SNAP_DIR / f"{safe}.tar.gz"
+
 
 @router.get("/list")
 def list_snaps():
     items = []
     for p in SNAP_DIR.glob("*.tar.gz"):
         st = p.stat()
-        items.append({"name": p.stem, "file": p.name, "size": st.st_size, "ts": int(st.st_mtime)})
+        items.append(
+            {"name": p.stem, "file": p.name, "size": st.st_size, "ts": int(st.st_mtime)}
+        )
     items.sort(key=lambda x: x["ts"], reverse=True)
     return {"snapshots": items}
+
 
 @router.post("/create")
 def create_snap(name: str = Body(..., embed=True)):
@@ -32,8 +44,11 @@ def create_snap(name: str = Body(..., embed=True)):
                 tf.add(str(d), arcname=str(d))
     return {"ok": True, "name": path.stem, "file": path.name}
 
+
 @router.post("/restore")
-def restore_snap(snap_id: str = Body(..., embed=True), overwrite: bool = Body(False, embed=True)):
+def restore_snap(
+    snap_id: str = Body(..., embed=True), overwrite: bool = Body(False, embed=True)
+):
     path = _snap_path(snap_id)
     if not path.exists():
         raise HTTPException(404, f"snapshot not found: {snap_id}")

@@ -1,5 +1,7 @@
 from PySide6.QtGui import QAction
+
 from comfyvn.core.task_registry import task_registry
+
 
 class ExtensionJobHooks:
     def __init__(self):
@@ -20,5 +22,6 @@ class ExtensionJobHooks:
         except Exception as e:
             task_registry.update(tid, "error")
             return {"ok": False, "error": str(e)}
+
 
 job_hooks = ExtensionJobHooks()

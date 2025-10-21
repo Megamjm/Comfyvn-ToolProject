@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,11 +31,17 @@ class NscripterImporter:
         if archives:
             reasons.append(f"{len(archives)}x NSA/NS2 archives")
             confidence += 0.4
-        media_dir = any((root_path / sub).exists() for sub in ["voice", "bgm", "bgimage", "music"])
+        media_dir = any(
+            (root_path / sub).exists() for sub in ["voice", "bgm", "bgimage", "music"]
+        )
         if media_dir:
             reasons.append("media folders present")
             confidence += 0.1
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.95), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.95),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -72,7 +78,9 @@ class NscripterImporter:
             hooks=hooks or {},
         )
         if result.warnings:
-            LOGGER.warning("NScripter normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "NScripter normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

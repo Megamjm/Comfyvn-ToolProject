@@ -1,9 +1,12 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-from fastapi import APIRouter
+
 import os
 
+from fastapi import APIRouter
+from PySide6.QtGui import QAction
+
 router = APIRouter()
+
 
 @router.get("/devices/list")
 def list_devices():
@@ -11,6 +14,7 @@ def list_devices():
     gpu_count = 0
     try:
         import torch
+
         gpu_count = torch.cuda.device_count()
     except Exception:
         pass

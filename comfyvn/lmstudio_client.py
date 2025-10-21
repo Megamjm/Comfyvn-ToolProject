@@ -45,7 +45,12 @@ def healthcheck(timeout: float = 2.5) -> Dict[str, Any]:
         ok = response.status_code == 200
         data = response.json() if ok else {}
         models = data.get("data", []) if isinstance(data, dict) else []
-        return {"ok": ok, "base": base, "status": response.status_code, "models": models}
+        return {
+            "ok": ok,
+            "base": base,
+            "status": response.status_code,
+            "models": models,
+        }
     except Exception as exc:  # pragma: no cover - network dependent
         return {"ok": False, "base": base, "error": str(exc)}
 
@@ -63,7 +68,9 @@ def sample_chat(
         "stream": False,
     }
     try:
-        response = requests.post(f"{base}/chat/completions", json=payload, timeout=timeout)
+        response = requests.post(
+            f"{base}/chat/completions", json=payload, timeout=timeout
+        )
         data = response.json()
         text = ""
         if isinstance(data, dict):
@@ -71,7 +78,12 @@ def sample_chat(
             if choices:
                 message = choices[0].get("message") or {}
                 text = message.get("content", "")
-        return {"ok": response.status_code == 200, "status": response.status_code, "text": text, "raw": data}
+        return {
+            "ok": response.status_code == 200,
+            "status": response.status_code,
+            "text": text,
+            "raw": data,
+        }
     except Exception as exc:  # pragma: no cover - network dependent
         return {"ok": False, "base": base, "error": str(exc)}
 

@@ -134,7 +134,9 @@ def build_manifest(
             character = record.get("character")
             expression = record.get("expression")
             if character and expression:
-                manifest["by_character"].setdefault(character, {})[expression] = record["relpath"]
+                manifest["by_character"].setdefault(character, {})[expression] = record[
+                    "relpath"
+                ]
         if record.get("category") == "background":
             background = record.get("bg_name")
             if background:
@@ -152,7 +154,9 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="ComfyVN asset manifest builder.")
-    parser.add_argument("--assets", default=ASSETS_ROOT_DEFAULT, help="Assets root folder.")
+    parser.add_argument(
+        "--assets", default=ASSETS_ROOT_DEFAULT, help="Assets root folder."
+    )
     parser.add_argument(
         "--out",
         default=None,

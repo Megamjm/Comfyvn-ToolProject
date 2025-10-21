@@ -1,12 +1,17 @@
-from PySide6.QtGui import QAction
 # comfyvn/gui/utils/script_runner.py
 import logging
-import os, subprocess, threading, shlex
+import os
+import shlex
+import subprocess
+import threading
 from datetime import datetime
 from typing import Callable, List
+
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMessageBox
 
 logger = logging.getLogger(__name__)
+
 
 class ScriptRunner:
     def __init__(self, parent):
@@ -18,12 +23,16 @@ class ScriptRunner:
         if callback not in self._listeners:
             self._listeners.append(callback)
 
-    def run_sequence(self, title: str, cmdlist: list[list[str]], env_overrides: dict | None = None):
+    def run_sequence(
+        self, title: str, cmdlist: list[list[str]], env_overrides: dict | None = None
+    ):
         if self._busy:
             self._msg("Another script sequence is running. Please wait.")
             return
         self._busy = True
-        threading.Thread(target=self._run, args=(title, cmdlist, env_overrides or {}), daemon=True).start()
+        threading.Thread(
+            target=self._run, args=(title, cmdlist, env_overrides or {}), daemon=True
+        ).start()
 
     def _run(self, title, cmds, env_overrides):
         env = os.environ.copy()
@@ -33,7 +42,9 @@ class ScriptRunner:
         for cmd in cmds:
             lines.append("$ " + " ".join(shlex.quote(c) for c in cmd))
             try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, check=False, env=env
+                )
                 if proc.stdout:
                     lines.append(proc.stdout.strip())
                 if proc.stderr:
@@ -54,7 +65,9 @@ class ScriptRunner:
         else:
             logger.warning("Script sequence failed: %s", title)
         try:
-            if hasattr(self.parent, "task_dock") and hasattr(self.parent.task_dock, "append_log"):
+            if hasattr(self.parent, "task_dock") and hasattr(
+                self.parent.task_dock, "append_log"
+            ):
                 self.parent.task_dock.append_log(title, log_text)
         except Exception:
             logger.debug("Unable to append script log to task dock.", exc_info=True)

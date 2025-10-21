@@ -1,12 +1,15 @@
-from PySide6.QtGui import QAction
 import logging
+
+from PySide6.QtGui import QAction
+
 logger = logging.getLogger(__name__)
-# comfyvn/gui/menus/file_menu.py
-from PySide6.QtWidgets import QMenu
-from comfyvn.gui.menus.menu_utils import make_action
 import json
-from PySide6.QtWidgets import QMessageBox
+
+# comfyvn/gui/menus/file_menu.py
+from PySide6.QtWidgets import QMenu, QMessageBox
+
 from comfyvn.config.runtime_paths import recent_projects_file
+from comfyvn.gui.menus.menu_utils import make_action
 
 
 def register_menu(window, menubar):

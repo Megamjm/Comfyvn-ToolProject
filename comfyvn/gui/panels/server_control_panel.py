@@ -1,9 +1,11 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 # comfyvn/gui/panels/server_control_panel.py
 # [ComfyVN Architect | Phase 2.05 | Soft Refresh + Async Bridge hook]
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+
 from comfyvn.gui.services.server_bridge import ServerBridge
+
 
 class ServerControlPanel(QFrame):
     def __init__(self):

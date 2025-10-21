@@ -1,13 +1,16 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-# comfyvn/gui/windows/shortcut_editor_window.py
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QTableWidget, QTableWidgetItem, QMessageBox, QWidget)
+
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor
-from comfyvn.core.shortcut_registry import shortcut_registry, DEFAULTS
+from PySide6.QtGui import QAction, QBrush, QColor
+# comfyvn/gui/windows/shortcut_editor_window.py
+from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QMessageBox,
+                               QPushButton, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
+
 from comfyvn.config.runtime_paths import config_dir
+from comfyvn.core.shortcut_registry import DEFAULTS, shortcut_registry
 from comfyvn.gui.widgets.shortcut_capture import ShortcutCapture
+
 
 class ShortcutEditorWindow(QDialog):
     def __init__(self, parent=None):
@@ -16,8 +19,10 @@ class ShortcutEditorWindow(QDialog):
         self.resize(700, 520)
 
         v = QVBoxLayout(self)
-        info = QLabel("Select a row → press ‘Record’ → press keys → Apply/Save.\n"
-                      "Conflicts are highlighted.")
+        info = QLabel(
+            "Select a row → press ‘Record’ → press keys → Apply/Save.\n"
+            "Conflicts are highlighted."
+        )
         info.setProperty("accent", True)
         v.addWidget(info)
 
@@ -45,7 +50,13 @@ class ShortcutEditorWindow(QDialog):
         self.btn_apply = QPushButton("Apply")
         self.btn_save = QPushButton("Save")
         self.btn_close = QPushButton("Close")
-        for b in (self.btn_reset, self.btn_reload, self.btn_apply, self.btn_save, self.btn_close):
+        for b in (
+            self.btn_reset,
+            self.btn_reload,
+            self.btn_apply,
+            self.btn_save,
+            self.btn_close,
+        ):
             hb.addWidget(b)
         v.addLayout(hb)
 
@@ -72,7 +83,9 @@ class ShortcutEditorWindow(QDialog):
     def _on_assign(self):
         seq = self.capture.sequence()
         if not seq:
-            QMessageBox.information(self, "Shortcuts", "Press ‘Record’ and type a key combo first.")
+            QMessageBox.information(
+                self, "Shortcuts", "Press ‘Record’ and type a key combo first."
+            )
             return
         rows = self.table.selectionModel().selectedRows()
         if not rows:
@@ -98,7 +111,10 @@ class ShortcutEditorWindow(QDialog):
             # Reset button per row
             btn = QPushButton("Reset")
             btn.clicked.connect(lambda _=False, n=name, r=row: self._reset_row(n, r))
-            container = QWidget(); lay = QHBoxLayout(container); lay.setContentsMargins(0,0,0,0); lay.addWidget(btn, alignment=Qt.AlignCenter)
+            container = QWidget()
+            lay = QHBoxLayout(container)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(btn, alignment=Qt.AlignCenter)
             self.table.setCellWidget(row, 2, container)
         self.table.blockSignals(False)
         self._check_conflicts()
@@ -114,7 +130,8 @@ class ShortcutEditorWindow(QDialog):
         seq_map = {}
         for r in range(self.table.rowCount()):
             seq = self.table.item(r, 1).text().strip()
-            if not seq: continue
+            if not seq:
+                continue
             seq_map.setdefault(seq.lower(), []).append(r)
 
         conflict_rows = set()
@@ -157,4 +174,6 @@ class ShortcutEditorWindow(QDialog):
         self.on_apply()
         shortcut_registry.save_to_file()
         target = config_dir("settings")
-        QMessageBox.information(self, "Shortcuts", f"Saved to user settings directory:\n{target}")
+        QMessageBox.information(
+            self, "Shortcuts", f"Saved to user settings directory:\n{target}"
+        )

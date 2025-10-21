@@ -56,7 +56,14 @@ class CharacterRegistry(BaseRegistry):
                     SET traits = ?, portrait_path = ?, linked_scene_ids = ?, meta = ?
                     WHERE project_id = ? AND id = ?
                     """,
-                    (traits_json, portrait_path, linked_json, meta_json, self.project_id, row["id"]),
+                    (
+                        traits_json,
+                        portrait_path,
+                        linked_json,
+                        meta_json,
+                        self.project_id,
+                        row["id"],
+                    ),
                 )
                 return int(row["id"])
 
@@ -65,7 +72,14 @@ class CharacterRegistry(BaseRegistry):
                 INSERT INTO {self.TABLE} (project_id, name, traits, portrait_path, linked_scene_ids, meta)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (self.project_id, name, traits_json, portrait_path, linked_json, meta_json),
+                (
+                    self.project_id,
+                    name,
+                    traits_json,
+                    portrait_path,
+                    linked_json,
+                    meta_json,
+                ),
             )
             return int(new_cur.lastrowid)
 

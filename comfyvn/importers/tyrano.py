@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
-from comfyvn.importers.base import DetectResult, PlanResult
 from comfyvn.core.normalizer import normalize_tree
+from comfyvn.importers.base import DetectResult, PlanResult
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +30,11 @@ class TyranoImporter:
             if (data_dir / sub).exists():
                 reasons.append(f"data/{sub}/")
                 confidence += 0.1
-        return DetectResult(engine=self.label, confidence=min(confidence, 0.95), reasons=reasons or ["generic"])
+        return DetectResult(
+            engine=self.label,
+            confidence=min(confidence, 0.95),
+            reasons=reasons or ["generic"],
+        )
 
     def plan(self, root: Path | str) -> PlanResult:
         steps = [
@@ -66,7 +70,9 @@ class TyranoImporter:
             include_dirs=["data"],
         )
         if result.warnings:
-            LOGGER.warning("Tyrano normalizer warnings:\n%s", "\n".join(result.warnings))
+            LOGGER.warning(
+                "Tyrano normalizer warnings:\n%s", "\n".join(result.warnings)
+            )
         return result
 
 

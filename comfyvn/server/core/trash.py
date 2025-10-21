@@ -27,7 +27,9 @@ def move_to_trash(path: Path) -> Path:
 def list_trash(limit: int = 200) -> List[Dict[str, Any]]:
     """Return recent trash entries sorted by modification time."""
     items: List[Dict[str, Any]] = []
-    for entry in sorted(TRASH_ROOT.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for entry in sorted(
+        TRASH_ROOT.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True
+    ):
         try:
             items.append(
                 {

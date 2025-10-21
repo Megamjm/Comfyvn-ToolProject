@@ -44,7 +44,9 @@ class CharacterManager:
     def _save_character(self, character_id: str, payload: Dict[str, Any]) -> None:
         path = self._character_path(character_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     # ------------------------------------------------------------------
     # CRUD
@@ -67,7 +69,9 @@ class CharacterManager:
         record = self.characters.get(character_id)
         return dict(record) if record else None
 
-    def register_character(self, character_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def register_character(
+        self, character_id: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create or update a character record."""
         character_id = str(character_id).strip()
         if not character_id:
@@ -82,10 +86,14 @@ class CharacterManager:
         record.setdefault("updated_at", time.time())
         self.characters[character_id] = record
         self._save_character(character_id, record)
-        remember_event("character.register", {"id": character_id, "name": record.get("name")})
+        remember_event(
+            "character.register", {"id": character_id, "name": record.get("name")}
+        )
         return dict(record)
 
-    def update_character(self, character_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def update_character(
+        self, character_id: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Merge metadata into an existing character."""
         existing = self.characters.get(character_id)
         if not existing:
@@ -128,7 +136,10 @@ class CharacterManager:
         character_id = str(character_id)
 
         if not overwrite and character_id in self.characters:
-            LOGGER.debug("Character %s exists; skipping import (overwrite disabled)", character_id)
+            LOGGER.debug(
+                "Character %s exists; skipping import (overwrite disabled)",
+                character_id,
+            )
             return dict(self.characters[character_id])
 
         record = self.register_character(character_id, payload)
@@ -137,4 +148,3 @@ class CharacterManager:
 
 
 __all__ = ["CharacterManager"]
-

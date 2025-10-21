@@ -1,20 +1,25 @@
-from PySide6.QtGui import QAction
-
-# comfyvn/gui/panels/gpu_panel.py  [Studio-089]
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QTextEdit, QDockWidget
-from PySide6.QtCore import Qt
 import requests
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+# comfyvn/gui/panels/gpu_panel.py  [Studio-089]
+from PySide6.QtWidgets import (QDockWidget, QLabel, QPushButton, QTextEdit,
+                               QVBoxLayout, QWidget)
+
 
 class GPUPanel(QDockWidget):
     def __init__(self, base="http://127.0.0.1:8001"):
         super().__init__("GPU/Resources")
         self.base = base
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
-        w = QWidget(); lay = QVBoxLayout(w)
-        self.out = QTextEdit(); self.out.setReadOnly(True)
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        self.out = QTextEdit()
+        self.out.setReadOnly(True)
         btn = QPushButton("GET /system/metrics")
         btn.clicked.connect(self.refresh)
-        lay.addWidget(QLabel("System & GPU metrics")); lay.addWidget(btn); lay.addWidget(self.out)
+        lay.addWidget(QLabel("System & GPU metrics"))
+        lay.addWidget(btn)
+        lay.addWidget(self.out)
         self.setWidget(w)
 
     def refresh(self):

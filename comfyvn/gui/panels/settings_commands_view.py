@@ -1,7 +1,10 @@
 from PySide6.QtGui import QAction
 # comfyvn/gui/panels/settings_commands_view.py
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QPushButton, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QMessageBox,
+                               QPushButton, QVBoxLayout, QWidget)
+
 from comfyvn.core.command_registry import registry
+
 
 class SettingsCommandsView(QWidget):
     # Shows all registered commands and allows executing selected.
@@ -9,10 +12,13 @@ class SettingsCommandsView(QWidget):
         super().__init__(parent)
         v = QVBoxLayout(self)
         v.addWidget(QLabel("Registered Commands"))
-        self.list = QListWidget(); v.addWidget(self.list, 1)
-        row = QHBoxLayout(); v.addLayout(row)
+        self.list = QListWidget()
+        v.addWidget(self.list, 1)
+        row = QHBoxLayout()
+        v.addLayout(row)
         self.btn_run = QPushButton("Run Selected")
-        row.addStretch(1); row.addWidget(self.btn_run)
+        row.addStretch(1)
+        row.addWidget(self.btn_run)
         self.btn_run.clicked.connect(self._run)
         self.refresh()
 
@@ -26,10 +32,11 @@ class SettingsCommandsView(QWidget):
 
     def _run(self):
         it = self.list.currentItem()
-        if not it: return
+        if not it:
+            return
         text = it.text()
         if "[" in text and "]" in text:
-            cid = text[text.rfind("[")+1:text.rfind("]")].strip()
+            cid = text[text.rfind("[") + 1 : text.rfind("]")].strip()
             try:
                 registry.run(cid)
             except Exception as e:

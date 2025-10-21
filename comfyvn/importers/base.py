@@ -34,11 +34,9 @@ class Importer(Protocol):
     id: str
     label: str
 
-    def detect(self, root: Path | str) -> DetectResult:
-        ...
+    def detect(self, root: Path | str) -> DetectResult: ...
 
-    def plan(self, root: Path | str) -> PlanResult:
-        ...
+    def plan(self, root: Path | str) -> PlanResult: ...
 
     def import_pack(
         self,
@@ -46,8 +44,7 @@ class Importer(Protocol):
         out_dir: Path | str,
         *,
         hooks: Optional[Dict[str, str]] = None,
-    ) -> NormalizerResult:
-        ...
+    ) -> NormalizerResult: ...
 
 
 def _stringify_paths(paths: Iterable[Path]) -> List[str]:

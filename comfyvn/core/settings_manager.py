@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 # comfyvn/core/settings_manager.py
 # [COMFYVN Architect | v0.8.3s2 | this chat]
 import copy
 import json
 from pathlib import Path
+
 from comfyvn.config.runtime_paths import settings_file
 
 try:
@@ -119,6 +121,7 @@ DEFAULTS = {
         },
     },
 }
+
 
 class SettingsManager:
     def __init__(self, path: str | Path = settings_file("config.json")):

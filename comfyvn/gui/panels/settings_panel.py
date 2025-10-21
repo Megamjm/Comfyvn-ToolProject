@@ -1,36 +1,21 @@
-from PySide6.QtGui import QAction
-
-# comfyvn/gui/panels/settings_panel.py  [Studio-090]
-from PySide6.QtWidgets import (
-    QWidget,
-    QFormLayout,
-    QLineEdit,
-    QPushButton,
-    QDockWidget,
-    QMessageBox,
-    QComboBox,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGroupBox,
-    QListWidget,
-    QListWidgetItem,
-    QLabel,
-    QCheckBox,
-    QSpinBox,
-    QFileDialog,
-    QInputDialog,
-    QScrollArea,
-)
-from PySide6.QtCore import Qt
-
-from comfyvn.gui.services.server_bridge import ServerBridge
-from comfyvn.core.settings_manager import SettingsManager
-from comfyvn.core.compute_registry import ComputeProviderRegistry
-from comfyvn.gui.widgets.drawer import Drawer, DrawerContainer
-from typing import Optional
+import json
 import os
 import socket
-import json
+from typing import Optional
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
+# comfyvn/gui/panels/settings_panel.py  [Studio-090]
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDockWidget, QFileDialog,
+                               QFormLayout, QGroupBox, QHBoxLayout,
+                               QInputDialog, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMessageBox, QPushButton,
+                               QScrollArea, QSpinBox, QVBoxLayout, QWidget)
+
+from comfyvn.core.compute_registry import ComputeProviderRegistry
+from comfyvn.core.settings_manager import SettingsManager
+from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.gui.widgets.drawer import Drawer, DrawerContainer
 
 
 class SettingsPanel(QDockWidget):
@@ -52,7 +37,9 @@ class SettingsPanel(QDockWidget):
         cfg_snapshot = self.settings_manager.load()
         server_cfg = cfg_snapshot.get("server", {})
         self.api = QLineEdit(self.bridge.base)
-        self.remote_list = QLineEdit(self.bridge.get("REMOTE_GPU_LIST", default="http://127.0.0.1:8001"))
+        self.remote_list = QLineEdit(
+            self.bridge.get("REMOTE_GPU_LIST", default="http://127.0.0.1:8001")
+        )
         self.menu_sort = QComboBox()
         self.menu_sort.addItem("Load order (default)", "load_order")
         self.menu_sort.addItem("Best practice structure", "best_practice")
@@ -192,7 +179,9 @@ class SettingsPanel(QDockWidget):
         self.btn_server_remove.clicked.connect(self._remove_selected_server)
         self.btn_server_save.clicked.connect(self._save_server_entry)
         self.btn_server_probe.clicked.connect(self._probe_selected_server)
-        self.btn_server_create_template.clicked.connect(self._create_provider_from_template)
+        self.btn_server_create_template.clicked.connect(
+            self._create_provider_from_template
+        )
         self.btn_server_export.clicked.connect(self._export_providers)
         self.btn_server_import.clicked.connect(self._import_providers)
 
@@ -207,8 +196,12 @@ class SettingsPanel(QDockWidget):
         music_cfg = audio_cfg.get("music", {})
 
         # Clone provider definitions so we can mutate safely before save
-        self._tts_providers = [dict(provider) for provider in tts_cfg.get("providers", [])]
-        self._music_providers = [dict(provider) for provider in music_cfg.get("providers", [])]
+        self._tts_providers = [
+            dict(provider) for provider in tts_cfg.get("providers", [])
+        ]
+        self._music_providers = [
+            dict(provider) for provider in music_cfg.get("providers", [])
+        ]
 
         layout.addWidget(self._build_tts_settings(tts_cfg))
         layout.addWidget(self._build_music_settings(music_cfg))
@@ -253,7 +246,9 @@ class SettingsPanel(QDockWidget):
         form.addRow("Output Directory:", self.tts_output_dir)
         layout.addLayout(form)
 
-        self.tts_provider_combo.currentIndexChanged.connect(self._on_tts_provider_changed)
+        self.tts_provider_combo.currentIndexChanged.connect(
+            self._on_tts_provider_changed
+        )
         self._on_tts_provider_changed()
 
         return group
@@ -289,7 +284,9 @@ class SettingsPanel(QDockWidget):
         form.addRow("Output Directory:", self.music_output_dir)
         layout.addLayout(form)
 
-        self.music_provider_combo.currentIndexChanged.connect(self._on_music_provider_changed)
+        self.music_provider_combo.currentIndexChanged.connect(
+            self._on_music_provider_changed
+        )
         self._on_music_provider_changed()
 
         return group
@@ -298,7 +295,9 @@ class SettingsPanel(QDockWidget):
     # Audio helpers
     # --------------------
     @staticmethod
-    def _get_provider(providers: list[dict], provider_id: Optional[str]) -> Optional[dict]:
+    def _get_provider(
+        providers: list[dict], provider_id: Optional[str]
+    ) -> Optional[dict]:
         for provider in providers:
             if provider.get("id") == provider_id:
                 return provider
@@ -323,7 +322,9 @@ class SettingsPanel(QDockWidget):
             details_lines.append("Select a provider to view details.")
         self.tts_provider_details.setText("\n".join(details_lines))
 
-        is_comfyui = provider is not None and str(provider.get("id", "")).startswith("comfyui")
+        is_comfyui = provider is not None and str(provider.get("id", "")).startswith(
+            "comfyui"
+        )
         self.tts_base_url.setEnabled(is_comfyui)
         self.tts_workflow_path.setEnabled(is_comfyui)
         self.tts_output_dir.setEnabled(is_comfyui)
@@ -359,7 +360,9 @@ class SettingsPanel(QDockWidget):
             details_lines.append("Select a provider to view details.")
         self.music_provider_details.setText("\n".join(details_lines))
 
-        is_comfyui = provider is not None and str(provider.get("id", "")).startswith("comfyui")
+        is_comfyui = provider is not None and str(provider.get("id", "")).startswith(
+            "comfyui"
+        )
         self.music_base_url.setEnabled(is_comfyui)
         self.music_workflow_path.setEnabled(is_comfyui)
         self.music_output_dir.setEnabled(is_comfyui)
@@ -403,7 +406,9 @@ class SettingsPanel(QDockWidget):
         music_cfg["providers"] = updated_music
 
         self.settings_manager.save(cfg)
-        QMessageBox.information(self, "Audio Settings", "Audio pipeline settings saved.")
+        QMessageBox.information(
+            self, "Audio Settings", "Audio pipeline settings saved."
+        )
 
     # --------------------
     # UI callbacks
@@ -411,10 +416,9 @@ class SettingsPanel(QDockWidget):
     def _save_settings(self) -> None:
         self.bridge.set_host(self.api.text().strip())
         api_base = self.api.text().strip()
-        result = self.bridge.save_settings({
-            "API_BASE": api_base,
-            "REMOTE_GPU_LIST": self.remote_list.text().strip()
-        })
+        result = self.bridge.save_settings(
+            {"API_BASE": api_base, "REMOTE_GPU_LIST": self.remote_list.text().strip()}
+        )
         ok = isinstance(result, dict) and result.get("ok")
         cfg = self.settings_manager.load()
         ui_cfg = cfg.get("ui", {})
@@ -462,11 +466,15 @@ class SettingsPanel(QDockWidget):
     def _create_provider_from_template(self) -> None:
         template_id = self.template_combo.currentData()
         if not template_id:
-            QMessageBox.information(self, "Provider Templates", "Select a template first.")
+            QMessageBox.information(
+                self, "Provider Templates", "Select a template first."
+            )
             return
         template = self._get_template(template_id)
         if not template:
-            QMessageBox.warning(self, "Provider Templates", f"Template '{template_id}' unavailable.")
+            QMessageBox.warning(
+                self, "Provider Templates", f"Template '{template_id}' unavailable."
+            )
             return
 
         default_name = template.get("name", template_id)
@@ -495,7 +503,11 @@ class SettingsPanel(QDockWidget):
             return
 
         config: dict[str, str] = {}
-        fields = template.get("fields") or template.get("metadata", {}).get("auth_fields") or []
+        fields = (
+            template.get("fields")
+            or template.get("metadata", {}).get("auth_fields")
+            or []
+        )
         for field in fields:
             value, ok = QInputDialog.getText(
                 self,
@@ -516,7 +528,9 @@ class SettingsPanel(QDockWidget):
                 config=config,
             )
         except Exception as exc:
-            QMessageBox.critical(self, "Provider Templates", f"Failed to create provider: {exc}")
+            QMessageBox.critical(
+                self, "Provider Templates", f"Failed to create provider: {exc}"
+            )
             return
 
         payload = {
@@ -562,7 +576,9 @@ class SettingsPanel(QDockWidget):
         try:
             export = self.provider_registry.export_all(mask_secrets=not include_secrets)
         except Exception as exc:
-            QMessageBox.critical(self, "Export Providers", f"Failed to build export: {exc}")
+            QMessageBox.critical(
+                self, "Export Providers", f"Failed to build export: {exc}"
+            )
             return
 
         try:
@@ -576,10 +592,14 @@ class SettingsPanel(QDockWidget):
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(export, handle, indent=2)
         except Exception as exc:
-            QMessageBox.critical(self, "Export Providers", f"Failed to write file: {exc}")
+            QMessageBox.critical(
+                self, "Export Providers", f"Failed to write file: {exc}"
+            )
             return
 
-        QMessageBox.information(self, "Export Providers", f"Providers exported to:\n{path}")
+        QMessageBox.information(
+            self, "Export Providers", f"Providers exported to:\n{path}"
+        )
 
     def _import_providers(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -594,7 +614,9 @@ class SettingsPanel(QDockWidget):
             with open(path, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
         except Exception as exc:
-            QMessageBox.critical(self, "Import Providers", f"Failed to read file: {exc}")
+            QMessageBox.critical(
+                self, "Import Providers", f"Failed to read file: {exc}"
+            )
             return
 
         replace = (
@@ -625,7 +647,9 @@ class SettingsPanel(QDockWidget):
                 overwrite=overwrite,
             )
         except Exception as exc:
-            QMessageBox.critical(self, "Import Providers", f"Failed to import providers: {exc}")
+            QMessageBox.critical(
+                self, "Import Providers", f"Failed to import providers: {exc}"
+            )
             return
 
         payload: dict[str, object] = {
@@ -651,12 +675,16 @@ class SettingsPanel(QDockWidget):
         )
         self._refresh_servers()
 
-    def _on_server_selected(self, current: QListWidgetItem | None, _: QListWidgetItem | None = None) -> None:
+    def _on_server_selected(
+        self, current: QListWidgetItem | None, _: QListWidgetItem | None = None
+    ) -> None:
         if current is None:
             self._editing_provider_id = None
             return
         provider_id = current.data(Qt.UserRole)
-        entry = self._providers_cache.get(provider_id) or self.provider_registry.get(provider_id)
+        entry = self._providers_cache.get(provider_id) or self.provider_registry.get(
+            provider_id
+        )
         if not entry:
             self.server_status_label.setText("Provider data unavailable.")
             return
@@ -695,7 +723,9 @@ class SettingsPanel(QDockWidget):
             entry = self.provider_registry.register(payload)
             self._providers_cache[entry["id"]] = entry
         except Exception as exc:
-            QMessageBox.critical(self, "Server Settings", f"Failed to save provider: {exc}")
+            QMessageBox.critical(
+                self, "Server Settings", f"Failed to save provider: {exc}"
+            )
             return
 
         # Inform running server if reachable.
@@ -709,7 +739,9 @@ class SettingsPanel(QDockWidget):
 
     def _remove_selected_server(self) -> None:
         if not self._editing_provider_id:
-            QMessageBox.information(self, "Server Settings", "Select a provider to remove.")
+            QMessageBox.information(
+                self, "Server Settings", "Select a provider to remove."
+            )
             return
         provider_id = self._editing_provider_id
         confirm = QMessageBox.question(
@@ -724,7 +756,9 @@ class SettingsPanel(QDockWidget):
         try:
             removed = self.provider_registry.remove(provider_id)
         except Exception as exc:
-            QMessageBox.warning(self, "Server Settings", f"Unable to remove provider: {exc}")
+            QMessageBox.warning(
+                self, "Server Settings", f"Unable to remove provider: {exc}"
+            )
             return
         if not removed:
             QMessageBox.warning(self, "Server Settings", "Provider not found.")
@@ -739,7 +773,9 @@ class SettingsPanel(QDockWidget):
 
     def _probe_selected_server(self) -> None:
         if not self._editing_provider_id:
-            QMessageBox.information(self, "Server Settings", "Select a provider to probe.")
+            QMessageBox.information(
+                self, "Server Settings", "Select a provider to probe."
+            )
             return
         entry = self.provider_registry.get(self._editing_provider_id)
         if not entry:
@@ -754,20 +790,26 @@ class SettingsPanel(QDockWidget):
             msg = "🟢 Provider healthy" if ok else "🔴 Provider unreachable"
             if stamp:
                 msg += f" (ts={stamp})"
-            self.server_status_label.setText(f"Provider ID: {self._editing_provider_id} · {msg}")
+            self.server_status_label.setText(
+                f"Provider ID: {self._editing_provider_id} · {msg}"
+            )
             self._refresh_servers(select_id=self._editing_provider_id)
             return
         # Fallback: direct probe
         probe = ServerBridge(base=entry.get("base_url", ""))
         healthy = probe.ping()
         msg = "🟢 Direct probe succeeded" if healthy else "🔴 Direct probe failed"
-        self.server_status_label.setText(f"Provider ID: {self._editing_provider_id} · {msg}")
+        self.server_status_label.setText(
+            f"Provider ID: {self._editing_provider_id} · {msg}"
+        )
         if healthy:
             self._refresh_servers(select_id=self._editing_provider_id)
 
     def _discover_local_servers(self) -> None:
         candidates = [8001, 8130, 8188, 9000]
-        existing_urls = {entry.get("base_url") for entry in self.provider_registry.list()}
+        existing_urls = {
+            entry.get("base_url") for entry in self.provider_registry.list()
+        }
         added = []
         for port in candidates:
             base_url = f"http://127.0.0.1:{port}"
@@ -794,17 +836,22 @@ class SettingsPanel(QDockWidget):
             QMessageBox.information(
                 self,
                 "Server Discovery",
-                f"Discovered and registered {len(added)} local endpoint(s).\n" + "\n".join(added),
+                f"Discovered and registered {len(added)} local endpoint(s).\n"
+                + "\n".join(added),
             )
             self._refresh_servers()
         else:
-            QMessageBox.information(self, "Server Discovery", "No new local servers detected.")
+            QMessageBox.information(
+                self, "Server Discovery", "No new local servers detected."
+            )
 
     def _scan_local_port(self) -> None:
         start_port = self.local_port.value()
         candidate = self._find_available_port(start_port)
         if candidate == start_port:
-            QMessageBox.information(self, "Port Scanner", f"Port {start_port} appears to be available.")
+            QMessageBox.information(
+                self, "Port Scanner", f"Port {start_port} appears to be available."
+            )
         else:
             self.local_port.setValue(candidate)
             QMessageBox.information(
@@ -874,10 +921,18 @@ class SettingsPanel(QDockWidget):
         self._providers_cache = merged
         self.server_list.blockSignals(True)
         self.server_list.clear()
-        for pid, entry in sorted(merged.items(), key=lambda item: item[1].get("priority", 999)):
+        for pid, entry in sorted(
+            merged.items(), key=lambda item: item[1].get("priority", 999)
+        ):
             health = entry.get("last_health") or {}
-            symbol = "🟢" if health.get("ok") is True else "🟠" if health.get("ok") is False else "⚪"
-            text = f"{symbol} {entry.get('name', pid)}  ({entry.get('base_url', 'n/a')})"
+            symbol = (
+                "🟢"
+                if health.get("ok") is True
+                else "🟠" if health.get("ok") is False else "⚪"
+            )
+            text = (
+                f"{symbol} {entry.get('name', pid)}  ({entry.get('base_url', 'n/a')})"
+            )
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, pid)
             self.server_list.addItem(item)

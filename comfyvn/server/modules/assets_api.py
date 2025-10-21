@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from importlib.util import find_spec
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     UploadFile)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,8 +40,12 @@ def _parse_metadata(meta: Any) -> Dict[str, Any]:
         try:
             return json.loads(meta)
         except json.JSONDecodeError as exc:  # pragma: no cover - validation
-            raise HTTPException(status_code=400, detail=f"metadata must be valid JSON: {exc}") from exc
-    raise HTTPException(status_code=400, detail="metadata must be a JSON object or string.")
+            raise HTTPException(
+                status_code=400, detail=f"metadata must be valid JSON: {exc}"
+            ) from exc
+    raise HTTPException(
+        status_code=400, detail="metadata must be a JSON object or string."
+    )
 
 
 def _normalize_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
@@ -61,17 +65,24 @@ def _sanitize_relative_path(value: Optional[str]) -> Optional[Path]:
         return None
     candidate = Path(value)
     if candidate.is_absolute() or ".." in candidate.parts:
-        raise HTTPException(status_code=400, detail="dest_path must be relative to assets root.")
+        raise HTTPException(
+            status_code=400, detail="dest_path must be relative to assets root."
+        )
     return candidate
 
 
 @router.get("/")
 def list_assets(
-    asset_type: Optional[str] = Query(None, alias="type", description="Optional asset type filter."),
+    asset_type: Optional[str] = Query(
+        None, alias="type", description="Optional asset type filter."
+    ),
     limit: int = Query(200, ge=1, le=1000),
 ):
     """List assets stored in the registry."""
-    assets = [_normalize_asset_payload(dict(item)) for item in _asset_registry.list_assets(asset_type)]
+    assets = [
+        _normalize_asset_payload(dict(item))
+        for item in _asset_registry.list_assets(asset_type)
+    ]
     return {"ok": True, "items": assets[:limit], "total": len(assets)}
 
 
@@ -100,8 +111,12 @@ if MULTIPART_AVAILABLE:
     async def upload_asset(
         file: UploadFile = File(...),
         asset_type: str = Form("generic", description="Logical asset type bucket."),
-        dest_path: Optional[str] = Form(None, description="Optional relative destination path inside assets."),
-        metadata: Optional[str] = Form(None, description="JSON metadata to attach to the asset."),
+        dest_path: Optional[str] = Form(
+            None, description="Optional relative destination path inside assets."
+        ),
+        metadata: Optional[str] = Form(
+            None, description="JSON metadata to attach to the asset."
+        ),
         _: bool = Depends(require_scope(["assets.write"])),
     ):
         """Upload a new asset and register it with sidecar + thumbnail support."""
@@ -150,9 +165,7 @@ else:
 
     @router.post("/upload")
     async def upload_asset_unavailable():
-        LOGGER.error(
-            "Asset upload attempted but python-multipart is missing."
-        )
+        LOGGER.error("Asset upload attempted but python-multipart is missing.")
         raise HTTPException(
             status_code=503,
             detail="Asset uploads require the python-multipart package to be installed on the server.",
@@ -166,8 +179,12 @@ class RegisterAssetRequest(BaseModel):
 
     path: str = Field(..., description="Absolute or relative path to the source file.")
     asset_type: str = Field("generic", description="Logical asset type bucket.")
-    dest_path: Optional[str] = Field(None, description="Optional relative destination path inside assets.")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata dictionary or JSON string.")
+    dest_path: Optional[str] = Field(
+        None, description="Optional relative destination path inside assets."
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Metadata dictionary or JSON string."
+    )
     copy_file: bool = Field(
         True,
         alias="copy",
@@ -217,7 +234,9 @@ def register_existing_asset(
 @router.delete("/{uid}")
 def delete_asset(
     uid: str,
-    remove_files: bool = Query(False, description="Physically remove files instead of moving to trash."),
+    remove_files: bool = Query(
+        False, description="Physically remove files instead of moving to trash."
+    ),
     _: bool = Depends(require_scope(["assets.write"])),
 ):
     """Delete an asset registry entry and optionally remove the underlying files."""

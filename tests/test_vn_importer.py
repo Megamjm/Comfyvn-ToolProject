@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 import sys
 import time
 import types
@@ -59,7 +59,14 @@ def _stub_task_registry(monkeypatch):
             self._tasks: dict[str, _Task] = {}
             self._counter = 0
 
-        def register(self, kind: str, payload: dict, *, message: str = "", meta: dict | None = None):
+        def register(
+            self,
+            kind: str,
+            payload: dict,
+            *,
+            message: str = "",
+            meta: dict | None = None,
+        ):
             self._counter += 1
             task_id = f"job-{self._counter}"
             task_meta = dict(meta or {})
@@ -84,11 +91,17 @@ def _stub_task_registry(monkeypatch):
             return list(self._tasks.values())
 
     registry = _Registry()
-    monkeypatch.setattr("comfyvn.server.modules.vn_import_api.task_registry", registry, raising=False)
-    monkeypatch.setattr("comfyvn.core.task_registry.task_registry", registry, raising=False)
+    monkeypatch.setattr(
+        "comfyvn.server.modules.vn_import_api.task_registry", registry, raising=False
+    )
+    monkeypatch.setattr(
+        "comfyvn.core.task_registry.task_registry", registry, raising=False
+    )
 
     class _Tool:
-        def __init__(self, name: str, path: Path, extensions: list[str], notes: str, warning: str):
+        def __init__(
+            self, name: str, path: Path, extensions: list[str], notes: str, warning: str
+        ):
             self.name = name
             self.path = path
             self.extensions = extensions
@@ -103,8 +116,22 @@ def _stub_task_registry(monkeypatch):
         def list_tools(self):
             return list(self._tools.values())
 
-        def register(self, name: str, path: str, *, extensions=None, notes: str = "", warning: str = ""):
-            tool = _Tool(name, Path(path), [ext.lower() for ext in (extensions or [])], notes, warning)
+        def register(
+            self,
+            name: str,
+            path: str,
+            *,
+            extensions=None,
+            notes: str = "",
+            warning: str = "",
+        ):
+            tool = _Tool(
+                name,
+                Path(path),
+                [ext.lower() for ext in (extensions or [])],
+                notes,
+                warning,
+            )
             self._tools[name] = tool
             return tool
 
@@ -141,9 +168,19 @@ def _stub_task_registry(monkeypatch):
             return output_dir
 
     extractor = _ExtractorStub()
-    monkeypatch.setattr("comfyvn.server.core.external_extractors.extractor_manager", extractor, raising=False)
-    monkeypatch.setattr("comfyvn.server.modules.vn_import_api.extractor_manager", extractor, raising=False)
-    monkeypatch.setattr("comfyvn.server.core.vn_importer.extractor_manager", extractor, raising=False)
+    monkeypatch.setattr(
+        "comfyvn.server.core.external_extractors.extractor_manager",
+        extractor,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "comfyvn.server.modules.vn_import_api.extractor_manager",
+        extractor,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "comfyvn.server.core.vn_importer.extractor_manager", extractor, raising=False
+    )
 
 
 def _build_sample_package(tmp_path: Path) -> Path:
@@ -177,7 +214,9 @@ def _build_renpy_package(tmp_path: Path) -> Path:
     with zipfile.ZipFile(package_path, "w") as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
         archive.writestr("game/script.rpy", "label start:\n    return")
-        archive.writestr("scenes/start.json", json.dumps({"scene_id": "start", "lines": []}))
+        archive.writestr(
+            "scenes/start.json", json.dumps({"scene_id": "start", "lines": []})
+        )
     return package_path
 
 
@@ -251,7 +290,10 @@ def test_import_with_external_tool(tmp_path: Path):
     arc_path = tmp_path / "demo.arc"
     with zipfile.ZipFile(arc_path, "w") as archive:
         archive.writestr("manifest.json", json.dumps({"id": "ext-demo"}))
-        archive.writestr("scenes/demo_scene.json", json.dumps({"scene_id": "demo_scene", "lines": []}))
+        archive.writestr(
+            "scenes/demo_scene.json",
+            json.dumps({"scene_id": "demo_scene", "lines": []}),
+        )
 
     data_root = tmp_path / "ext_data"
 
@@ -268,7 +310,9 @@ def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
     data_root = tmp_path / "api_data"
     monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
 
-    payload = asyncio.run(vn_import_api.import_vn({"path": str(package_path), "blocking": True}))
+    payload = asyncio.run(
+        vn_import_api.import_vn({"path": str(package_path), "blocking": True})
+    )
     assert payload["ok"] is True
     summary = payload["import"]
     assert summary["scenes"] == ["demo_scene"]
@@ -279,7 +323,9 @@ def test_import_vn_api_blocking(tmp_path: Path, monkeypatch):
     assert Path(summary["remix"]["plan_path"]).exists()
     assert (data_root / "scenes" / "demo_scene.json").exists()
 
-    status_payload = asyncio.run(vn_import_api.import_status(payload["job"]["id"], True))
+    status_payload = asyncio.run(
+        vn_import_api.import_status(payload["job"]["id"], True)
+    )
     assert status_payload["job"]["status"] == "done"
     assert status_payload["summary"]["scenes"] == ["demo_scene"]
     assert status_payload["summary"]["adapter"] == "generic"
@@ -298,11 +344,15 @@ def test_import_vn_api_job(tmp_path: Path, monkeypatch):
     for _ in range(120):
         status_payload = asyncio.run(vn_import_api.import_status(job_id, True))
         job_payload = status_payload["job"]
-        summary = status_payload.get("summary") or (job_payload.get("meta") or {}).get("result")
+        summary = status_payload.get("summary") or (job_payload.get("meta") or {}).get(
+            "result"
+        )
         if summary:
             break
         if job_payload["status"] == "error":
-            error_message = job_payload.get("message") or job_payload.get("meta", {}).get("error")
+            error_message = job_payload.get("message") or job_payload.get(
+                "meta", {}
+            ).get("error")
             pytest.fail(f"job errored: {error_message}")
         time.sleep(0.02)
 
@@ -328,7 +378,9 @@ def test_import_history_endpoint(tmp_path: Path, monkeypatch):
     pkg2 = _build_renpy_package(tmp_path)
 
     for pkg in (pkg1, pkg2):
-        resp = asyncio.run(vn_import_api.import_vn({"path": str(pkg), "blocking": True}))
+        resp = asyncio.run(
+            vn_import_api.import_vn({"path": str(pkg), "blocking": True})
+        )
         assert resp["ok"] is True
 
     data = asyncio.run(vn_import_api.import_history(limit=5, _=True))
@@ -338,6 +390,7 @@ def test_import_history_endpoint(tmp_path: Path, monkeypatch):
     adapters = {item.get("adapter") for item in imports}
     assert "renpy" in adapters
     assert "generic" in adapters
+
 
 def test_tool_endpoints(tmp_path: Path, monkeypatch):
     data_root = tmp_path / "tools"
@@ -375,8 +428,8 @@ def test_tool_install(monkeypatch, tmp_path: Path):
     data_root = tmp_path / "tools_install"
     monkeypatch.setenv("COMFYVN_DATA_ROOT", str(data_root))
 
-    from comfyvn.server.core import extractor_installer as installer
     from comfyvn.server.core import external_extractors as registry
+    from comfyvn.server.core import extractor_installer as installer
 
     def fake_download(url: str, dest: Path):
         dest.write_text("binary", encoding="utf-8")
@@ -388,6 +441,7 @@ def test_tool_install(monkeypatch, tmp_path: Path):
         notes="",
         warning="",
     )
+
     def fake_install(name: str, target_dir=None):
         fake_path = tmp_path / "fake" / "arc_unpacker.exe"
         fake_path.parent.mkdir(parents=True, exist_ok=True)

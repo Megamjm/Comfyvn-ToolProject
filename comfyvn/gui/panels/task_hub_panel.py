@@ -1,7 +1,11 @@
 # comfyvn/gui/panels/task_hub_panel.py
 from __future__ import annotations
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem
+
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
+
 from comfyvn.core.task_hub import task_hub
+
 
 class TaskHubPanel(QWidget):
     def __init__(self):
@@ -17,7 +21,8 @@ class TaskHubPanel(QWidget):
         h = QHBoxLayout()
         self.btn_refresh = QPushButton("Refresh")
         self.btn_cancel = QPushButton("Cancel Selected")
-        h.addWidget(self.btn_refresh); h.addWidget(self.btn_cancel)
+        h.addWidget(self.btn_refresh)
+        h.addWidget(self.btn_cancel)
         v.addLayout(h)
 
         self.btn_refresh.clicked.connect(self.refresh)
@@ -35,7 +40,8 @@ class TaskHubPanel(QWidget):
 
     def cancel_selected(self):
         i = self.table.currentRow()
-        if i < 0: return
+        if i < 0:
+            return
         tid = self.table.item(i, 0).text()
         task_hub.cancel(tid)
         self.refresh()

@@ -1,8 +1,15 @@
-from PySide6.QtGui import QAction
-from typing import Dict, Any
+from typing import Any, Dict
+
 from fastapi import APIRouter
-from comfyvn.modules.orchestration.pipeline_manager import PipelineManager, PipelineContext
+from PySide6.QtGui import QAction
+
+from comfyvn.modules.orchestration.pipeline_manager import (PipelineContext,
+                                                            PipelineManager)
+
 router = APIRouter()
-@router.post('/character')
+
+
+@router.post("/character")
 async def render_character(payload: Dict[str, Any]):
-    pm = PipelineManager(PipelineContext()); return pm.render_character_with_progress(payload)
+    pm = PipelineManager(PipelineContext())
+    return pm.render_character_with_progress(payload)

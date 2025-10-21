@@ -17,20 +17,12 @@ from starlette.datastructures import UploadFile
 from comfyvn.config.runtime_paths import data_dir, imports_log_dir
 from comfyvn.core import advisory as advisory_core
 from comfyvn.core.advisory import AdvisoryIssue
-from comfyvn.core.file_importer import (
-    ImportDirectories,
-    build_preview_payload,
-    flatten_lines,
-    sanitize_filename,
-)
+from comfyvn.core.file_importer import (ImportDirectories,
+                                        build_preview_payload, flatten_lines,
+                                        sanitize_filename)
 from comfyvn.lmstudio_client import get_base_url as lmstudio_get_base_url
-from comfyvn.studio.core import (
-    AssetRegistry,
-    CharacterRegistry,
-    ImportRegistry,
-    JobRegistry,
-    SceneRegistry,
-)
+from comfyvn.studio.core import (AssetRegistry, CharacterRegistry,
+                                 ImportRegistry, JobRegistry, SceneRegistry)
 
 from .formatter import RoleplayFormatter
 from .parser import RoleplayParser
@@ -142,7 +134,9 @@ def _load_processed_scene(scene_uid: str) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail=f"Processed scene payload corrupt: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Processed scene payload corrupt: {exc}"
+        ) from exc
 
 
 def _load_preview(scene_uid: str) -> Dict[str, Any]:
@@ -152,7 +146,9 @@ def _load_preview(scene_uid: str) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail=f"Preview payload corrupt: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Preview payload corrupt: {exc}"
+        ) from exc
 
 
 def _save_processed_scene(scene_uid: str, payload: Dict[str, Any]) -> None:
@@ -183,7 +179,9 @@ def _load_status(scene_uid: str) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail=f"Status payload corrupt: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Status payload corrupt: {exc}"
+        ) from exc
 
 
 def _save_status(scene_uid: str, payload: Dict[str, Any]) -> None:
@@ -197,7 +195,9 @@ def _save_status(scene_uid: str, payload: Dict[str, Any]) -> None:
         LOGGER.debug("Unable to mirror legacy status path", exc_info=True)
 
 
-def _mark_final_status(scene_uid: str, status: str, *, result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _mark_final_status(
+    scene_uid: str, status: str, *, result: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     payload = _load_status(scene_uid)
     payload["status"] = status
     payload["updated_at"] = dt.datetime.utcnow().isoformat() + "Z"
@@ -239,7 +239,9 @@ def _build_llm_prompt(
             prompt_sections.append("Context:\n" + "\n".join(context_bits))
 
     if character_meta:
-        character_lines = [f"{name}: {desc}" for name, desc in character_meta.items() if desc]
+        character_lines = [
+            f"{name}: {desc}" for name, desc in character_meta.items() if desc
+        ]
         if character_lines:
             prompt_sections.append("Character Notes:\n" + "\n".join(character_lines))
 
@@ -296,7 +298,9 @@ def _parse_blocking(value: Any) -> bool:
     return False
 
 
-def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path) -> Dict[str, Any]:
+def _execute_import_job(
+    job_id: int, payload: RoleplayJobPayload, log_path: Path
+) -> Dict[str, Any]:
     """Execute the roleplay import synchronously and update registries."""
     _job_registry.update_job(job_id, status="running")
     import_id: Optional[int] = None
@@ -306,7 +310,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
 
     try:
         if not text_content and payload.structured_lines:
-            structured = [line for line in payload.structured_lines if isinstance(line, dict)]
+            structured = [
+                line for line in payload.structured_lines if isinstance(line, dict)
+            ]
             text_content = flatten_lines(structured)
 
         if not text_content and not payload.structured_lines:
@@ -336,12 +342,16 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
         )
 
         if payload.structured_lines:
-            parsed_lines = _parser.parse_json(json.dumps({"lines": payload.structured_lines}))
+            parsed_lines = _parser.parse_json(
+                json.dumps({"lines": payload.structured_lines})
+            )
         else:
             parsed_lines = _parser.parse_text(text_content)
 
         if not parsed_lines:
-            raise HTTPException(status_code=400, detail="Parsed transcript has no lines.")
+            raise HTTPException(
+                status_code=400, detail="Parsed transcript has no lines."
+            )
 
         scene_payload = _formatter.to_scene(
             parsed_lines,
@@ -374,11 +384,15 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
             advisory_core.log_issue(issue)
             extra_issues.append(issue.to_dict())
 
-        safety_value = str(
-            payload.metadata.get("safety")
-            or payload.metadata.get("content_rating")
-            or ""
-        ).strip().lower()
+        safety_value = (
+            str(
+                payload.metadata.get("safety")
+                or payload.metadata.get("content_rating")
+                or ""
+            )
+            .strip()
+            .lower()
+        )
         if safety_value not in {"sfw", "nsfw", "mixed"}:
             issue = AdvisoryIssue(
                 scene_uid,
@@ -396,7 +410,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
         scene_meta["advisory_flags"] = advisory_flags
 
         scene_body = json.dumps(scene_payload, ensure_ascii=False, indent=2)
-        scene_db_id = _scene_registry.upsert_scene(scene_payload["title"], scene_body, scene_meta)
+        scene_db_id = _scene_registry.upsert_scene(
+            scene_payload["title"], scene_body, scene_meta
+        )
 
         linked_characters = []
         persona_map = scene_meta.get("persona_hints", {})
@@ -417,7 +433,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
                 meta=character_meta,
             )
             _character_registry.append_scene_link(char_id, scene_db_id)
-            linked_characters.append({"id": char_id, "name": name, "persona_hints": hints})
+            linked_characters.append(
+                {"id": char_id, "name": name, "persona_hints": hints}
+            )
 
         processed_path = _processed_file(scene_uid)
         preview_path = _preview_file(scene_uid)
@@ -575,7 +593,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
             },
             "status": final_status,
         }
-        _job_registry.update_job(job_id, status="completed", output_payload=output_payload)
+        _job_registry.update_job(
+            job_id, status="completed", output_payload=output_payload
+        )
 
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(
@@ -611,7 +631,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
         }
 
     except HTTPException as exc:
-        error_payload = {"error": exc.detail if isinstance(exc.detail, str) else "invalid payload"}
+        error_payload = {
+            "error": exc.detail if isinstance(exc.detail, str) else "invalid payload"
+        }
         _job_registry.update_job(job_id, status="failed", output_payload=error_payload)
         if import_id is not None:
             _import_registry.update_meta(
@@ -629,7 +651,9 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
         LOGGER.exception("Roleplay import failed: job_id=%s", job_id)
-        _job_registry.update_job(job_id, status="failed", output_payload={"error": str(exc)})
+        _job_registry.update_job(
+            job_id, status="failed", output_payload={"error": str(exc)}
+        )
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(f"[error] {exc}\n")
         if import_id is not None:
@@ -645,16 +669,22 @@ def _execute_import_job(job_id: int, payload: RoleplayJobPayload, log_path: Path
         raise HTTPException(status_code=500, detail=f"Import failed: {exc}") from exc
 
 
-def _run_job_background(job_id: int, payload: RoleplayJobPayload, log_path: Path) -> None:
+def _run_job_background(
+    job_id: int, payload: RoleplayJobPayload, log_path: Path
+) -> None:
     try:
         _execute_import_job(job_id, payload, log_path)
     except HTTPException as exc:
-        LOGGER.warning("Background roleplay import failed job_id=%s: %s", job_id, exc.detail)
+        LOGGER.warning(
+            "Background roleplay import failed job_id=%s: %s", job_id, exc.detail
+        )
     except Exception:  # pragma: no cover - defensive logging
         LOGGER.exception("Background roleplay import crashed job_id=%s", job_id)
 
 
-def _spawn_import_thread(job_id: int, payload: RoleplayJobPayload, log_path: Path) -> None:
+def _spawn_import_thread(
+    job_id: int, payload: RoleplayJobPayload, log_path: Path
+) -> None:
     thread = threading.Thread(
         target=_run_job_background,
         args=(job_id, payload, log_path),
@@ -712,7 +742,9 @@ async def import_roleplay(request: Request):
             try:
                 metadata = json.loads(meta_field)
             except json.JSONDecodeError as exc:
-                raise HTTPException(status_code=400, detail=f"metadata must be valid JSON: {exc}") from exc
+                raise HTTPException(
+                    status_code=400, detail=f"metadata must be valid JSON: {exc}"
+                ) from exc
         if "blocking" in form:
             blocking = _parse_blocking(form.get("blocking"))
         detail_level_value = form.get("detail_level")
@@ -827,7 +859,9 @@ def get_import_log(job_id: int):
     try:
         path.relative_to(LOG_DIR.resolve())
     except ValueError:
-        raise HTTPException(status_code=403, detail="Log path outside allowed directory.")
+        raise HTTPException(
+            status_code=403, detail="Log path outside allowed directory."
+        )
 
     if not path.exists():
         raise HTTPException(status_code=404, detail="Log file missing.")
@@ -872,7 +906,9 @@ def apply_corrections(payload: Dict[str, Any]):
 
     processed = _load_processed_scene(scene_uid)
     context = processed.get("context") or {}
-    detail_level = _normalize_detail_level(payload.get("detail_level") or processed.get("detail_level"))
+    detail_level = _normalize_detail_level(
+        payload.get("detail_level") or processed.get("detail_level")
+    )
     raw_lines = payload.get("lines")
     if not isinstance(raw_lines, list) or not raw_lines:
         raise HTTPException(status_code=400, detail="lines must be a non-empty list")
@@ -921,9 +957,15 @@ def apply_corrections(payload: Dict[str, Any]):
         advisory_core.log_issue(issue)
         extra_issues.append(issue.to_dict())
 
-    safety_value = str(
-        metadata_payload.get("safety") or metadata_payload.get("content_rating") or ""
-    ).strip().lower()
+    safety_value = (
+        str(
+            metadata_payload.get("safety")
+            or metadata_payload.get("content_rating")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     if safety_value not in {"sfw", "nsfw", "mixed"}:
         issue = AdvisoryIssue(
             scene_uid,
@@ -950,7 +992,9 @@ def apply_corrections(payload: Dict[str, Any]):
             scene_id=int(scene_db_id_context),
         )
     else:
-        scene_db_id = _scene_registry.upsert_scene(scene_payload["title"], scene_body, scene_meta)
+        scene_db_id = _scene_registry.upsert_scene(
+            scene_payload["title"], scene_body, scene_meta
+        )
 
     preview_path = _preview_file(scene_uid)
     status_path = _status_file(scene_uid)
@@ -961,7 +1005,9 @@ def apply_corrections(payload: Dict[str, Any]):
             "lines": sanitized_lines,
             "detail_level": detail_level,
             "scene_db_id": scene_db_id,
-            "character_meta": payload.get("character_meta") or processed.get("character_meta") or {},
+            "character_meta": payload.get("character_meta")
+            or processed.get("character_meta")
+            or {},
             "advisory_flags": advisory_flags,
             "persona_hints": scene_meta.get("persona_hints", {}),
             "preview_path": str(preview_path),
@@ -1068,11 +1114,17 @@ def sample_llm(payload: Dict[str, Any]):
     processed = _load_processed_scene(scene_uid)
     lines = payload.get("excerpt") or processed.get("lines") or []
     if not isinstance(lines, list) or not lines:
-        raise HTTPException(status_code=400, detail="excerpt must include at least one line")
+        raise HTTPException(
+            status_code=400, detail="excerpt must include at least one line"
+        )
 
-    character_meta = payload.get("character_meta") or processed.get("character_meta") or {}
+    character_meta = (
+        payload.get("character_meta") or processed.get("character_meta") or {}
+    )
     instructions = payload.get("instructions")
-    detail_level = _normalize_detail_level(payload.get("detail_level") or processed.get("detail_level"))
+    detail_level = _normalize_detail_level(
+        payload.get("detail_level") or processed.get("detail_level")
+    )
     context = processed.get("context", {})
 
     prompt = _build_llm_prompt(
@@ -1086,7 +1138,9 @@ def sample_llm(payload: Dict[str, Any]):
     base_url = str(payload.get("endpoint") or lmstudio_get_base_url()).rstrip("/")
     model = payload.get("model") or "auto"
     api_key = payload.get("api_key")
-    temperature = 0.25 if detail_level == "low" else (0.5 if detail_level == "medium" else 0.75)
+    temperature = (
+        0.25 if detail_level == "low" else (0.5 if detail_level == "medium" else 0.75)
+    )
 
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -1120,7 +1174,9 @@ def sample_llm(payload: Dict[str, Any]):
                 message = choices[0].get("message") or {}
                 text = message.get("content", "").strip()
     except Exception as exc:  # pragma: no cover - network dependent
-        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"LLM request failed: {exc}"
+        ) from exc
 
     result_payload = {
         "text": text,

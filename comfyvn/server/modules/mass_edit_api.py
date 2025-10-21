@@ -1,12 +1,17 @@
-from PySide6.QtGui import QAction
-from fastapi import APIRouter, Body
+import difflib
+import json
+import time
 from pathlib import Path
-import json, time, difflib
+
+from fastapi import APIRouter, Body
+from PySide6.QtGui import QAction
 
 router = APIRouter()
 
 DATA = Path("data/scenes")
-AUDIT = Path("data/audit/mass_edits"); AUDIT.mkdir(parents=True, exist_ok=True)
+AUDIT = Path("data/audit/mass_edits")
+AUDIT.mkdir(parents=True, exist_ok=True)
+
 
 @router.post("/preview")
 def preview_edits(rules: dict = Body(...)):
@@ -15,10 +20,18 @@ def preview_edits(rules: dict = Body(...)):
         text = p.read_text(encoding="utf-8")
         for k, v in rules.get("replace", {}).items():
             text = text.replace(k, v)
-        previews.append({"scene": p.name, "diff": list(difflib.unified_diff(
-            p.read_text().splitlines(), text.splitlines(), lineterm=""
-        ))})
+        previews.append(
+            {
+                "scene": p.name,
+                "diff": list(
+                    difflib.unified_diff(
+                        p.read_text().splitlines(), text.splitlines(), lineterm=""
+                    )
+                ),
+            }
+        )
     return {"ok": True, "previews": previews}
+
 
 @router.post("/commit")
 def commit_edits(rules: dict = Body(...)):
@@ -29,7 +42,8 @@ def commit_edits(rules: dict = Body(...)):
         for ln in j.get("lines", []):
             spk = ln.get("speaker", "")
             if spk in rules.get("rename", {}):
-                ln["speaker"] = rules["rename"][spk]; changed = True
+                ln["speaker"] = rules["rename"][spk]
+                changed = True
         if changed:
             p.write_text(json.dumps(j, indent=2, ensure_ascii=False))
             results.append(p.name)

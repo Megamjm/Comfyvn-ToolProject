@@ -1,16 +1,19 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
 
-from fastapi import APIRouter, Body
 import json
 from pathlib import Path
 
+from fastapi import APIRouter, Body
+from PySide6.QtGui import QAction
+
 router = APIRouter()
+
 
 @router.post("/playground/compose")
 def compose(payload: dict = Body(...)):
-    from comfyvn.server.modules.scene_api import _scene_path
     from comfyvn.server.modules.persona_api import _load as _personas
+    from comfyvn.server.modules.scene_api import _scene_path
+
     scene = payload.get("scene")
     if not scene:
         return {"ok": False, "error": "scene id required"}

@@ -12,7 +12,12 @@ LOGGER = logging.getLogger("comfyvn.comfyui.client")
 class ComfyUIClient:
     """Lightweight HTTP helper for interacting with ComfyUI's REST endpoints."""
 
-    def __init__(self, base: str = "http://127.0.0.1:8188", *, session: Optional[requests.Session] = None):
+    def __init__(
+        self,
+        base: str = "http://127.0.0.1:8188",
+        *,
+        session: Optional[requests.Session] = None,
+    ):
         self.base = base.rstrip("/")
         self.session = session or requests.Session()
 
@@ -30,14 +35,18 @@ class ComfyUIClient:
     # ------------------------------------------------------------------
     # Prompt execution
     # ------------------------------------------------------------------
-    def queue_prompt(self, workflow: Dict[str, Any], *, timeout: float = 20.0) -> Dict[str, Any]:
+    def queue_prompt(
+        self, workflow: Dict[str, Any], *, timeout: float = 20.0
+    ) -> Dict[str, Any]:
         url = f"{self.base}/prompt"
         response = self.session.post(url, json=workflow, timeout=timeout)
         response.raise_for_status()
         try:
             return response.json()
         except ValueError:
-            LOGGER.debug("ComfyUI prompt response was not JSON: %s", response.text[:256])
+            LOGGER.debug(
+                "ComfyUI prompt response was not JSON: %s", response.text[:256]
+            )
             return {"prompt_id": None, "raw": response.text}
 
     def get_history(self, prompt_id: str, *, timeout: float = 10.0) -> Dict[str, Any]:
@@ -47,7 +56,9 @@ class ComfyUIClient:
         try:
             return response.json()
         except ValueError:
-            LOGGER.debug("ComfyUI history response was not JSON: %s", response.text[:256])
+            LOGGER.debug(
+                "ComfyUI history response was not JSON: %s", response.text[:256]
+            )
             return {}
 
     def wait_for_history(

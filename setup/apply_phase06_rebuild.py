@@ -9,14 +9,9 @@ work without modification.
 
 from __future__ import annotations
 
-from tools.apply_phase06_rebuild import (  # noqa: F401
-    DIRS,
-    apply_schema,
-    ensure_db,
-    ensure_dirs,
-    main,
-    rebuild,
-)
+from tools.apply_phase06_rebuild import apply_schema  # noqa: F401
+from tools.apply_phase06_rebuild import (DIRS, ensure_db, ensure_dirs, main,
+                                         rebuild)
 
 __all__ = ["DIRS", "apply_schema", "ensure_db", "ensure_dirs", "main", "rebuild"]
 

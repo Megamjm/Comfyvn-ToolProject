@@ -1,13 +1,19 @@
-from PySide6.QtGui import QAction
-import yaml
 from pathlib import Path
+
+import yaml
+from PySide6.QtGui import QAction
+
 CFG_PATH = Path("./data/config.yaml")
 
 DEFAULTS = {
-  "project_name": "ComfyVN",
-  "renpy_export_path": "./exports/renpy",
-  "bridge": {"sillytavern_url": "http://127.0.0.1:8000", "comfyui_url": "http://127.0.0.1:8188"},
+    "project_name": "ComfyVN",
+    "renpy_export_path": "./exports/renpy",
+    "bridge": {
+        "sillytavern_url": "http://127.0.0.1:8000",
+        "comfyui_url": "http://127.0.0.1:8188",
+    },
 }
+
 
 def load() -> dict:
     if CFG_PATH.exists():
@@ -16,6 +22,7 @@ def load() -> dict:
         except Exception:
             pass
     return DEFAULTS
+
 
 def save(cfg: dict):
     CFG_PATH.parent.mkdir(parents=True, exist_ok=True)

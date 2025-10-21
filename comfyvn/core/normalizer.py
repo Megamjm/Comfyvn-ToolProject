@@ -27,7 +27,9 @@ LARGE_BINARY_THRESHOLD = 8 * 1024 * 1024  # 8 MiB
 
 
 def _stable_id(path: Path) -> str:
-    digest = hashlib.sha1(path.as_posix().encode("utf-8"), usedforsecurity=False).hexdigest()
+    digest = hashlib.sha1(
+        path.as_posix().encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
     return digest[:16]
 
 
@@ -128,7 +130,14 @@ def normalize_tree(
     thumbs_root = pack_root / "thumbnails"
     meta_root = pack_root / "_meta"
 
-    for directory in (pack_root, raw_root, assets_root, text_root, thumbs_root, meta_root):
+    for directory in (
+        pack_root,
+        raw_root,
+        assets_root,
+        text_root,
+        thumbs_root,
+        meta_root,
+    ):
         _ensure_dir(directory)
 
     manifest: Dict[str, object] = {
@@ -176,18 +185,23 @@ def normalize_tree(
         raw_dest = raw_root / rel_path
         raw_dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file_path, raw_dest)
-        manifest["raw"].append(
-            {"path": str(rel_path), "size": size, "hash": checksum}
-        )
+        manifest["raw"].append({"path": str(rel_path), "size": size, "hash": checksum})
 
         category, subcategory = _categorize(rel_path)
         dest_rel: Optional[Path] = None
 
         if category == "audio" and subcategory:
-            dest_rel = Path("assets") / "audio" / subcategory / (stable_id + file_path.suffix.lower())
+            dest_rel = (
+                Path("assets")
+                / "audio"
+                / subcategory
+                / (stable_id + file_path.suffix.lower())
+            )
             _ensure_dir(assets_root / "audio" / subcategory)
         elif category in {"bg", "cg", "sprites", "ui", "images"}:
-            dest_rel = Path("assets") / category / (stable_id + file_path.suffix.lower())
+            dest_rel = (
+                Path("assets") / category / (stable_id + file_path.suffix.lower())
+            )
             _ensure_dir(assets_root / category)
         elif category == "text":
             dest_rel = Path("text") / rel_path
@@ -256,7 +270,9 @@ def normalize_tree(
             sidecars.append(sidecar_rel.as_posix())
 
     manifest_path = pack_root / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     if warnings:
         LOGGER.warning("Normalizer warnings:\n%s", "\n".join(warnings))

@@ -22,11 +22,27 @@ def _load_hooks(path: Path | None) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Detect and import VN directories into comfyvn-pack")
-    parser.add_argument("root", help="Path to the VN directory or archive staging folder")
-    parser.add_argument("--out", default="comfyvn_pack", help="Destination directory for the comfyvn-pack (default: ./comfyvn_pack)")
-    parser.add_argument("--hooks", default=None, help="Optional JSON file describing external tool hooks (paths to unrpa, arc_unpacker, etc.)")
-    parser.add_argument("--engine", default=None, help="Force a specific importer id (e.g., renpy, kirikiri)")
+    parser = argparse.ArgumentParser(
+        description="Detect and import VN directories into comfyvn-pack"
+    )
+    parser.add_argument(
+        "root", help="Path to the VN directory or archive staging folder"
+    )
+    parser.add_argument(
+        "--out",
+        default="comfyvn_pack",
+        help="Destination directory for the comfyvn-pack (default: ./comfyvn_pack)",
+    )
+    parser.add_argument(
+        "--hooks",
+        default=None,
+        help="Optional JSON file describing external tool hooks (paths to unrpa, arc_unpacker, etc.)",
+    )
+    parser.add_argument(
+        "--engine",
+        default=None,
+        help="Force a specific importer id (e.g., renpy, kirikiri)",
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root).expanduser().resolve()
@@ -66,7 +82,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print("[detect]")
     for det in detections:
-        print(f" - {det.engine:<20} confidence={det.confidence:.2f} reasons={det.reasons}")
+        print(
+            f" - {det.engine:<20} confidence={det.confidence:.2f} reasons={det.reasons}"
+        )
     print(f"[chosen] importer={chosen.id} ({chosen.label})")
 
     plan = chosen.plan(root)

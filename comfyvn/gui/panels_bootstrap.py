@@ -1,16 +1,22 @@
 from __future__ import annotations
+
 from PySide6.QtGui import QAction
+
+
 def install_panels(main_window, base_url: str = "http://127.0.0.1:8001"):
     # Lazy imports to avoid hard deps if Qt variant changes
     try:
         from comfyvn.gui.widgets.flow_selector import FlowSelectorDock
         from comfyvn.gui.widgets.ops_panel import OpsPanelDock
     except Exception as e:
-        print("[Panels] import failed:", e); return
+        print("[Panels] import failed:", e)
+        return
 
     # Create or find docks
     mw = main_window
-    docks = {d.objectName(): d for d in mw.findChildren(type(mw), lambda _: False)}  # noop, keep type checker happy
+    docks = {
+        d.objectName(): d for d in mw.findChildren(type(mw), lambda _: False)
+    }  # noop, keep type checker happy
 
     fs = getattr(mw, "_dock_flow_selector", None)
     if fs is None or getattr(fs, "parent", lambda: None)() is None:
@@ -30,7 +36,8 @@ def install_panels(main_window, base_url: str = "http://127.0.0.1:8001"):
         panels_menu = None
         for a in mb.actions():
             if a.text().strip().lower() == "panels":
-                panels_menu = a.menu(); break
+                panels_menu = a.menu()
+                break
         if panels_menu is None:
             panels_menu = mb.addMenu("Panels")
         act1 = panels_menu.addAction("Flow Selector")

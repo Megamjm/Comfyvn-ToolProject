@@ -5,7 +5,6 @@ import os
 import requests
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction
-
 # comfyvn/gui/panels/telemetry_panel.py
 from PySide6.QtWidgets import QLabel, QTextEdit, QVBoxLayout, QWidget
 

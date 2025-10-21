@@ -1,5 +1,5 @@
-from PySide6.QtGui import QAction
 from fastapi import APIRouter, Body
+from PySide6.QtGui import QAction
 
 router = APIRouter()
 _endpoints = {
@@ -8,9 +8,11 @@ _endpoints = {
     "comfyui": None,
 }
 
+
 @router.get("/status")
 def status():
     return {"ok": True, "endpoints": _endpoints}
+
 
 @router.post("/configure")
 def configure(payload: dict = Body(...)):

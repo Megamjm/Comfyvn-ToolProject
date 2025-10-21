@@ -15,13 +15,11 @@ from comfyvn.core.advisory_hooks import BundleContext
 from comfyvn.core.advisory_hooks import scan as scan_bundle
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
-from comfyvn.server.core.chat_import import (
-    apply_alias_map,
-    assign_by_patterns,
-    parse_text,
-    to_scene_dict,
-)
-from comfyvn.server.core.manga_importer import MangaImportError, import_manga_archive
+from comfyvn.server.core.chat_import import (apply_alias_map,
+                                             assign_by_patterns, parse_text,
+                                             to_scene_dict)
+from comfyvn.server.core.manga_importer import (MangaImportError,
+                                                import_manga_archive)
 from comfyvn.server.modules.auth import require_scope
 
 router = APIRouter()

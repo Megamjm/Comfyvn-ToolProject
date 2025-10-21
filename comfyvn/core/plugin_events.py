@@ -1,7 +1,11 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
 from typing import Any
+
+from PySide6.QtGui import QAction
+
 from comfyvn.ext.plugins import PluginManager
+
 
 def dispatch(pm: PluginManager, topic: str, payload: dict):
     for plug in getattr(pm, "plugins", []):

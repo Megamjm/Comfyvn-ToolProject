@@ -70,7 +70,9 @@ def _infer_vram(task: str, size_mb: Optional[float], default: float) -> Optional
 
 def _build_workload_from_query(task: str, size_mb: Optional[float]) -> Dict[str, Any]:
     normalized = task.lower().strip() if isinstance(task, str) else ""
-    defaults = _TASK_DEFAULTS.get(normalized, {"type": normalized or "generic", "min_vram_gb": 0.0})
+    defaults = _TASK_DEFAULTS.get(
+        normalized, {"type": normalized or "generic", "min_vram_gb": 0.0}
+    )
     min_vram = _infer_vram(normalized, size_mb, float(defaults.get("min_vram_gb", 0.0)))
     workload = {
         "type": defaults.get("type"),
@@ -134,9 +136,15 @@ async def advise(body: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
 @router.get("/advise")
 async def advise_query(
     task: str = Query("img", description="Workload classification (img|tts|export)"),
-    size: Optional[str | float] = Query(None, description="Approximate payload size (e.g. 1gb, 512mb)"),
-    prefer_remote: bool = Query(False, description="Hint advisor to prefer remote providers"),
-    hardware_override: bool = Query(False, description="Force CPU fallback (for debugging)"),
+    size: Optional[str | float] = Query(
+        None, description="Approximate payload size (e.g. 1gb, 512mb)"
+    ),
+    prefer_remote: bool = Query(
+        False, description="Hint advisor to prefer remote providers"
+    ),
+    hardware_override: bool = Query(
+        False, description="Force CPU fallback (for debugging)"
+    ),
 ) -> Dict[str, Any]:
     size_mb = _parse_size_mb(size)
     workload = _build_workload_from_query(task, size_mb)
@@ -148,7 +156,11 @@ async def advise_query(
     )
     rationale = recommendation.get("reason") or ""
     choice = recommendation.get("choice")
-    summary = f"{choice.upper() if isinstance(choice, str) else choice}: {rationale}" if choice else rationale
+    summary = (
+        f"{choice.upper() if isinstance(choice, str) else choice}: {rationale}"
+        if choice
+        else rationale
+    )
     return {
         "ok": True,
         "task": task,

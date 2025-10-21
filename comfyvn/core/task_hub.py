@@ -1,8 +1,11 @@
 # comfyvn/core/task_hub.py
 from __future__ import annotations
-import threading, time
+
+import threading
+import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Callable
+from typing import Callable, Dict, Optional
+
 
 @dataclass
 class TaskInfo:
@@ -10,13 +13,14 @@ class TaskInfo:
     label: str
     status: str = "queued"
     progress: float = 0.0
-    cancel_cb: Optional[Callable[[],None]] = None
+    cancel_cb: Optional[Callable[[], None]] = None
     meta: dict = field(default_factory=dict)
+
 
 class TaskHub:
     def __init__(self):
         self._lock = threading.Lock()
-        self._tasks: Dict[str,TaskInfo] = {}
+        self._tasks: Dict[str, TaskInfo] = {}
 
     def upsert(self, t: TaskInfo):
         with self._lock:
@@ -25,7 +29,8 @@ class TaskHub:
     def update(self, tid: str, **kw):
         with self._lock:
             if tid in self._tasks:
-                for k,v in kw.items(): setattr(self._tasks[tid], k, v)
+                for k, v in kw.items():
+                    setattr(self._tasks[tid], k, v)
 
     def all(self):
         with self._lock:
@@ -37,5 +42,6 @@ class TaskHub:
         if t and t.cancel_cb:
             t.cancel_cb()
             self.update(tid, status="canceled")
+
 
 task_hub = TaskHub()

@@ -28,7 +28,9 @@ def state(request: Request) -> Dict[str, Any]:
 
 
 @router.get("/personas")
-def personas(request: Request, role: Optional[str] = Query(default=None)) -> Dict[str, Any]:
+def personas(
+    request: Request, role: Optional[str] = Query(default=None)
+) -> Dict[str, Any]:
     manager = _persona_manager(request)
     return {"ok": True, "data": {"items": manager.list_personas(role=role)}}
 
@@ -76,7 +78,9 @@ def select(request: Request, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]
 
 
 @router.post("/import")
-def import_character(request: Request, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+def import_character(
+    request: Request, body: Dict[str, Any] = Body(...)
+) -> Dict[str, Any]:
     manager = _persona_manager(request)
     overwrite = bool(body.get("overwrite", False))
     auto_select = bool(body.get("auto_select", False))
@@ -132,7 +136,9 @@ def refresh(request: Request) -> Dict[str, Any]:
 
 
 @router.post("/process")
-def process_persona(request: Request, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+def process_persona(
+    request: Request, body: Dict[str, Any] = Body(...)
+) -> Dict[str, Any]:
     manager = _persona_manager(request)
     persona_id = body.get("persona") or body.get("persona_id")
     scene_id = body.get("scene") or body.get("scene_id")

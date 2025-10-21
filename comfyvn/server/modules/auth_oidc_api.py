@@ -1,14 +1,19 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
+import os
+import time
+import urllib.parse as _u
+
 from fastapi import APIRouter, Request
+from PySide6.QtGui import QAction
 from starlette.responses import JSONResponse
-import os, time, urllib.parse as _u
 
 router = APIRouter()
 
+
 def _cfg():
-    issuer   = os.getenv("OIDC_ISSUER", "").strip()
-    client   = os.getenv("OIDC_CLIENT_ID", "").strip()
+    issuer = os.getenv("OIDC_ISSUER", "").strip()
+    client = os.getenv("OIDC_CLIENT_ID", "").strip()
     redirect = os.getenv("OIDC_REDIRECT_URL", "").strip()
     return {
         "issuer": issuer,
@@ -17,20 +22,25 @@ def _cfg():
         "enabled": bool(issuer and client and redirect),
     }
 
+
 @router.get("/oidc/health")
 async def health():
     c = _cfg()
     return {"ok": True, "enabled": c["enabled"]}
 
+
 @router.get("/oidc/config")
 async def cfg():
     return _cfg()
+
 
 @router.get("/oidc/login")
 async def login():
     c = _cfg()
     if not c["enabled"]:
-        return JSONResponse({"ok": False, "error": "oidc_not_configured"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "oidc_not_configured"}, status_code=501
+        )
     q = {
         "client_id": c["client_id"],
         "response_type": "code",
@@ -41,11 +51,14 @@ async def login():
     url = c["issuer"].rstrip("/") + "/authorize?" + _u.urlencode(q)
     return {"ok": True, "auth_url": url}
 
+
 @router.get("/oidc/callback")
 async def callback(request: Request):
     c = _cfg()
     if not c["enabled"]:
-        return JSONResponse({"ok": False, "error": "oidc_not_configured"}, status_code=501)
+        return JSONResponse(
+            {"ok": False, "error": "oidc_not_configured"}, status_code=501
+        )
     # Stub: echo received params; real token exchange omitted for dev mode
     qp = dict(request.query_params)
     return {"ok": True, "received": qp}

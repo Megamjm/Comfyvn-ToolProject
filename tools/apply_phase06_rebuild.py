@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from comfyvn.core.db_manager import DBManager, DEFAULT_DB_PATH  # noqa: E402
+from comfyvn.core.db_manager import DEFAULT_DB_PATH, DBManager  # noqa: E402
 
 DATA_ROOT = ROOT / "data"
 
@@ -63,7 +63,9 @@ def ensure_db(db_path: Path = DEFAULT_DB_PATH) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Rebuild phase-06 directories and database.")
+    parser = argparse.ArgumentParser(
+        description="Rebuild phase-06 directories and database."
+    )
     parser.add_argument(
         "--recreate-all",
         action="store_true",

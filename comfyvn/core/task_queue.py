@@ -1,9 +1,15 @@
-from PySide6.QtGui import QAction
+import queue
 # comfyvn/core/task_queue.py
 # [COMFYVN Architect | v1.3 | this chat]
-import threading, queue, time, traceback
-from typing import Callable, Optional, Dict, Any
+import threading
+import time
+import traceback
+from typing import Any, Callable, Dict, Optional
+
+from PySide6.QtGui import QAction
+
 from comfyvn.core.event_bus import emit
+
 
 class Task:
     def __init__(self, name: str, fn: Callable, *args, **kwargs):
@@ -18,7 +24,10 @@ class Task:
 
     def set_progress(self, pct: int):
         self.progress = max(0, min(100, int(pct)))
-        emit("task.progress", {"id": self.id, "name": self.name, "progress": self.progress})
+        emit(
+            "task.progress",
+            {"id": self.id, "name": self.name, "progress": self.progress},
+        )
 
     def run(self):
         self.status = "running"
@@ -31,7 +40,16 @@ class Task:
         except Exception as e:
             self.status = "error"
             self.error = str(e)
-            emit("task.error", {"id": self.id, "name": self.name, "error": self.error, "trace": traceback.format_exc()})
+            emit(
+                "task.error",
+                {
+                    "id": self.id,
+                    "name": self.name,
+                    "error": self.error,
+                    "trace": traceback.format_exc(),
+                },
+            )
+
 
 class TaskQueue:
     def __init__(self, workers: int = 2):
@@ -60,6 +78,7 @@ class TaskQueue:
 
     def stop(self):
         self._stop.set()
+
 
 # singleton for app
 task_queue = TaskQueue(workers=2)

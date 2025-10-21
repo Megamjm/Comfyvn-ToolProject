@@ -4,8 +4,8 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.core.advisory import AdvisoryIssue, log_issue
+from comfyvn.core.settings_manager import SettingsManager
 
 LOGGER = logging.getLogger("comfyvn.policy.filter")
 
@@ -49,25 +49,44 @@ class ContentFilter:
                 return False, f"tag '{tag}' flagged as NSFW", "warn"
         return True, None, "info"
 
-    def filter_items(self, items: List[Dict], *, mode: Optional[str] = None) -> Dict[str, List[Dict]]:
+    def filter_items(
+        self, items: List[Dict], *, mode: Optional[str] = None
+    ) -> Dict[str, List[Dict]]:
         mode = (mode or self.mode()).lower()
         allowed_items: List[Dict] = []
         flagged_items: List[Dict] = []
         warnings: List[FilterResult] = []
 
         for item in items:
-            item_id = str(item.get("id") or item.get("uid") or item.get("path") or "unknown")
+            item_id = str(
+                item.get("id") or item.get("uid") or item.get("path") or "unknown"
+            )
             allowed, reason, severity = self.classify(item)
             if allowed or mode == "unrestricted":
                 allowed_items.append(item)
                 if not allowed:
-                    warnings.append(FilterResult(item_id=item_id, allowed=True, reason=reason, severity=severity))
+                    warnings.append(
+                        FilterResult(
+                            item_id=item_id,
+                            allowed=True,
+                            reason=reason,
+                            severity=severity,
+                        )
+                    )
             elif mode == "warn":
                 allowed_items.append(item)
-                warnings.append(FilterResult(item_id=item_id, allowed=True, reason=reason, severity=severity))
+                warnings.append(
+                    FilterResult(
+                        item_id=item_id, allowed=True, reason=reason, severity=severity
+                    )
+                )
             else:
                 flagged_items.append(item)
-                warnings.append(FilterResult(item_id=item_id, allowed=False, reason=reason, severity=severity))
+                warnings.append(
+                    FilterResult(
+                        item_id=item_id, allowed=False, reason=reason, severity=severity
+                    )
+                )
 
         for warning in warnings:
             if warning.reason:

@@ -31,4 +31,3 @@ class VariableRegistry(BaseRegistry):
             [self.project_id, variable_id],
         )
         return dict(row) if row else None
-

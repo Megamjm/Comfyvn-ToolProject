@@ -1,8 +1,9 @@
-from PySide6.QtGui import QAction
 # comfyvn/gui/fonts_bootstrap.py
 # [Main window update chat] — load TTF/OTF fonts from assets/fonts* at import time
 from pathlib import Path
-from PySide6.QtGui import QFontDatabase
+
+from PySide6.QtGui import QAction, QFontDatabase
+
 
 def ensure_fonts():
     root = Path(__file__).resolve().parents[2]
@@ -21,6 +22,7 @@ def ensure_fonts():
             except Exception:
                 pass
     return count
+
 
 # auto-run on import
 ensure_fonts()

@@ -1,15 +1,23 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import time, json, uuid
+
+import json
+import time
+import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
+
+from PySide6.QtGui import QAction
+
 from comfyvn.ext.plugins import Plugin
 from comfyvn.workflows.runtime import WorkflowRuntime
 
-RUNS_DIR = Path("./data/runs"); RUNS_DIR.mkdir(parents=True, exist_ok=True)
+RUNS_DIR = Path("./data/runs")
+RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def _write_run(rid: str, data: Dict[str, Any]):
     (RUNS_DIR / f"{rid}.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+
 
 def wf_run(payload: dict, job_id: str | None):
     wf = payload.get("workflow")
@@ -22,9 +30,14 @@ def wf_run(payload: dict, job_id: str | None):
     inputs = payload.get("inputs") or {}
     run_id = job_id or uuid.uuid4().hex[:12]
     rr: Dict[str, Any] = {
-        "id": run_id, "name": name, "started": time.time(),
-        "inputs": inputs, "ok": False, "outputs": {}, "nodes": {},
-        "resume_from": payload.get("resume_from") or ""
+        "id": run_id,
+        "name": name,
+        "started": time.time(),
+        "inputs": inputs,
+        "ok": False,
+        "outputs": {},
+        "nodes": {},
+        "resume_from": payload.get("resume_from") or "",
     }
 
     # Optional resume
@@ -38,7 +51,9 @@ def wf_run(payload: dict, job_id: str | None):
             prev = None
 
     try:
-        rt = WorkflowRuntime(wf, run_id, inputs=inputs, cache=bool(payload.get("cache", True)))
+        rt = WorkflowRuntime(
+            wf, run_id, inputs=inputs, cache=bool(payload.get("cache", True))
+        )
         # prime cache with previous node outputs if resuming
         if prev and isinstance(prev.get("nodes"), dict):
             for nid, nd in prev["nodes"].items():
@@ -58,10 +73,19 @@ def wf_run(payload: dict, job_id: str | None):
 
     rr["finished"] = time.time()
     _write_run(run_id, rr)
-    return {"ok": rr["ok"], "run_id": run_id, "outputs": rr.get("outputs"), "error": rr.get("error")}
+    return {
+        "ok": rr["ok"],
+        "run_id": run_id,
+        "outputs": rr.get("outputs"),
+        "error": rr.get("error"),
+    }
+
 
 plugin = Plugin(
     name="wf_runtime",
     jobs={"wf_run": wf_run},
-    meta={"builtin": True, "desc": "Execute workflows with optional resume and caching"}
+    meta={
+        "builtin": True,
+        "desc": "Execute workflows with optional resume and caching",
+    },
 )

@@ -1,7 +1,8 @@
 import requests
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+                               QWidget)
 
 
 class DashboardPanel(QWidget):

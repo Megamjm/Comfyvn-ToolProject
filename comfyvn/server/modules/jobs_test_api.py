@@ -1,6 +1,8 @@
-from PySide6.QtGui import QAction
 from fastapi import APIRouter
+from PySide6.QtGui import QAction
+
 router = APIRouter()
+
 
 @router.post("/enqueue-test")
 def enqueue_test():

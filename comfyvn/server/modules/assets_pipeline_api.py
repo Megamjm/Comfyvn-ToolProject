@@ -1,13 +1,17 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-from fastapi import APIRouter, Body, Request
-from typing import Dict, Any
-from pathlib import Path
+
 import json
+from pathlib import Path
+from typing import Any, Dict
+
+from fastapi import APIRouter, Body, Request
+from PySide6.QtGui import QAction
+
 from comfyvn.core.asset_index import AssetIndex
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 _index = AssetIndex()
+
 
 @router.post("/index")
 def build_index(payload: Dict[str, Any] = Body(default={})):
@@ -17,9 +21,11 @@ def build_index(payload: Dict[str, Any] = Body(default={})):
         _index.index_file = Path(root) / "_index.json"
     return {"ok": True, "index": _index.build()}
 
+
 @router.get("/index")
 def read_index():
     return {"ok": True, "index": _index.read()}
+
 
 @router.post("/workflow/register")
 def workflow_register(payload: Dict[str, Any] = Body(...)):
@@ -33,6 +39,7 @@ def workflow_register(payload: Dict[str, Any] = Body(...)):
     (wfdir / f"{name}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return {"ok": True, "workflow": meta}
 
+
 @router.post("/render")
 def render_request(request: Request, payload: Dict[str, Any] = Body(...)):
     jm = getattr(request.app.state, "job_manager", None)
@@ -45,7 +52,13 @@ def render_request(request: Request, payload: Dict[str, Any] = Body(...)):
     if jm and hasattr(jm, "enqueue"):
         jid = jm.enqueue("render.request", job_payload, retries=2, priority=1)
         return {"ok": True, "queued": True, "job_id": jid}
-    return {"ok": True, "queued": False, "reason": "job_manager_unavailable", "request": job_payload}
+    return {
+        "ok": True,
+        "queued": False,
+        "reason": "job_manager_unavailable",
+        "request": job_payload,
+    }
+
 
 @router.post("/sprite")
 def sprite_lookup_or_enqueue(request: Request, payload: Dict[str, Any] = Body(...)):
@@ -58,6 +71,14 @@ def sprite_lookup_or_enqueue(request: Request, payload: Dict[str, Any] = Body(..
         return {"ok": True, "cached": True, "path": str(p)}
     jm = getattr(request.app.state, "job_manager", None)
     if jm and hasattr(jm, "enqueue"):
-        jid = jm.enqueue("sprite.render", {"char": char, "mood": mood, "out": str(p)}, retries=2)
-        return {"ok": True, "cached": False, "queued": True, "job_id": jid, "expected": str(p)}
+        jid = jm.enqueue(
+            "sprite.render", {"char": char, "mood": mood, "out": str(p)}, retries=2
+        )
+        return {
+            "ok": True,
+            "cached": False,
+            "queued": True,
+            "job_id": jid,
+            "expected": str(p),
+        }
     return {"ok": True, "cached": False, "queued": False, "expected": str(p)}

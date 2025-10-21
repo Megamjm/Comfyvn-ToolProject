@@ -1,9 +1,12 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
+from time import time
 # comfyvn/core/notifier.py
 # [COMFYVN Architect | v1.0 | this chat]
-from typing import Callable, List, Dict
-from time import time
+from typing import Callable, Dict, List
+
+from PySide6.QtGui import QAction
+
 
 class Notifier:
     def __init__(self):
@@ -30,5 +33,6 @@ class Notifier:
 
     def list(self):
         return list(self.history)
+
 
 notifier = Notifier()

@@ -1,14 +1,19 @@
 # comfyvn/core/shortcut_manager.py
 # [COMFYVN Architect | v1.2 | corrected import]
 from typing import Callable, Dict
+
 from PySide6.QtGui import QAction, QKeySequence
+
 
 class ShortcutManager:
     """Central registry for application and panel shortcuts."""
+
     _actions: Dict[str, Dict] = {}
 
     @classmethod
-    def register(cls, parent, name: str, sequence: str, callback: Callable, tip: str = ""):
+    def register(
+        cls, parent, name: str, sequence: str, callback: Callable, tip: str = ""
+    ):
         act = QAction(name, parent)
         if sequence:
             act.setShortcut(QKeySequence(sequence))
@@ -29,6 +34,7 @@ class ShortcutManager:
             act = cls._actions[name]["action"]
             act.setShortcut(QKeySequence(new_seq))
             cls._actions[name]["sequence"] = new_seq
+
 
 # Global shared instance for extension access
 shortcut_manager = ShortcutManager

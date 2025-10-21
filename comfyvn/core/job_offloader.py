@@ -1,10 +1,13 @@
-from PySide6.QtGui import QAction
+import json
+import logging
 
 # comfyvn/core/job_offloader.py
 # [ComfyVN Architect | Phase 0.94 | Unified Job Offload Bridge]
-import requests, json, logging
+import requests
+from PySide6.QtGui import QAction
 
 log = logging.getLogger(__name__)
+
 
 def ensure_server_alive(base: str = "http://127.0.0.1:8001"):
     try:
@@ -15,6 +18,7 @@ def ensure_server_alive(base: str = "http://127.0.0.1:8001"):
         pass
     return False
 
+
 def offload_job_local(job: dict, base: str = "http://127.0.0.1:8001"):
     if not ensure_server_alive(base):
         return {"ok": False, "error": "Server offline"}
@@ -24,6 +28,7 @@ def offload_job_local(job: dict, base: str = "http://127.0.0.1:8001"):
     except Exception as e:
         log.error(f"Local job offload failed: {e}")
         return {"ok": False, "error": str(e)}
+
 
 def offload_job_remote(job: dict, endpoint: str):
     try:

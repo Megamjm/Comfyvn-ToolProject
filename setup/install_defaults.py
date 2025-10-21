@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS_ROOT = Path(__file__).resolve().parent / "defaults"
 
@@ -69,7 +68,9 @@ def ensure_directories(directories: Iterable[str], *, dry_run: bool) -> list[str
     return created
 
 
-def install_defaults(*, dry_run: bool, force: bool) -> tuple[list[str], list[Path], list[Path]]:
+def install_defaults(
+    *, dry_run: bool, force: bool
+) -> tuple[list[str], list[Path], list[Path]]:
     created_dirs = ensure_directories(ESSENTIAL_DIRS, dry_run=dry_run)
     copied: list[Path] = []
     skipped: list[Path] = []
@@ -94,18 +95,31 @@ def install_defaults(*, dry_run: bool, force: bool) -> tuple[list[str], list[Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Install starter data for ComfyVN.")
-    parser.add_argument("--dry-run", action="store_true", help="Show actions without writing to disk.")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing files.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show actions without writing to disk."
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing files."
+    )
     args = parser.parse_args(argv)
 
     if not DEFAULTS_ROOT.exists():
-        print("[setup] Defaults directory is missing; nothing to install.", file=sys.stderr)
+        print(
+            "[setup] Defaults directory is missing; nothing to install.",
+            file=sys.stderr,
+        )
         return 1
 
-    created_dirs, copied, skipped = install_defaults(dry_run=args.dry_run, force=args.force)
+    created_dirs, copied, skipped = install_defaults(
+        dry_run=args.dry_run, force=args.force
+    )
 
     def format_paths(items: Iterable[Path]) -> str:
-        return "\n".join(f"  - {path.relative_to(REPO_ROOT)}" for path in items) if items else "  (none)"
+        return (
+            "\n".join(f"  - {path.relative_to(REPO_ROOT)}" for path in items)
+            if items
+            else "  (none)"
+        )
 
     if args.dry_run:
         print("[setup] Dry run complete.")

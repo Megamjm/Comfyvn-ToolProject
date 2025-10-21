@@ -71,7 +71,9 @@ class _RegistryStub:
     def active_providers(self) -> list[dict[str, Any]]:
         return [dict(p) for p in self._providers if p.get("active", True)]
 
-    def record_health(self, provider_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    def record_health(
+        self, provider_id: str, status: dict[str, Any]
+    ) -> dict[str, Any] | None:
         for entry in self._providers:
             if entry["id"] == provider_id:
                 entry["last_health"] = dict(status)
@@ -85,7 +87,11 @@ def client(monkeypatch: pytest.MonkeyPatch):
 
     registry = _RegistryStub()
     providers_api.REGISTRY = registry  # type: ignore[assignment]
-    monkeypatch.setattr(providers_api, "provider_health", lambda entry: {"ok": True, "echo": entry["id"]})
+    monkeypatch.setattr(
+        providers_api,
+        "provider_health",
+        lambda entry: {"ok": True, "echo": entry["id"]},
+    )
 
     app = create_app()
     with TestClient(app) as c:

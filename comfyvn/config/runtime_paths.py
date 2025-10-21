@@ -18,6 +18,7 @@ from typing import Iterable, Optional
 try:
     from platformdirs import PlatformDirs  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
+
     class PlatformDirs:  # type: ignore
         def __init__(self, appname: str, appauthor: str, roaming: bool) -> None:
             base = Path.cwd().resolve()
@@ -25,6 +26,7 @@ except ImportError:  # pragma: no cover - optional dependency
             self.user_config_path = str(base / "config")
             self.user_cache_path = str(base / "cache")
             self.user_log_path = str(base / "logs")
+
 
 APP_NAME = os.getenv("COMFYVN_APP_NAME", "ComfyVN Studio")
 APP_AUTHOR = os.getenv("COMFYVN_APP_AUTHOR", "ComfyVN")

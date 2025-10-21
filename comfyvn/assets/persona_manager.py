@@ -48,15 +48,21 @@ class PersonaManager:
         self.data_path = Path(data_path) if data_path else data_dir("personas")
         self.data_path.mkdir(parents=True, exist_ok=True)
 
-        self.sprite_root = Path(sprite_root) if sprite_root else Path("./assets/sprites")
+        self.sprite_root = (
+            Path(sprite_root) if sprite_root else Path("./assets/sprites")
+        )
         self.sprite_root.mkdir(parents=True, exist_ok=True)
         self.character_sprite_root = (
-            Path(character_sprite_root) if character_sprite_root else Path("./assets/characters")
+            Path(character_sprite_root)
+            if character_sprite_root
+            else Path("./assets/characters")
         )
         self.character_sprite_root.mkdir(parents=True, exist_ok=True)
 
         self.character_manager = character_manager or CharacterManager(characters_path)
-        self.state_path = Path(state_path) if state_path else data_dir("persona", "state.json")
+        self.state_path = (
+            Path(state_path) if state_path else data_dir("persona", "state.json")
+        )
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.pose_manager = PoseManager()
@@ -108,13 +114,17 @@ class PersonaManager:
             and not self.state.get("active_persona")
             and not self.state.get("active_character")
         ):
-            self.set_active_persona(persona_id, character_id=full_profile.get("character_id"), reason="auto")
+            self.set_active_persona(
+                persona_id, character_id=full_profile.get("character_id"), reason="auto"
+            )
         return dict(full_profile)
 
     def _save_profile(self, persona_id: str, profile: dict):
         path = self.data_path / f"{persona_id}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     def load_persona(self, persona_id: str) -> Optional[Dict[str, Any]]:
         path = self.data_path / f"{persona_id}.json"
@@ -234,22 +244,40 @@ class PersonaManager:
     ) -> Dict[str, Any]:
         """Import a character payload and auto-create a linked persona."""
         character = self.character_manager.import_character(source, overwrite=overwrite)
-        persona_payload = dict(character.get("persona") or character.get("persona_profile") or {})
-        persona_id = persona_payload.get("id") or character.get("persona_id") or character.get("id")
+        persona_payload = dict(
+            character.get("persona") or character.get("persona_profile") or {}
+        )
+        persona_id = (
+            persona_payload.get("id")
+            or character.get("persona_id")
+            or character.get("id")
+        )
         if not persona_id:
             persona_id = character["id"]
-        persona_payload.setdefault("display_name", character.get("display_name") or character.get("name"))
-        persona_payload.setdefault("sprite_folder", persona_payload.get("sprite_folder"))
+        persona_payload.setdefault(
+            "display_name", character.get("display_name") or character.get("name")
+        )
+        persona_payload.setdefault(
+            "sprite_folder", persona_payload.get("sprite_folder")
+        )
         persona_payload.setdefault("llm_profile", character.get("llm_profile"))
         persona_payload.setdefault("traits", character.get("traits"))
         persona_payload.setdefault("role", persona_payload.get("role") or role)
-        persona = self.register_persona(persona_id, persona_payload, character_id=character["id"])
+        persona = self.register_persona(
+            persona_id, persona_payload, character_id=character["id"]
+        )
         remember_event(
             "persona.import_character",
-            {"persona": persona_id, "character": character["id"], "role": persona.get("role")},
+            {
+                "persona": persona_id,
+                "character": character["id"],
+                "role": persona.get("role"),
+            },
         )
         if auto_select:
-            self.set_active_persona(persona_id, character_id=character["id"], reason="import")
+            self.set_active_persona(
+                persona_id, character_id=character["id"], reason="import"
+            )
         return {"character": character, "persona": persona}
 
     def set_active_persona(
@@ -305,13 +333,17 @@ class PersonaManager:
         persona_id = self._persona_for_character(character_id)
         if not persona_id:
             raise KeyError(f"No persona linked to character '{character_id}'")
-        return self.set_active_persona(persona_id, character_id=character_id, mode=mode, reason=reason)
+        return self.set_active_persona(
+            persona_id, character_id=character_id, mode=mode, reason=reason
+        )
 
     def get_active_selection(self) -> Dict[str, Any]:
         persona_id = self.state.get("active_persona")
         character_id = self.state.get("active_character")
         persona = self.personas.get(persona_id) if persona_id else None
-        character = self.character_manager.get_character(character_id) if character_id else None
+        character = (
+            self.character_manager.get_character(character_id) if character_id else None
+        )
         return {
             "persona_id": persona_id,
             "character_id": character_id,
@@ -336,10 +368,7 @@ class PersonaManager:
 
         persona = self.personas[persona_id]
         expressions = self.list_expressions(persona_id)
-        sprites = {
-            expr: self._resolve_sprite(persona_id, expr)
-            for expr in expressions
-        }
+        sprites = {expr: self._resolve_sprite(persona_id, expr) for expr in expressions}
 
         persona.setdefault("sprites", {})
         persona["sprites"]["expressions"] = sprites
@@ -367,7 +396,9 @@ class PersonaManager:
             export_dir = data_dir("persona", "exports")
             export_dir.mkdir(parents=True, exist_ok=True)
             export_path = Path(export_dir) / f"{persona_id}_summary.json"
-            export_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+            export_path.write_text(
+                json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
             summary["export_path"] = str(export_path)
 
         remember_event(
@@ -512,14 +543,18 @@ class PersonaManager:
         data.setdefault("mode", "vn")
         data.setdefault("active_persona", None)
         data.setdefault("active_character", None)
-        data["history"] = [row for row in data["history"] if isinstance(row, dict)][-50:]
+        data["history"] = [row for row in data["history"] if isinstance(row, dict)][
+            -50:
+        ]
         return data
 
     def _save_state(self) -> None:
         payload = dict(self.state)
         payload["updated_at"] = time.time()
         payload["history"] = payload.get("history", [])[-50:]
-        self.state_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.state_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     def _ensure_profile_defaults(
         self,
@@ -534,16 +569,24 @@ class PersonaManager:
         combined["id"] = persona_id
         if character_id:
             combined["character_id"] = character_id
-        role_value = role or combined.get("role") or ("player" if combined.get("is_player") else "npc")
+        role_value = (
+            role
+            or combined.get("role")
+            or ("player" if combined.get("is_player") else "npc")
+        )
         role_value = str(role_value).lower()
         if role_value not in {"player", "npc", "support", "companion"}:
             role_value = "npc"
         combined["role"] = role_value
-        combined["is_player"] = bool(combined.get("is_player") or role_value == "player")
+        combined["is_player"] = bool(
+            combined.get("is_player") or role_value == "player"
+        )
         combined.setdefault("expression", combined.get("expression") or "neutral")
         combined.setdefault("poses", combined.get("poses") or {})
         combined.setdefault("metadata", combined.get("metadata") or {})
-        combined.setdefault("llm_profile", combined.get("llm_profile") or dict(DEFAULT_LLM_PROFILE))
+        combined.setdefault(
+            "llm_profile", combined.get("llm_profile") or dict(DEFAULT_LLM_PROFILE)
+        )
         cid = combined.get("character_id")
 
         if cid:
@@ -566,7 +609,9 @@ class PersonaManager:
 
         return combined
 
-    def _default_sprite_folder(self, persona_id: str, character_id: Optional[str]) -> str:
+    def _default_sprite_folder(
+        self, persona_id: str, character_id: Optional[str]
+    ) -> str:
         candidates: List[Path] = []
         if character_id:
             candidates.append(self.character_sprite_root / character_id / "sprites")

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from comfyvn.core.gpu_manager import GPUManager
 from comfyvn.core.compute_advisor import advise
+from comfyvn.core.gpu_manager import GPUManager
 
 
 def _dummy_manager(tmp_path: Path) -> GPUManager:

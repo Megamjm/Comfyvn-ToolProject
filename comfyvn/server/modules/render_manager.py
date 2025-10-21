@@ -1,9 +1,13 @@
-from PySide6.QtGui import QAction
+import itertools
+import json
 # comfyvn/server/core/render_manager.py
-import time, json, itertools
+import time
 from pathlib import Path
 
+from PySide6.QtGui import QAction
+
 STATE = Path("data/state/render_state.json")
+
 
 class RenderManager:
     def __init__(self):
@@ -24,18 +28,19 @@ class RenderManager:
             except Exception:
                 self._jobs = {}
 
-    def list(self): return list(self._jobs.values())
+    def list(self):
+        return list(self._jobs.values())
 
     def enqueue(self, payload: dict):
         jid = f"r{next(self._seq)}"
         job = {
             "id": jid,
             "ts": int(time.time()),
-            "type": payload.get("type","image"),
-            "queue": payload.get("queue","render"),
-            "priority": int(payload.get("priority",5)),
-            "device": payload.get("device","cpu"),
-            "prompt": payload.get("prompt",""),
+            "type": payload.get("type", "image"),
+            "queue": payload.get("queue", "render"),
+            "priority": int(payload.get("priority", 5)),
+            "device": payload.get("device", "cpu"),
+            "prompt": payload.get("prompt", ""),
             "status": "queued",
         }
         self._jobs[jid] = job
@@ -44,14 +49,16 @@ class RenderManager:
 
     def reprioritize(self, job_id: str, priority: int):
         j = self._jobs.get(job_id)
-        if not j: return False
+        if not j:
+            return False
         j["priority"] = int(priority)
         self._save_state()
         return True
 
     def set_device(self, job_id: str, device: str):
         j = self._jobs.get(job_id)
-        if not j: return False
+        if not j:
+            return False
         j["device"] = device
         self._save_state()
         return True

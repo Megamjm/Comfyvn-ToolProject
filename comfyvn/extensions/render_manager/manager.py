@@ -1,8 +1,14 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
+import random
 # comfyvn/extensions/render_manager/manager.py
-import threading, time, random
+import threading
+import time
+
+from PySide6.QtGui import QAction
+
 from comfyvn.core.task_registry import task_registry
+
 
 class RenderJob:
     def __init__(self, job_id: str, payload: dict):
@@ -10,6 +16,7 @@ class RenderJob:
         self.payload = payload
         self.progress = 0.0
         self.status = "queued"
+
 
 class RenderManager:
     def __init__(self):
@@ -33,5 +40,6 @@ class RenderManager:
             task_registry.update(job.id, progress=job.progress)
         job.status = "done"
         task_registry.update(job.id, status="done", message="Render complete")
+
 
 render_manager = RenderManager()

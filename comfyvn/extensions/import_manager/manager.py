@@ -1,9 +1,16 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
+
+import json
+import threading
 # comfyvn/extensions/import_manager/manager.py
-import time, threading, zipfile, json
+import time
+import zipfile
 from pathlib import Path
+
+from PySide6.QtGui import QAction
+
 from comfyvn.core.task_registry import task_registry
+
 
 class ImportManager:
     def __init__(self, data_dir="data/assets"):
@@ -34,5 +41,6 @@ class ImportManager:
             task_registry.update(tid, status="done", message=f"Imported → {dest}")
         except Exception as e:
             task_registry.update(tid, status="error", message=str(e))
+
 
 import_manager = ImportManager()

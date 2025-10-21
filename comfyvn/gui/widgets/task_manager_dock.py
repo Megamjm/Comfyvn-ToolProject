@@ -1,7 +1,8 @@
 from PySide6.QtGui import QAction
 # comfyvn/gui/widgets/task_manager_dock.py
 # [Main window update chat] — minimal stub to satisfy imports
-from PySide6.QtWidgets import QDockWidget, QWidget, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QDockWidget, QLabel, QVBoxLayout, QWidget
+
 
 class TaskManagerDock(QDockWidget):
     def __init__(self, parent=None):

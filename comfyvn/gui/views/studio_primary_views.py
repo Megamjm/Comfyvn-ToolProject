@@ -5,20 +5,10 @@ from typing import Dict, Iterable, List, Optional
 
 import requests
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (
-    QFrame,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPlainTextEdit,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QLabel,
+                               QListWidget, QListWidgetItem, QPlainTextEdit,
+                               QPushButton, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.gui.services.job_stream import JobStreamClient
 from comfyvn.studio.core.asset_registry import AssetRegistry

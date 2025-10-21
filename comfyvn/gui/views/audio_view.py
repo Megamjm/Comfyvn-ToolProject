@@ -4,15 +4,8 @@ import logging
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QCheckBox, QGroupBox, QHBoxLayout, QLabel,
+                               QPushButton, QVBoxLayout, QWidget)
 
 from comfyvn.assets.audio_manager import AudioManager
 
@@ -25,7 +18,9 @@ class AudioView(QWidget):
     backend status for the studio. Designed for reuse within the Audio Lab.
     """
 
-    def __init__(self, manager: Optional[AudioManager] = None, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, manager: Optional[AudioManager] = None, parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self.manager = manager or AudioManager()
 
@@ -66,9 +61,15 @@ class AudioView(QWidget):
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
 
-        self.music_toggle.stateChanged.connect(lambda state: self._on_toggle("music", state))
-        self.voice_toggle.stateChanged.connect(lambda state: self._on_toggle("voice", state))
-        self.sfx_toggle.stateChanged.connect(lambda state: self._on_toggle("sfx", state))
+        self.music_toggle.stateChanged.connect(
+            lambda state: self._on_toggle("music", state)
+        )
+        self.voice_toggle.stateChanged.connect(
+            lambda state: self._on_toggle("voice", state)
+        )
+        self.sfx_toggle.stateChanged.connect(
+            lambda state: self._on_toggle("sfx", state)
+        )
 
     def _on_toggle(self, key: str, state: int) -> None:
         enabled = state == Qt.Checked
@@ -101,7 +102,9 @@ class AudioView(QWidget):
             self.music_toggle.setChecked(self.manager.is_enabled("music"))
             self.voice_toggle.setChecked(self.manager.is_enabled("voice"))
             # Treat either fx or sound as SFX enablement
-            sfx_enabled = self.manager.is_enabled("fx") or self.manager.is_enabled("sound")
+            sfx_enabled = self.manager.is_enabled("fx") or self.manager.is_enabled(
+                "sound"
+            )
             self.sfx_toggle.setChecked(sfx_enabled)
         finally:
             self.music_toggle.blockSignals(False)
@@ -109,11 +112,17 @@ class AudioView(QWidget):
             self.sfx_toggle.blockSignals(False)
 
         backend_info = getattr(self.manager, "backend_info", "Unknown backend")
-        self.backend_label.setText(f"Backend: {backend_info} (master volume {self.manager.master_volume:.2f})")
+        self.backend_label.setText(
+            f"Backend: {backend_info} (master volume {self.manager.master_volume:.2f})"
+        )
         self._update_status()
 
     def _update_status(self) -> None:
         music = "ON" if self.manager.is_enabled("music") else "OFF"
         voice = "ON" if self.manager.is_enabled("voice") else "OFF"
-        sfx = "ON" if self.manager.is_enabled("fx") or self.manager.is_enabled("sound") else "OFF"
+        sfx = (
+            "ON"
+            if self.manager.is_enabled("fx") or self.manager.is_enabled("sound")
+            else "OFF"
+        )
         self.status_label.setText(f"Music {music} | Voice {voice} | SFX {sfx}")

@@ -1,12 +1,17 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
-import json, shutil, uuid
+
+import json
+import shutil
+import uuid
 from pathlib import Path
 from typing import Optional
+
+from PySide6.QtGui import QAction
 
 PROJECTS_DIR = Path("projects")
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 LAST_PTR = PROJECTS_DIR / ".last"
+
 
 class Project:
     def __init__(self, root: Path):
@@ -28,6 +33,7 @@ class Project:
         self.meta.setdefault("name", self.root.name)
         self.meta_path.write_text(json.dumps(self.meta, indent=2), encoding="utf-8")
 
+
 def new_project(name: str) -> Project:
     root = PROJECTS_DIR / name
     root.mkdir(parents=True, exist_ok=True)
@@ -40,6 +46,7 @@ def new_project(name: str) -> Project:
     set_last_project(name)
     return p
 
+
 def load_project(name: str) -> Optional[Project]:
     root = PROJECTS_DIR / name
     if not root.exists():
@@ -47,6 +54,7 @@ def load_project(name: str) -> Optional[Project]:
     p = Project(root)
     set_last_project(name)
     return p
+
 
 def save_project_as(p: Project, new_name: str) -> Project:
     new_root = PROJECTS_DIR / new_name
@@ -59,14 +67,21 @@ def save_project_as(p: Project, new_name: str) -> Project:
     set_last_project(new_name)
     return p2
 
+
 def list_projects() -> list[str]:
-    return [d.name for d in PROJECTS_DIR.iterdir() if d.is_dir() and (d/"project.cvnproj").exists()]
+    return [
+        d.name
+        for d in PROJECTS_DIR.iterdir()
+        if d.is_dir() and (d / "project.cvnproj").exists()
+    ]
+
 
 def get_last_project_name() -> Optional[str]:
     try:
         return LAST_PTR.read_text(encoding="utf-8").strip() or None
     except Exception:
         return None
+
 
 def set_last_project(name: str):
     LAST_PTR.write_text(name, encoding="utf-8")

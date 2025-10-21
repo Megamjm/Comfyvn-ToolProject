@@ -4,18 +4,19 @@ Asset registry facade for the Studio shell.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import shutil
 import sqlite3
 import threading
-import hashlib
 import wave
+from array import array
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from array import array
+
 from comfyvn.config.runtime_paths import thumb_cache_dir
 
 try:  # thumbnail generation optional
@@ -26,10 +27,10 @@ except Exception:  # pragma: no cover - pillow optional
     PngImagePlugin = None  # type: ignore
 
 try:  # audio tagging optional
+    from mutagen.flac import FLAC  # type: ignore
     from mutagen.id3 import ID3, TXXX, ID3NoHeaderError  # type: ignore
     from mutagen.mp3 import MP3  # type: ignore
     from mutagen.oggvorbis import OggVorbis  # type: ignore
-    from mutagen.flac import FLAC  # type: ignore
     from mutagen.wave import WAVE  # type: ignore
 except Exception:  # pragma: no cover - mutagen optional
     ID3 = None  # type: ignore
@@ -53,7 +54,16 @@ class AssetRegistry(BaseRegistry):
     META_ROOT = ASSETS_ROOT / "_meta"
     THUMB_ROOT = thumb_cache_dir()
     SIDECAR_SUFFIX = ".asset.json"
-    _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+    _IMAGE_SUFFIXES = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".bmp",
+        ".gif",
+        ".tif",
+        ".tiff",
+    }
     _AUDIO_WAVEFORM_SUFFIXES = {".wav", ".wave"}
     _thumb_executor: ThreadPoolExecutor | None = None
     _thumb_executor_lock = threading.Lock()
@@ -75,12 +85,16 @@ class AssetRegistry(BaseRegistry):
         self.THUMB_ROOT = self._resolve_thumb_root(thumb_root)
         self.sidecar_suffix = sidecar_suffix or self.SIDECAR_SUFFIX
         rel_hint = os.getenv("COMFYVN_THUMBS_REL")
-        self._thumb_rel_base = Path(rel_hint).expanduser() if rel_hint else Path("cache/thumbs")
+        self._thumb_rel_base = (
+            Path(rel_hint).expanduser() if rel_hint else Path("cache/thumbs")
+        )
         self.ASSETS_ROOT.mkdir(parents=True, exist_ok=True)
         if self.META_ROOT:
             self.META_ROOT.mkdir(parents=True, exist_ok=True)
         self.THUMB_ROOT.mkdir(parents=True, exist_ok=True)
-        self._provenance = ProvenanceRegistry(db_path=self.db_path, project_id=self.project_id)
+        self._provenance = ProvenanceRegistry(
+            db_path=self.db_path, project_id=self.project_id
+        )
 
     @classmethod
     def _resolve_assets_root(cls, override: Path | str | None) -> Path:
@@ -204,7 +218,10 @@ class AssetRegistry(BaseRegistry):
                 shutil.copy2(source, dest)
                 LOGGER.debug("Copied asset %s -> %s", source, dest)
             else:
-                LOGGER.debug("Source and destination are identical for %s; skipping copy.", source)
+                LOGGER.debug(
+                    "Source and destination are identical for %s; skipping copy.",
+                    source,
+                )
                 copy = False
         else:
             try:
@@ -223,7 +240,9 @@ class AssetRegistry(BaseRegistry):
         size_bytes = dest.stat().st_size
         preview_rel, preview_kind = self._schedule_preview(dest, uid)
         if preview_rel:
-            meta_payload.setdefault("preview", {"path": preview_rel, "kind": preview_kind or "thumbnail"})
+            meta_payload.setdefault(
+                "preview", {"path": preview_rel, "kind": preview_kind or "thumbnail"}
+            )
 
         meta_json = self.dumps(meta_payload)
         with self.connection() as conn:
@@ -269,7 +288,9 @@ class AssetRegistry(BaseRegistry):
             if copy:
                 self._embed_provenance_marker(dest, provenance_record)
         elif provenance:
-            LOGGER.warning("Provenance payload supplied but asset id unavailable for uid=%s", uid)
+            LOGGER.warning(
+                "Provenance payload supplied but asset id unavailable for uid=%s", uid
+            )
 
         preview_entry = None
         if preview_rel:
@@ -384,12 +405,16 @@ class AssetRegistry(BaseRegistry):
         canonical.setdefault("id", canonical.get("uid"))
         primary_path = self._sidecar_path(rel_path)
         primary_path.parent.mkdir(parents=True, exist_ok=True)
-        primary_path.write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8")
+        primary_path.write_text(
+            json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         LOGGER.debug("Sidecar written: %s", primary_path)
         if self.META_ROOT:
             legacy_path = (self.META_ROOT / rel_path).with_suffix(".json")
             legacy_path.parent.mkdir(parents=True, exist_ok=True)
-            legacy_path.write_text(json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8")
+            legacy_path.write_text(
+                json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
             LOGGER.debug("Legacy sidecar mirrored: %s", legacy_path)
 
     def _format_asset_row(self, row: sqlite3.Row) -> Dict[str, Any]:
@@ -424,7 +449,9 @@ class AssetRegistry(BaseRegistry):
                     )
         return cls._thumb_executor
 
-    def _schedule_preview(self, dest: Path, uid: str) -> tuple[Optional[str], Optional[str]]:
+    def _schedule_preview(
+        self, dest: Path, uid: str
+    ) -> tuple[Optional[str], Optional[str]]:
         suffix = dest.suffix.lower()
         preview_kind: Optional[str]
         if suffix in self._IMAGE_SUFFIXES:
@@ -442,7 +469,9 @@ class AssetRegistry(BaseRegistry):
 
         thumb_rel = str((self._thumb_rel_base / thumb_path.name).as_posix())
         executor = self._get_thumbnail_executor()
-        future = executor.submit(self._thumbnail_job, dest, thumb_path, thumb_rel, uid, preview_kind)
+        future = executor.submit(
+            self._thumbnail_job, dest, thumb_path, thumb_rel, uid, preview_kind
+        )
         self._register_thumbnail_future(future)
         return thumb_rel, preview_kind
 
@@ -565,7 +594,9 @@ class AssetRegistry(BaseRegistry):
         }
         try:
             thumb_path.parent.mkdir(parents=True, exist_ok=True)
-            thumb_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            thumb_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
             return True
         except Exception as exc:  # pragma: no cover - defensive
             LOGGER.warning("Failed to write waveform preview for %s: %s", source, exc)
@@ -582,8 +613,14 @@ class AssetRegistry(BaseRegistry):
         provenance: Dict[str, Any],
         meta_payload: Dict[str, Any],
     ) -> Dict[str, Any]:
-        source = (provenance.get("source") or meta_payload.get("source") or "unspecified").strip()
-        user_id = provenance.get("user_id") or meta_payload.get("user_id") or os.getenv("COMFYVN_USER")
+        source = (
+            provenance.get("source") or meta_payload.get("source") or "unspecified"
+        ).strip()
+        user_id = (
+            provenance.get("user_id")
+            or meta_payload.get("user_id")
+            or os.getenv("COMFYVN_USER")
+        )
         workflow_hash = provenance.get("workflow_hash")
         commit_hash = provenance.get("commit_hash") or os.getenv("COMFYVN_GIT_COMMIT")
         inputs = provenance.get("inputs") or {}
@@ -603,7 +640,9 @@ class AssetRegistry(BaseRegistry):
         record["asset_uid"] = uid
         return record
 
-    def _embed_provenance_marker(self, dest: Path, provenance_record: Dict[str, Any]) -> None:
+    def _embed_provenance_marker(
+        self, dest: Path, provenance_record: Dict[str, Any]
+    ) -> None:
         if Image is None:
             LOGGER.debug("Skipping provenance stamp for %s (Pillow unavailable)", dest)
             return
@@ -659,7 +698,9 @@ class AssetRegistry(BaseRegistry):
     @staticmethod
     def _stamp_mp3(dest: Path, marker: str) -> None:
         if MP3 is None or ID3 is None or TXXX is None:
-            LOGGER.debug("Mutagen ID3 support unavailable; skipping MP3 provenance for %s", dest)
+            LOGGER.debug(
+                "Mutagen ID3 support unavailable; skipping MP3 provenance for %s", dest
+            )
             return
         try:
             try:
@@ -675,7 +716,9 @@ class AssetRegistry(BaseRegistry):
     @staticmethod
     def _stamp_ogg(dest: Path, marker: str) -> None:
         if OggVorbis is None:
-            LOGGER.debug("Mutagen Ogg support unavailable; skipping provenance for %s", dest)
+            LOGGER.debug(
+                "Mutagen Ogg support unavailable; skipping provenance for %s", dest
+            )
             return
         try:
             audio = OggVorbis(dest)  # type: ignore[call-arg]
@@ -687,7 +730,9 @@ class AssetRegistry(BaseRegistry):
     @staticmethod
     def _stamp_flac(dest: Path, marker: str) -> None:
         if FLAC is None:
-            LOGGER.debug("Mutagen FLAC support unavailable; skipping provenance for %s", dest)
+            LOGGER.debug(
+                "Mutagen FLAC support unavailable; skipping provenance for %s", dest
+            )
             return
         try:
             audio = FLAC(dest)  # type: ignore[call-arg]
@@ -699,7 +744,9 @@ class AssetRegistry(BaseRegistry):
     @staticmethod
     def _stamp_wav(dest: Path, marker: str) -> None:
         if WAVE is None or TXXX is None:
-            LOGGER.debug("Mutagen WAV support unavailable; skipping provenance for %s", dest)
+            LOGGER.debug(
+                "Mutagen WAV support unavailable; skipping provenance for %s", dest
+            )
             return
         try:
             audio = WAVE(dest)  # type: ignore[call-arg]
@@ -709,7 +756,9 @@ class AssetRegistry(BaseRegistry):
                     add_tags()
             tags = getattr(audio, "tags", None)
             if tags is None:
-                LOGGER.warning("Unable to embed WAV provenance for %s (no tag container)", dest)
+                LOGGER.warning(
+                    "Unable to embed WAV provenance for %s (no tag container)", dest
+                )
                 return
             tags.delall(f"TXXX:{PROVENANCE_TAG}")
             tags.add(TXXX(encoding=3, desc=PROVENANCE_TAG, text=[marker]))  # type: ignore[call-arg]

@@ -1,7 +1,14 @@
 # comfyvn/gui/windows/theme_manager_window.py
 from __future__ import annotations
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QFileDialog, QMessageBox
-from comfyvn.core.theme_manager import list_themes, apply_theme, export_theme, import_theme, save_custom_theme
+
+from PySide6.QtWidgets import (QDialog, QFileDialog, QHBoxLayout, QLabel,
+                               QListWidget, QMessageBox, QPushButton,
+                               QVBoxLayout)
+
+from comfyvn.core.theme_manager import (apply_theme, export_theme,
+                                        import_theme, list_themes,
+                                        save_custom_theme)
+
 
 class ThemeManagerWindow(QDialog):
     def __init__(self, parent=None, app=None):
@@ -21,7 +28,10 @@ class ThemeManagerWindow(QDialog):
         btn_export = QPushButton("Export…")
         btn_import = QPushButton("Import…")
         btn_custom = QPushButton("Save as Custom")
-        h.addWidget(btn_apply); h.addWidget(btn_export); h.addWidget(btn_import); h.addWidget(btn_custom)
+        h.addWidget(btn_apply)
+        h.addWidget(btn_export)
+        h.addWidget(btn_import)
+        h.addWidget(btn_custom)
         v.addLayout(h)
 
         btn_apply.clicked.connect(self._apply)
@@ -35,7 +45,8 @@ class ThemeManagerWindow(QDialog):
 
     def _apply(self):
         name = self._selected()
-        if not name: return
+        if not name:
+            return
         try:
             apply_theme(self._app, name)
         except Exception as e:
@@ -43,9 +54,13 @@ class ThemeManagerWindow(QDialog):
 
     def _export(self):
         name = self._selected()
-        if not name: return
-        path, _ = QFileDialog.getSaveFileName(self, "Export Theme", f"{name}.json", "JSON (*.json)")
-        if not path: return
+        if not name:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Theme", f"{name}.json", "JSON (*.json)"
+        )
+        if not path:
+            return
         try:
             export_theme(path, name)
         except Exception as e:
@@ -53,7 +68,8 @@ class ThemeManagerWindow(QDialog):
 
     def _import(self):
         path, _ = QFileDialog.getOpenFileName(self, "Import Theme", "", "JSON (*.json)")
-        if not path: return
+        if not path:
+            return
         try:
             names = import_theme(path)
             if names:
@@ -67,9 +83,11 @@ class ThemeManagerWindow(QDialog):
         # take currently applied palette from manager would be ideal;
         # for now, just copy the selected into "custom"
         name = self._selected()
-        if not name: return
+        if not name:
+            return
         try:
             from comfyvn.core.theme_manager import load_palette
+
             pal = load_palette(name)
             save_custom_theme(pal, "custom")
             QMessageBox.information(self, "Theme", "Saved as 'custom'.")

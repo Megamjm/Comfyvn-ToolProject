@@ -1,21 +1,26 @@
 from __future__ import annotations
-from PySide6.QtGui import QAction
 
-import asyncio, json
+import asyncio
+import json
 from typing import Optional
+
 from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import StreamingResponse
+from PySide6.QtGui import QAction
 
 router = APIRouter()
+
 
 def _split_topics(raw: Optional[str]):
     if not raw:
         return None
     return [t.strip() for t in raw.split(",") if t.strip()]
 
+
 @router.get("/events/health")
 def health():
     return {"ok": True}
+
 
 @router.get("/events/sse")
 async def sse(request: Request, topics: Optional[str] = None):
@@ -41,6 +46,7 @@ async def sse(request: Request, topics: Optional[str] = None):
             hub.unsubscribe(q, topic_list)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
 
 @router.websocket("/events/ws")
 async def ws(ws: WebSocket):

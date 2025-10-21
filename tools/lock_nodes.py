@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from comfyvn.providers import NODESET_LOCK_PATH, PROVIDERS_PATH, load_providers_template
+from comfyvn.providers import (NODESET_LOCK_PATH, PROVIDERS_PATH,
+                               load_providers_template)
 
 
 @dataclass
@@ -86,7 +87,10 @@ def _gather_packs(search_roots: List[Path], providers_path: Path) -> List[NodePa
 
 def _write_lock(path: Path, packs: List[NodePack]) -> None:
     payload: Dict[str, object] = {}
-    payload["generated"] = __import__("datetime").datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    payload["generated"] = (
+        __import__("datetime").datetime.utcnow().replace(microsecond=0).isoformat()
+        + "Z"
+    )
     payload["packs"] = [
         {
             "name": pack.name,
@@ -100,7 +104,9 @@ def _write_lock(path: Path, packs: List[NodePack]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate nodeset.lock.json from local checkouts.")
+    parser = argparse.ArgumentParser(
+        description="Generate nodeset.lock.json from local checkouts."
+    )
     parser.add_argument(
         "--search-root",
         action="append",

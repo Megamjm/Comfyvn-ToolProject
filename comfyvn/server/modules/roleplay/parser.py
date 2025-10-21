@@ -41,7 +41,9 @@ class RoleplayParser:
         lines: List[Dict[str, str]] = []
         for entry in data:
             if not isinstance(entry, dict):
-                raise ValueError("Transcript entries must be objects with speaker/text fields.")
+                raise ValueError(
+                    "Transcript entries must be objects with speaker/text fields."
+                )
             speaker = str(entry.get("speaker") or "Narrator")
             text = str(entry.get("text") or "").strip()
             if not text:

@@ -49,7 +49,11 @@ def build_world_prompt(
 
     motifs = _compile_motifs(world.get("rules", {}))
     if motifs:
-        trace.append(PromptTraceEntry(path="rules.visual_motifs", value=motifs, reason="Visual motifs"))
+        trace.append(
+            PromptTraceEntry(
+                path="rules.visual_motifs", value=motifs, reason="Visual motifs"
+            )
+        )
 
     location = _select_location(world.get("locations", {}), location_id)
     location_summary_raw = location.get("summary", "")

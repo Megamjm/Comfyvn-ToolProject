@@ -14,7 +14,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Iterable, Optional
 
-from comfyvn.core.db_manager import DBManager, DEFAULT_DB_PATH as CORE_DB_PATH
+from comfyvn.core.db_manager import DEFAULT_DB_PATH as CORE_DB_PATH
+from comfyvn.core.db_manager import DBManager
 
 DEFAULT_DB_PATH = CORE_DB_PATH
 
@@ -22,7 +23,9 @@ DEFAULT_DB_PATH = CORE_DB_PATH
 class BaseRegistry:
     """Base class for registry objects backed by SQLite."""
 
-    def __init__(self, db_path: Path | str = DEFAULT_DB_PATH, project_id: str = "default"):
+    def __init__(
+        self, db_path: Path | str = DEFAULT_DB_PATH, project_id: str = "default"
+    ):
         self._db_manager = DBManager(db_path)
         self.db_path = self._db_manager.db_path
         self.project_id = project_id
@@ -55,7 +58,9 @@ class BaseRegistry:
             cur = conn.execute(sql, params or [])
             return cur.fetchall()
 
-    def fetchone(self, sql: str, params: Iterable | None = None) -> Optional[sqlite3.Row]:
+    def fetchone(
+        self, sql: str, params: Iterable | None = None
+    ) -> Optional[sqlite3.Row]:
         with self.connection() as conn:
             cur = conn.execute(sql, params or [])
             return cur.fetchone()

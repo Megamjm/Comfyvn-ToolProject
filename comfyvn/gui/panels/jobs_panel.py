@@ -5,13 +5,8 @@ from datetime import datetime
 
 import requests
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (
-    QLabel,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QLabel, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.gui.services.job_stream import JobStreamClient
 

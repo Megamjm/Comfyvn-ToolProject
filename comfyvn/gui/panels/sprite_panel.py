@@ -1,25 +1,16 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (
-    QDockWidget,
-    QWidget,
-    QVBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QLabel,
-    QHBoxLayout,
-    QPushButton,
-    QComboBox,
-    QFileDialog,
-    QTextEdit,
-)
+from PySide6.QtWidgets import (QComboBox, QDockWidget, QFileDialog,
+                               QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QPushButton, QTextEdit,
+                               QVBoxLayout, QWidget)
 
 from comfyvn.assets.persona_manager import PersonaManager
 from comfyvn.assets.pose_manager import PoseManager
@@ -62,7 +53,9 @@ class SpritePanel(QDockWidget):
         self.preview = QLabel()
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setMinimumSize(240, 240)
-        self.preview.setStyleSheet("QLabel { border: 1px solid #444; background: #111; }")
+        self.preview.setStyleSheet(
+            "QLabel { border: 1px solid #444; background: #111; }"
+        )
         detail_column.addWidget(self.preview)
 
         self.expression_combo = QComboBox()
@@ -105,7 +98,9 @@ class SpritePanel(QDockWidget):
         super().resizeEvent(event)
         pixmap = self.preview.pixmap()
         if pixmap:
-            scaled = pixmap.scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled = pixmap.scaled(
+                self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
             self.preview.setPixmap(scaled)
 
     # ------------------------------------------------------------------
@@ -137,7 +132,9 @@ class SpritePanel(QDockWidget):
         self.manager.register_persona(pid, profile)
         self._refresh_personas()
 
-    def _on_persona_selected(self, current: Optional[QListWidgetItem], previous: Optional[QListWidgetItem]) -> None:
+    def _on_persona_selected(
+        self, current: Optional[QListWidgetItem], previous: Optional[QListWidgetItem]
+    ) -> None:
         if not current:
             self._current_persona = None
             self.expression_combo.clear()
@@ -189,7 +186,9 @@ class SpritePanel(QDockWidget):
             self.preview.setText("Unable to load sprite")
             return
         self.preview.setText("")
-        scaled = pixmap.scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled = pixmap.scaled(
+            self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
         self.preview.setPixmap(scaled)
 
     # ------------------------------------------------------------------
@@ -230,7 +229,11 @@ class SpritePanel(QDockWidget):
             return
         pose = self.manager.get_current_pose(self._current_persona)
         if pose:
-            self.pose_preview.setPlainText(json.dumps(pose.get("data"), indent=2) if isinstance(pose.get("data"), dict) else str(pose.get("data")))
+            self.pose_preview.setPlainText(
+                json.dumps(pose.get("data"), indent=2)
+                if isinstance(pose.get("data"), dict)
+                else str(pose.get("data"))
+            )
         else:
             self.pose_preview.clear()
 

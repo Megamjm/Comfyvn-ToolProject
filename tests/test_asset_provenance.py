@@ -11,11 +11,13 @@ except Exception:  # pragma: no cover
     Image = None  # type: ignore
 
 from comfyvn.studio.core import asset_registry as asset_registry_module
-from comfyvn.studio.core.asset_registry import AssetRegistry, PROVENANCE_TAG
+from comfyvn.studio.core.asset_registry import PROVENANCE_TAG, AssetRegistry
 from comfyvn.studio.core.provenance_registry import ProvenanceRegistry
 
 
-@pytest.mark.skipif(Image is None, reason="Pillow is required for provenance stamping test")
+@pytest.mark.skipif(
+    Image is None, reason="Pillow is required for provenance stamping test"
+)
 def test_register_file_records_provenance(tmp_path):
     # Prepare a tiny PNG asset.
     source = tmp_path / "source.png"
@@ -72,7 +74,9 @@ def test_register_file_records_provenance(tmp_path):
     AssetRegistry.wait_for_thumbnails(timeout=5.0)
 
 
-@pytest.mark.skipif(Image is None, reason="Pillow is required for thumbnail regression test")
+@pytest.mark.skipif(
+    Image is None, reason="Pillow is required for thumbnail regression test"
+)
 def test_thumbnail_registration_wait(tmp_path):
     assets_root = tmp_path / "assets"
     thumbs_root = tmp_path / "thumbs"
@@ -144,7 +148,9 @@ def test_stamp_mp3_with_mutagen_stubs(monkeypatch, tmp_path):
     monkeypatch.setattr(asset_registry_module, "MP3", object(), raising=False)
     fake_id3 = FakeID3()
     monkeypatch.setattr(asset_registry_module, "ID3", fake_id3, raising=False)
-    monkeypatch.setattr(asset_registry_module, "ID3NoHeaderError", FakeID3NoHeaderError, raising=False)
+    monkeypatch.setattr(
+        asset_registry_module, "ID3NoHeaderError", FakeID3NoHeaderError, raising=False
+    )
     monkeypatch.setattr(asset_registry_module, "TXXX", FakeTXXX, raising=False)
 
     AssetRegistry._stamp_mp3(dest, '{"marker": true}')
