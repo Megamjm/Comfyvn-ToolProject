@@ -432,7 +432,7 @@ def advise(
     elif prefer_remote and recommended_remote:
         recommendation["choice"] = "remote"
     elif best_local:
-        recommendation["choice"] = "gpu"
+        recommendation["choice"] = "local"
     elif recommended_remote:
         recommendation["choice"] = "remote"
     else:

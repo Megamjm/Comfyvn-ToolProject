@@ -174,12 +174,16 @@ def create_app(
 
     @app.get("/health", tags=["System"], summary="Simple health probe")
     async def core_health():
-        return {"status": "ok", "ok": True}
+        return {"status": "ok"}
+
+    @app.get("/healthz", include_in_schema=False)
+    async def _healthz():
+        return {"ok": True}
 
     @app.get("/status", tags=["System"], summary="Service status overview")
     async def core_status():
         routes = [route.path for route in app.routes if isinstance(route, APIRoute)]
-        return {"status": "ok", "version": APP_VERSION, "routes": routes}
+        return {"status": "ok", "ok": True, "version": APP_VERSION, "routes": routes}
 
     if not _route_exists(app, "/system/metrics", {"GET"}):
 

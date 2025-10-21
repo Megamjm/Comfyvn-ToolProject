@@ -20,8 +20,10 @@ from typing import Any, Dict, List, Optional
 from comfyvn.config.runtime_paths import thumb_cache_dir
 
 try:  # thumbnail generation optional
-    from PIL import Image  # type: ignore
-    from PIL import PngImagePlugin  # type: ignore
+    from PIL import (
+        Image,  # type: ignore
+        PngImagePlugin,  # type: ignore
+    )
 except Exception:  # pragma: no cover - pillow optional
     Image = None  # type: ignore
     PngImagePlugin = None  # type: ignore
@@ -104,8 +106,8 @@ class AssetRegistry(BaseRegistry):
         if env:
             return Path(env).expanduser().resolve()
         candidates = [
-            Path("assets"),
             Path("data/assets"),
+            Path("assets"),
             Path("comfyvn/data/assets"),
             cls.ASSETS_ROOT,
         ]
