@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import socket
 import threading
 import time
@@ -10,8 +12,30 @@ from PySide6.QtGui import QAction
 from comfyvn.config.baseurl_authority import (
     current_authority,
     default_base_url,
+    find_open_port,
     write_runtime_authority,
 )
+
+LOGGER = logging.getLogger(__name__)
+_LOCAL_BIND_HOSTS = {
+    "127.0.0.1",
+    "localhost",
+    "0.0.0.0",
+    "0",
+    "*",
+    "::",
+    "[::]",
+    "::1",
+}
+
+
+def _connect_host(host: str) -> str:
+    lowered = host.strip().lower()
+    if lowered in {"0.0.0.0", "0", "*"}:
+        return "127.0.0.1"
+    if lowered in {"::", "[::]"}:
+        return "localhost"
+    return host
 
 
 def _port_open(host: str, port: int) -> bool:
@@ -78,11 +102,44 @@ def wait_for_server(
     base: str | None = None, autostart: bool = True, deadline: float = 12.0
 ) -> bool:
     host, port, starter = _pick_bridge()
+    connect_host = _connect_host(host)
+    active_port = int(port)
     target_base = (base or default_base_url()).rstrip("/")
     if autostart:
-        write_runtime_authority(host, port)
-        current_authority(refresh=True)
-        _ensure_started(host, port, starter)
+        lowered = host.strip().lower()
+        if lowered in _LOCAL_BIND_HOSTS:
+            scanned_port = find_open_port(connect_host, active_port)
+            if scanned_port != active_port:
+                LOGGER.info(
+                    "Requested port %s unavailable on %s; rolling to %s.",
+                    active_port,
+                    connect_host,
+                    scanned_port,
+                )
+                active_port = scanned_port
+        target_base = f"http://{connect_host}:{active_port}"
+        try:
+            write_runtime_authority(connect_host, active_port)
+        except Exception as exc:
+            LOGGER.warning("Failed to persist runtime state: %s", exc)
+        else:
+            current_authority(refresh=True)
+            try:  # keep GUI bridge globals aligned with the resolved endpoint
+                import comfyvn.gui.services.server_bridge as sb  # type: ignore
+
+                sb.SERVER_HOST = connect_host
+                sb.SERVER_PORT = active_port
+                sb.DEFAULT_BASE = target_base
+                refresh = getattr(sb, "refresh_authority_cache", None)
+                if callable(refresh):
+                    refresh(refresh=True)
+            except Exception:
+                pass
+        os.environ["COMFYVN_SERVER_BASE"] = target_base
+        os.environ["COMFYVN_BASE_URL"] = target_base
+        os.environ["COMFYVN_SERVER_HOST"] = connect_host
+        os.environ["COMFYVN_SERVER_PORT"] = str(active_port)
+        _ensure_started(host, active_port, starter)
     t0 = time.time()
     while time.time() - t0 < deadline:
         try:

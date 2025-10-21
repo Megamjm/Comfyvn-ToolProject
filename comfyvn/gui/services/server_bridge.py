@@ -18,9 +18,20 @@ logger = logging.getLogger(__name__)
 from comfyvn.config.baseurl_authority import current_authority, default_base_url
 
 _AUTHORITY = current_authority()
-DEFAULT_BASE = (os.getenv("COMFYVN_SERVER_BASE") or default_base_url()).rstrip("/")
+DEFAULT_BASE = (os.getenv("COMFYVN_SERVER_BASE") or _AUTHORITY.base_url).rstrip("/")
 SERVER_HOST = _AUTHORITY.host
 SERVER_PORT = _AUTHORITY.port
+
+
+def refresh_authority_cache(*, refresh: bool = True) -> str:
+    global _AUTHORITY, DEFAULT_BASE, SERVER_HOST, SERVER_PORT
+    _AUTHORITY = current_authority(refresh=refresh)
+    DEFAULT_BASE = (os.getenv("COMFYVN_SERVER_BASE") or _AUTHORITY.base_url).rstrip("/")
+    SERVER_HOST = _AUTHORITY.host
+    SERVER_PORT = _AUTHORITY.port
+    return DEFAULT_BASE
+
+
 _UNSET = object()
 
 
@@ -513,7 +524,12 @@ class ServerBridge(QObject):
         except Exception as exc:
             logger.warning("wait_for_server unavailable: %s", exc)
             return self.ping()
-        return wait_for_server(self.base_url, autostart=True, deadline=deadline)
+        ok = wait_for_server(self.base_url, autostart=True, deadline=deadline)
+        if ok:
+            new_base = refresh_authority_cache(refresh=True)
+            if self._is_local_base():
+                self.base_url = new_base
+        return ok
 
     def projects(self) -> list[Dict[str, Any]]:
         result = self.get_json("/projects/list")

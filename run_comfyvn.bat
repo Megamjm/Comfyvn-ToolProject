@@ -34,34 +34,14 @@ if not defined PYTHON_CMD (
     exit /b 9009
 )
 
-rem -- Attempt auto-update when git is available and the working tree is clean.
-if exist ".git" (
-    where git >nul 2>&1
-    if !ERRORLEVEL!==0 (
-        echo [ComfyVN] Git detected; checking repo cleanliness.
-        git status --porcelain ^| findstr "." >nul
-        if !ERRORLEVEL!==0 (
-            echo [ComfyVN] Skipping auto-update (local changes detected).
-        ) else (
-            echo [ComfyVN] Checking for updates ...
-            git pull --ff-only
-            if !ERRORLEVEL! NEQ 0 (
-                echo [ComfyVN] Auto-update failed (git pull). Continuing with existing files.
-            ) else (
-                echo [ComfyVN] Auto-update completed successfully.
-            )
-        )
-    ) else (
-        echo [ComfyVN] Git not available on PATH; skipping auto-update.
-    )
-)
-if not exist ".git" echo [ComfyVN] Not a git checkout; skipping auto-update.
+rem -- Auto-update temporarily disabled to avoid script parsing issues.
+echo [ComfyVN] Auto-update step skipped.
 if defined PYTHON_CMD echo [ComfyVN] Using interpreter: %PYTHON_CMD%.
 
 if "%INSTALL_DEFAULTS%"=="1" (
-    echo [ComfyVN] Launching defaults installer using %PYTHON_CMD% …
+    echo [ComfyVN] Launching defaults installer using %PYTHON_CMD% ...
 ) else (
-    echo [ComfyVN] Launching using %PYTHON_CMD% …
+    echo [ComfyVN] Launching using %PYTHON_CMD% ...
 )
 call %PYTHON_CMD% "%SCRIPT_DIR%run_comfyvn.py" %*
 

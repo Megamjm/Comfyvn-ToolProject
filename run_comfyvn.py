@@ -25,7 +25,11 @@ import subprocess
 import venv
 from typing import Optional, Tuple
 
-from comfyvn.config.baseurl_authority import current_authority, write_runtime_authority
+from comfyvn.config.baseurl_authority import (
+    current_authority,
+    find_open_port,
+    write_runtime_authority,
+)
 from comfyvn.logging_config import init_logging as init_gui_logging
 from setup import install_defaults as defaults_install
 
@@ -52,6 +56,27 @@ DEFAULT_SERVER_LOG_LEVEL = os.environ.get("COMFYVN_SERVER_LOG_LEVEL", "info")
 def log(message: str) -> None:
     LOGGER.info(message)
     print(f"[ComfyVN] {message}")
+
+
+_LOCAL_BIND_HOSTS = {
+    "127.0.0.1",
+    "localhost",
+    "0.0.0.0",
+    "0",
+    "*",
+    "::",
+    "[::]",
+    "::1",
+}
+
+
+def _connect_host(host: str) -> str:
+    lowered = host.strip().lower()
+    if lowered in {"0.0.0.0", "0", "*"}:
+        return "127.0.0.1"
+    if lowered in {"::", "[::]"}:
+        return "localhost"
+    return host
 
 
 def ensure_repo_cwd() -> None:
@@ -181,13 +206,24 @@ def apply_launcher_environment(args: argparse.Namespace) -> None:
     if args.server_url:
         target_base = args.server_url.rstrip("/")
     else:
+        requested_port = int(args.server_port)
+        bind_host = args.server_host
+        connect_host = _connect_host(bind_host)
+        if bind_host.strip().lower() in _LOCAL_BIND_HOSTS:
+            resolved_port = find_open_port(connect_host, requested_port)
+            if resolved_port != requested_port:
+                log(
+                    f"⚠️ Port {requested_port} unavailable on {connect_host}; rolling to {resolved_port}."
+                )
+                args.server_port = resolved_port
         target_base = derive_server_base(args.server_host, args.server_port)
-        write_runtime_authority(args.server_host, args.server_port)
+        runtime_host = _connect_host(args.server_host)
+        write_runtime_authority(runtime_host, args.server_port)
         current_authority(refresh=True)
 
     os.environ["COMFYVN_SERVER_BASE"] = target_base
     os.environ["COMFYVN_BASE_URL"] = target_base
-    os.environ["COMFYVN_SERVER_HOST"] = args.server_host
+    os.environ["COMFYVN_SERVER_HOST"] = _connect_host(args.server_host)
     os.environ["COMFYVN_SERVER_PORT"] = str(args.server_port)
 
     if args.no_server_autostart or args.server_only:
