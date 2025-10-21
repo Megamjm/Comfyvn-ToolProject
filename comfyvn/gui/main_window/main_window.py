@@ -52,6 +52,7 @@ from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
 from comfyvn.gui.panels.timeline_panel import TimelinePanel
 # Services
 from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.gui.statusbar_metrics import StatusBarMetrics
 from comfyvn.gui.widgets.log_hub import LogHub
 from comfyvn.studio.core import (CharacterRegistry, SceneRegistry,
                                  TimelineRegistry)
@@ -111,14 +112,17 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self.setStatusBar(self._status)
         self._status_label = QLabel("🔴 Server: Unknown")
         self._status.addPermanentWidget(self._status_label, 1)
-        self._reconnect_button = QPushButton("Reconnect")
+        self._reconnect_button = QPushButton("Reconnect now")
         self._reconnect_button.setVisible(False)
         self._reconnect_button.clicked.connect(self._manual_reconnect)
         self._status.addPermanentWidget(self._reconnect_button, 0)
+        self._metrics_display = StatusBarMetrics(self.bridge.base_url, parent=self)
+        self._status.addPermanentWidget(self._metrics_display.widget, 1)
         self._script_status_label = QLabel("🟢 Scripts: Idle")
         self._script_status_label.setToolTip("Latest script execution status.")
         self._status.addPermanentWidget(self._script_status_label, 1)
         self._set_script_status(True, "No scripts executed yet.")
+        self._metrics_display.start()
 
         self._notify_overlay = NotifyOverlay(self)
         self._notify_overlay.attach(self)
@@ -377,6 +381,8 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         settings = QSettings("ComfyVN", "StudioWindow")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
+        if hasattr(self, "_metrics_display"):
+            self._metrics_display.stop()
         super().closeEvent(event)
 
     # --------------------
@@ -505,9 +511,13 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
     def _update_server_status(self, payload: dict | None = None) -> None:
         data = payload if isinstance(payload, dict) else self.bridge.latest()
+        self._metrics_display.update_payload(data if isinstance(data, dict) else None)
+        show_reconnect = True
+        if isinstance(data, dict):
+            show_reconnect = self._has_reconnect_action(data.get("actions"))
         if not isinstance(data, dict) or not data:
             self._status_label.setText("🟡 Server: Waiting for server…")
-            self._reconnect_button.setVisible(True)
+            self._reconnect_button.setVisible(show_reconnect)
             return
 
         state = str(data.get("state") or "")
@@ -516,14 +526,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
         is_online = state == "online" and bool(data.get("ok"))
         if is_online:
-            cpu = data.get("cpu")
-            mem = data.get("mem")
-            if isinstance(cpu, (int, float)) and isinstance(mem, (int, float)):
-                self._status_label.setText(
-                    f"🟢 Server: Online — CPU {int(cpu)}% | RAM {int(mem)}%"
-                )
-            else:
-                self._status_label.setText("🟢 Server: Online")
+            self._status_label.setText("🟢 Server: Online")
             self._reconnect_button.setVisible(False)
             return
 
@@ -536,7 +539,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             )
         else:
             self._status_label.setText("🟡 Server: Waiting for server…")
-        self._reconnect_button.setVisible(True)
+        self._reconnect_button.setVisible(show_reconnect)
 
     def _set_script_status(self, ok: bool, message: str) -> None:
         icon = "🟢" if ok else "🔴"
@@ -547,6 +550,14 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             logger.info("Script sequence completed: %s", message)
         else:
             logger.warning("Script sequence failed: %s", message)
+
+    @staticmethod
+    def _has_reconnect_action(actions: object) -> bool:
+        if isinstance(actions, (list, tuple)):
+            for action in actions:
+                if isinstance(action, dict) and action.get("command") == "reconnect":
+                    return True
+        return False
 
     # --------------------
     # Notifications

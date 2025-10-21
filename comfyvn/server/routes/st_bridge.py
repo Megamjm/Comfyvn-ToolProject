@@ -11,6 +11,8 @@ from fastapi import APIRouter, Request
 
 from comfyvn.assets.persona_manager import PersonaManager
 from comfyvn.assets.playground_manager import PlaygroundManager
+from comfyvn.bridge.st_bridge.extension_sync import resolve_paths
+from comfyvn.bridge.st_bridge.health import probe_health
 from comfyvn.core.world_loader import WorldLoader
 
 router = APIRouter(prefix="/st", tags=["SillyTavern Bridge"])
@@ -18,6 +20,18 @@ router = APIRouter(prefix="/st", tags=["SillyTavern Bridge"])
 world_loader = WorldLoader()
 persona_mgr = PersonaManager()
 playground_mgr = PlaygroundManager()
+
+
+@router.get("/health", summary="SillyTavern bridge health status")
+async def bridge_health() -> dict[str, object]:
+    """Return SillyTavern availability plus extension path diagnostics."""
+    return probe_health()
+
+
+@router.get("/paths", summary="SillyTavern extension path resolution")
+async def bridge_paths() -> dict[str, object]:
+    """Resolve and return the SillyTavern extension source/destination paths."""
+    return resolve_paths().as_dict()
 
 
 @router.post("/import")

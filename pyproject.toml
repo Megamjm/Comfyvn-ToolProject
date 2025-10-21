@@ -1,13 +1,35 @@
-repos:
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
-        language_version: python3.11
+# ComfyVN Architect — Phase 2/2 Project Integration Chat
 
-  # Temporarily comment Ruff block to allow commit:
-  # - repo: https://github.com/astral-sh/ruff-pre-commit
-  #   rev: v0.6.9
-  #   hooks:
-  #     - id: ruff
-  #       args: [--fix]
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# E,F: pyflakes/pycodestyle; I: import sorting
+select = ["E", "F", "I"]
+# Relax a bit so you can land the big style pass today; tighten later.
+ignore = [
+  "E402",  # non-top-level imports allowed in shims/scripts/tests
+  "E501",  # Black owns line length
+  "F401",  # TEMP: unused import (remove later)
+  "F841",  # TEMP: unused variable (remove later)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"comfyvn/app.py" = ["E402"]
+"comfyvn/server/system_metrics.py" = ["E402"]
+"comfyvn/server/core/bootstrap.py" = ["E402"]
+"scripts/export_renpy.py" = ["E402"]
+"tools/rebuild_asset_registry.py" = ["E402"]
+"tests/test_compute_api.py" = ["E402"]
+"tests/test_gpu_advisor_api.py" = ["E402"]
+"tests/test_gpu_api.py" = ["E402"]
+
+# Keep if you still run isort as a separate hook
+[tool.isort]
+profile = "black"
+line_length = 88

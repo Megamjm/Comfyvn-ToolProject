@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from comfyvn.logging_config import init_logging as init_gui_logging
+from setup import install_defaults as defaults_install
 
 REPO_ROOT = Path(__file__).resolve().parent
 VENV_DIR = REPO_ROOT / ".venv"
@@ -155,6 +156,42 @@ def parse_arguments(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--no-server-autostart",
         action="store_true",
         help="Prevent the GUI from auto-starting a local server.",
+    )
+    parser.add_argument(
+        "--install-defaults",
+        action="store_true",
+        help="Install default assets and exit.",
+    )
+    parser.add_argument(
+        "--defaults-use-symlinks",
+        action="store_true",
+        help="Prefer symlinks when installing defaults (falls back to copying).",
+    )
+    parser.add_argument(
+        "--defaults-dry-run",
+        action="store_true",
+        help="Preview default installation actions without writing to disk.",
+    )
+    parser.add_argument(
+        "--defaults-force",
+        action="store_true",
+        help="Overwrite existing files when installing defaults.",
+    )
+    defaults_group = parser.add_mutually_exclusive_group()
+    defaults_group.add_argument(
+        "--include-sillytavern-extension",
+        dest="include_sillytavern_extension",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Include the SillyTavern bridge extension when installing defaults.",
+    )
+    defaults_group.add_argument(
+        "--skip-sillytavern-extension",
+        dest="include_sillytavern_extension",
+        action="store_const",
+        const=False,
+        help="Skip the SillyTavern bridge extension when installing defaults.",
     )
     return parser.parse_args(argv)
 
@@ -399,6 +436,39 @@ def prompt_for_git_update() -> None:
             log("Git pull failed. Please resolve the issue and retry.")
 
 
+def install_defaults_flow(args: argparse.Namespace) -> int:
+    include_silly = args.include_sillytavern_extension
+    if include_silly is None:
+        include_silly = prompt_yes_no(
+            "Install SillyTavern bridge assets?", default=True
+        )
+    if include_silly and not defaults_install.SILLYTAVERN_SOURCE.exists():
+        log("SillyTavern Extension assets not found; skipping installation.")
+        include_silly = False
+    if args.defaults_dry_run:
+        log("Dry run: seeding ComfyVN default assets …")
+    else:
+        log("Seeding ComfyVN default assets …")
+    try:
+        summary = defaults_install.install_defaults(
+            dry_run=args.defaults_dry_run,
+            force=args.defaults_force,
+            install_sillytavern=include_silly,
+            use_symlinks=args.defaults_use_symlinks,
+        )
+    except Exception as exc:  # pragma: no cover - safety net
+        log(f"Default asset installation failed: {exc}")
+        LOGGER.exception("Default asset installation failed")
+        return 1
+
+    defaults_install.print_summary(
+        summary,
+        dry_run=args.defaults_dry_run,
+        install_sillytavern=include_silly,
+    )
+    return 0
+
+
 def bootstrap_environment() -> None:
     prompt_for_git_update()
 
@@ -466,8 +536,12 @@ def launch_app() -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> None:
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
     configure_launcher_logging()
-    args = parse_arguments(argv)
+    args = parse_arguments(argv_list)
+    if args.install_defaults:
+        exit_code = install_defaults_flow(args)
+        sys.exit(exit_code)
     apply_launcher_environment(args)
     bootstrap_environment()
     supports_render = True

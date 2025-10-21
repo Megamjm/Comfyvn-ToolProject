@@ -7,17 +7,30 @@ from pathlib import Path
 
 import pytest
 
+cache_override = (Path.cwd() / "cache_test").resolve()
+os.environ["COMFYVN_CACHE_DIR"] = str(cache_override)
+os.environ["COMFYVN_THUMBS_REL"] = "thumbs"
+runtime_root_override = (Path.cwd() / "runtime_test").resolve()
+os.environ["COMFYVN_RUNTIME_ROOT"] = str(runtime_root_override)
+os.environ["COMFYVN_THUMBS_ROOT"] = str((cache_override / "thumbs").resolve())
+
+from comfyvn.config import runtime_paths
+
+runtime_paths._runtime_roots.cache_clear()  # type: ignore[attr-defined]
+data_dir = runtime_paths.data_dir
+
 pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
-
-from comfyvn.config.runtime_paths import data_dir
 from comfyvn.server.app import create_app
 from comfyvn.server.modules.roleplay.roleplay_api import _asset_registry
 from setup.apply_phase06_rebuild import ensure_db, ensure_dirs
 
 # Ensure required folders/tables exist before exercising APIs.
-ensure_dirs()
+try:
+    ensure_dirs()
+except NotADirectoryError:
+    pass
 ensure_db()
 
 
@@ -41,6 +54,8 @@ def test_roleplay_import_persists_scene(client: TestClient):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ok"] is True
+    assert data.get("task_id")
+    assert data.get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
 
     scene = data["scene"]
     assert scene["title"] == "Importer Test"
@@ -62,6 +77,9 @@ def test_roleplay_import_persists_scene(client: TestClient):
 
     log_path = Path(data["logs_path"])
     assert log_path.exists()
+    job_log_resp = client.get(f"/jobs/logs/{data['task_id']}")
+    assert job_log_resp.status_code == 200
+    assert "scene_id=" in job_log_resp.text
 
     status = client.get(f"/roleplay/imports/{data['job_id']}")
     assert status.status_code == 200
@@ -89,6 +107,9 @@ def test_roleplay_import_persists_scene(client: TestClient):
     preview_payload = preview_resp.json()
     assert preview_payload["preview"]["excerpt"]
     assert preview_payload["status"]["status"] in {"ready", "stale"}
+    assert preview_payload.get("task_id") == data["task_id"]
+    assert preview_payload.get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
+    assert preview_payload["preview"].get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
 
 
 def test_roleplay_import_async_background(client: TestClient):
@@ -103,6 +124,8 @@ def test_roleplay_import_async_background(client: TestClient):
     data = resp.json()
     assert data["ok"] is True
     assert data["status"] == "queued"
+    assert data.get("task_id")
+    assert data.get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
     queued_log_path = Path(data["logs_path"])
     assert queued_log_path.exists()
     job_id = data["job_id"]
@@ -130,6 +153,9 @@ def test_roleplay_import_async_background(client: TestClient):
     preview_json = preview_resp.json()
     assert preview_json["preview"]["excerpt"]
     assert preview_json["status"]["status"] in {"ready", "stale"}
+    assert preview_json.get("links", {}).get("logs") == f"/jobs/logs/{data['task_id']}"
+    job_log_resp = client.get(f"/jobs/logs/{data['task_id']}")
+    assert job_log_resp.status_code == 200
 
 
 def _auth_headers() -> dict[str, str]:

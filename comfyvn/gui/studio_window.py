@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QAction, QHBoxLayout, QInputDialog, QLabel,
 from comfyvn.gui.panels.characters_panel import CharactersPanel
 from comfyvn.gui.panels.scenes_panel import ScenesPanel
 from comfyvn.gui.services.server_bridge import ServerBridge
+from comfyvn.gui.statusbar_metrics import StatusBarMetrics
 from comfyvn.gui.views import (AssetSummaryView, ImportsJobsView,
                                TimelineSummaryView)
 from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
@@ -252,8 +253,9 @@ class StudioWindow(QMainWindow):
         self._status_indicator.setToolTip("Backend health indicator")
         status.addPermanentWidget(self._status_indicator, 0)
 
-        self._metrics_label = QLabel("Server metrics: pending", self)
-        status.addPermanentWidget(self._metrics_label, 1)
+        self._metrics_display = StatusBarMetrics(self.bridge.base_url, parent=self)
+        status.addPermanentWidget(self._metrics_display.widget, 1)
+        self._metrics_display.start()
         self.setStatusBar(status)
 
     # -----------------
@@ -363,7 +365,8 @@ class StudioWindow(QMainWindow):
             health_info if isinstance(health_info, Mapping) else None, fallback_ok=ok
         )
         self._update_status_indicator(health_ok or ok)
-        self._update_metrics_label(payload if ok else None)
+        if hasattr(self, "_metrics_display"):
+            self._metrics_display.update_payload(payload if isinstance(payload, dict) else None)
 
         if ok or health_ok:
             self._handle_server_online()
@@ -390,6 +393,8 @@ class StudioWindow(QMainWindow):
         super().closeEvent(event)
         if self._autostart_timer.isActive():
             self._autostart_timer.stop()
+        if hasattr(self, "_metrics_display"):
+            self._metrics_display.stop()
 
     # -----------------
     # Studio workflows
@@ -415,28 +420,9 @@ class StudioWindow(QMainWindow):
         self._manual_start_in_progress = False
         self._autostart_step = 0
 
-    def _update_metrics_label(self, payload: Optional[Mapping[str, Any]]) -> None:
-        if not payload:
-            self._metrics_label.setText("Server metrics: offline")
-            return
-        cpu = self._bound_percent(payload.get("cpu"))
-        mem = self._bound_percent(payload.get("mem"))
-        disk = self._bound_percent(payload.get("disk"))
-        gpus = payload.get("gpus")
-        gpu_count = len(gpus) if isinstance(gpus, list) else 0
-        self._metrics_label.setText(
-            f"Server metrics — CPU {cpu}% • RAM {mem}% • Disk {disk}% • GPUs {gpu_count}"
-        )
-
     def _update_status_indicator(self, ok: bool) -> None:
         self._status_indicator.setText(self._format_status_dot(ok))
         self._status_indicator.setToolTip("Backend online" if ok else "Backend offline")
-
-    @staticmethod
-    def _bound_percent(value: Any) -> int:
-        if isinstance(value, (int, float)):
-            return max(0, min(100, int(round(value))))
-        return 0
 
     @staticmethod
     def _format_status_dot(ok: bool) -> str:

@@ -95,19 +95,41 @@ def _sort_items(items, section: str):
     return [item for _, item in enumerated]
 
 
+def _item_signature(item) -> tuple:
+    return (
+        item.label,
+        item.handler or "",
+        bool(getattr(item, "separator_before", False)),
+        getattr(item, "order", None),
+    )
+
+
 def rebuild_menus_from_registry(window, registry):
     menubar = window.menuBar()
     if menubar is None:
         return
-    menubar.clear()
 
     sections = registry.by_section() if hasattr(registry, "by_section") else {}
+    ordered_sections = []
 
     for section in SECTION_ORDER:
         items = sections.get(section, [])
         if not items:
             continue
         sorted_items = _sort_items(items, section)
+        ordered_sections.append((section, sorted_items))
+
+    signature = tuple(
+        (section, tuple(_item_signature(item) for item in items))
+        for section, items in ordered_sections
+    )
+    previous_signature = getattr(window, "_menu_signature", None)
+    if previous_signature == signature:
+        return
+
+    menubar.clear()
+
+    for section, sorted_items in ordered_sections:
         menu = menubar.addMenu(section)
         menu.setStyleSheet("QMenu { menu-scrollable: 1; }")
         last_sep = False
@@ -131,6 +153,7 @@ def rebuild_menus_from_registry(window, registry):
         assert len(labels) == len(
             set(labels)
         ), f"Duplicate top-level menus detected: {labels}"
+    setattr(window, "_menu_signature", signature)
 
 
 def ensure_menu_bar(window):

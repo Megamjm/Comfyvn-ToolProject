@@ -5,6 +5,11 @@ set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR%"=="" set "SCRIPT_DIR=."
 pushd "%SCRIPT_DIR%" >nul 2>&1
 
+set "INSTALL_DEFAULTS=0"
+for %%I in (%*) do (
+    if /I "%%~I"=="--install-defaults" set "INSTALL_DEFAULTS=1"
+)
+
 set "PYTHON_CMD="
 py -3 --version >nul 2>&1
 if %ERRORLEVEL%==0 (
@@ -23,13 +28,22 @@ if not defined PYTHON_CMD (
     exit /b 9009
 )
 
-echo [ComfyVN] Launching using %PYTHON_CMD% …
+if "%INSTALL_DEFAULTS%"=="1" (
+    echo [ComfyVN] Launching defaults installer using %PYTHON_CMD% …
+) else (
+    echo [ComfyVN] Launching using %PYTHON_CMD% …
+)
 call %PYTHON_CMD% "%SCRIPT_DIR%run_comfyvn.py" %*
 
 set "EXIT_CODE=%ERRORLEVEL%"
 
-if not "%EXIT_CODE%"=="0" (
-    echo [ComfyVN] Launcher exited with error level %EXIT_CODE%.
+if %EXIT_CODE% NEQ 0 (
+    if "%INSTALL_DEFAULTS%"=="1" (
+        echo [ComfyVN] Defaults installer exited with error level %EXIT_CODE%.
+    ) else (
+        echo [ComfyVN] Launcher exited with error level %EXIT_CODE%.
+    )
+    echo [ComfyVN] Check logs\launcher.log for additional details.
     echo [ComfyVN] Press any key to close this window.
     pause >nul
 )

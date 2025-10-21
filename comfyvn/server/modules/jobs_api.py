@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 
 from comfyvn.core.task_registry import TaskItem, task_registry
 
@@ -57,6 +59,28 @@ async def job_status(task_id: str) -> Dict[str, Any]:
 async def job_all() -> Dict[str, Any]:
     tasks = [_serialize_task(task) for task in task_registry.list()]
     return {"ok": True, "jobs": tasks}
+
+
+@router.get("/logs/{task_id}", response_class=PlainTextResponse)
+async def job_logs(task_id: str) -> str:
+    task = task_registry.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="job not found")
+    meta = task.meta or {}
+    logs_path = meta.get("logs_path")
+    if not logs_path:
+        raise HTTPException(status_code=404, detail="log not available for job")
+
+    path = Path(str(logs_path)).expanduser().resolve()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="log file missing")
+
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:  # pragma: no cover - filesystem dependent
+        raise HTTPException(
+            status_code=500, detail=f"failed to read log file: {exc}"
+        ) from exc
 
 
 @router.websocket("/ws")

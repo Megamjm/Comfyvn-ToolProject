@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import json
 import logging
+import math
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -20,6 +23,7 @@ from comfyvn.core.advisory import AdvisoryIssue
 from comfyvn.core.file_importer import (ImportDirectories,
                                         build_preview_payload, flatten_lines,
                                         sanitize_filename)
+from comfyvn.core.task_registry import task_registry
 from comfyvn.lmstudio_client import get_base_url as lmstudio_get_base_url
 from comfyvn.studio.core import (AssetRegistry, CharacterRegistry,
                                  ImportRegistry, JobRegistry, SceneRegistry)
@@ -41,6 +45,26 @@ STATUS_DIR = data_dir("roleplay", "metadata")
 LEGACY_RAW_DIR = data_dir("imports", "roleplay")
 LEGACY_PROCESSED_DIR = data_dir("roleplay", "processed")
 LEGACY_FINAL_DIR = data_dir("roleplay", "final")
+DEFAULT_UPLOAD_LIMIT_MB = 10.0
+
+
+def _resolve_upload_limit_bytes() -> int:
+    env_value = os.getenv("COMFYVN_ROLEPLAY_UPLOAD_LIMIT_MB")
+    limit_mb: float
+    if env_value:
+        try:
+            limit_mb = float(env_value)
+        except ValueError:
+            limit_mb = DEFAULT_UPLOAD_LIMIT_MB
+    else:
+        limit_mb = DEFAULT_UPLOAD_LIMIT_MB
+    limit_mb = max(1.0, limit_mb)
+    return int(limit_mb * 1024 * 1024)
+
+
+ROLEPLAY_UPLOAD_LIMIT_BYTES = _resolve_upload_limit_bytes()
+ROLEPLAY_UPLOAD_LIMIT_MB = math.ceil(ROLEPLAY_UPLOAD_LIMIT_BYTES / (1024 * 1024))
+ROLEPLAY_UPLOAD_CHUNK_SIZE = 64 * 1024
 
 for _dir in (
     ROLEPLAY_ROOT,
@@ -97,6 +121,76 @@ class RoleplayJobPayload:
     structured_lines: Optional[List[Dict[str, Any]]]
     original_filename: Optional[str]
     detail_level: str = "medium"
+    task_id: Optional[str] = None
+
+
+def _upload_limit_message() -> str:
+    return f"Roleplay transcript exceeds {ROLEPLAY_UPLOAD_LIMIT_MB} MB limit."
+
+
+async def _read_upload_text(upload: UploadFile) -> str:
+    size = 0
+    chunks = bytearray()
+    try:
+        while True:
+            chunk = await upload.read(ROLEPLAY_UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > ROLEPLAY_UPLOAD_LIMIT_BYTES:
+                raise HTTPException(status_code=413, detail=_upload_limit_message())
+            chunks.extend(chunk)
+    finally:
+        try:
+            await upload.close()
+        except Exception:  # pragma: no cover - cleanup best effort
+            pass
+    return bytes(chunks).decode("utf-8", errors="replace")
+
+
+def _validate_text_size(text: str) -> None:
+    if not text:
+        return
+    if len(text.encode("utf-8")) > ROLEPLAY_UPLOAD_LIMIT_BYTES:
+        raise HTTPException(status_code=413, detail=_upload_limit_message())
+
+
+def _job_logs_link(task_id: Optional[str]) -> Optional[str]:
+    if not task_id:
+        return None
+    return f"/jobs/logs/{task_id}"
+
+
+def _merge_task_meta(task_ref: Optional[str], **updates: Any) -> Optional[Dict[str, Any]]:
+    if not task_ref:
+        return None
+    task = task_registry.get(task_ref)
+    base: Dict[str, Any]
+    if task and task.meta:
+        base = copy.deepcopy(task.meta)
+    else:
+        base = {}
+    for key, value in updates.items():
+        if value is None:
+            continue
+        if key == "links":
+            links = dict(base.get("links") or {})
+            links.update(value)
+            base["links"] = links
+        elif key == "result":
+            result = dict(base.get("result") or {})
+            result.update(value)
+            base["result"] = result
+        elif key == "error":
+            if isinstance(value, dict):
+                error_payload = dict(base.get("error") or {})
+                error_payload.update(value)
+            else:
+                error_payload = {"detail": str(value)}
+            base["error"] = error_payload
+        else:
+            base[key] = value
+    return base
 
 
 def _normalize_detail_level(value: Any) -> str:
@@ -299,10 +393,59 @@ def _parse_blocking(value: Any) -> bool:
 
 
 def _execute_import_job(
-    job_id: int, payload: RoleplayJobPayload, log_path: Path
+    job_id: int,
+    payload: RoleplayJobPayload,
+    log_path: Path,
+    *,
+    task_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute the roleplay import synchronously and update registries."""
+    task_ref = task_id or payload.task_id
+    if task_ref and payload.task_id != task_ref:
+        payload.task_id = task_ref
+
+    def _task_progress(
+        progress: float,
+        message: str,
+        *,
+        status: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not task_ref:
+            return
+        updates: Dict[str, Any] = {"progress": progress, "message": message}
+        if status:
+            updates["status"] = status
+        if meta:
+            merged = _merge_task_meta(task_ref, **meta)
+            if merged is not None:
+                updates["meta"] = merged
+        task_registry.update(task_ref, **updates)
+
+    logs_link = _job_logs_link(task_ref)
+    base_meta: Dict[str, Any] = {
+        "job_id": job_id,
+        "detail_level": payload.detail_level,
+        "title": payload.title,
+        "world": payload.world,
+        "source": payload.source,
+        "logs_path": str(log_path),
+    }
+    if payload.original_filename:
+        base_meta["filename"] = payload.original_filename
+    if task_ref:
+        base_meta["task_id"] = task_ref
+    if logs_link:
+        base_meta["links"] = {"logs": logs_link}
+
     _job_registry.update_job(job_id, status="running")
+    if task_ref:
+        _task_progress(
+            0.05,
+            "Preparing roleplay import",
+            status="running",
+            meta=base_meta,
+        )
     import_id: Optional[int] = None
     raw_path: Optional[Path] = None
 
@@ -325,6 +468,12 @@ def _execute_import_job(
             legacy_raw.write_text(text_content, encoding="utf-8")
         except Exception:  # pragma: no cover - optional legacy mirror
             LOGGER.debug("Unable to mirror legacy raw transcript path", exc_info=True)
+        if task_ref:
+            _task_progress(
+                0.12,
+                "Transcript staged",
+                meta={"paths": {"raw": str(raw_path)}},
+            )
 
         import_meta = {
             "job_id": job_id,
@@ -334,12 +483,20 @@ def _execute_import_job(
             "filename": payload.original_filename,
             "detail_level": payload.detail_level,
         }
+        if task_ref:
+            import_meta["task_id"] = task_ref
         import_id = _import_registry.record_import(
             path=str(raw_path),
             kind="roleplay",
             processed=False,
             meta=import_meta,
         )
+        if task_ref:
+            _task_progress(
+                0.18,
+                "Import recorded",
+                meta={"import_id": import_id},
+            )
 
         if payload.structured_lines:
             parsed_lines = _parser.parse_json(
@@ -351,6 +508,12 @@ def _execute_import_job(
         if not parsed_lines:
             raise HTTPException(
                 status_code=400, detail="Parsed transcript has no lines."
+            )
+        if task_ref:
+            _task_progress(
+                0.32,
+                f"Parsed {len(parsed_lines)} lines",
+                meta={"parsed_lines": len(parsed_lines)},
             )
 
         scene_payload = _formatter.to_scene(
@@ -364,6 +527,17 @@ def _execute_import_job(
         scene_meta["llm_detail"] = payload.detail_level
         scene_meta["line_count"] = len(parsed_lines)
         scene_uid = scene_payload["id"]
+        if task_ref:
+            participants_meta = scene_meta.get("participants", [])
+            _task_progress(
+                0.45,
+                "Scene structured",
+                meta={
+                    "scene_uid": scene_uid,
+                    "participants": participants_meta,
+                    "line_count": len(parsed_lines),
+                },
+            )
 
         canonical_transcript = text_content or flatten_lines(parsed_lines)
         advisory_flags = advisory_core.scan_text(
@@ -436,6 +610,15 @@ def _execute_import_job(
             linked_characters.append(
                 {"id": char_id, "name": name, "persona_hints": hints}
             )
+        if task_ref:
+            _task_progress(
+                0.6,
+                "Characters linked",
+                meta={
+                    "characters": [entry["name"] for entry in linked_characters],
+                    "advisory_flags": advisory_flags,
+                },
+            )
 
         processed_path = _processed_file(scene_uid)
         preview_path = _preview_file(scene_uid)
@@ -459,6 +642,9 @@ def _execute_import_job(
             "advisory_flags": advisory_flags,
             "persona_hints": persona_map,
         }
+        if task_ref:
+            processed_payload["task_id"] = task_ref
+            processed_payload["context"]["task_id"] = task_ref
         processed_payload["preview_path"] = str(preview_path)
         processed_payload["status_path"] = str(status_path)
         _save_processed_scene(scene_uid, processed_payload)
@@ -474,6 +660,13 @@ def _execute_import_job(
             world=payload.world,
             source=payload.source,
         )
+        if task_ref:
+            preview_links = dict(preview_payload.get("links") or {})
+            if logs_link:
+                preview_links["logs"] = logs_link
+            if preview_links:
+                preview_payload["links"] = preview_links
+            preview_payload["task_id"] = task_ref
         _save_preview(scene_uid, preview_payload)
 
         status_payload = {
@@ -487,7 +680,21 @@ def _execute_import_job(
             "import_id": import_id,
             "advisory_flags": advisory_flags,
         }
+        if task_ref:
+            status_payload["task_id"] = task_ref
         _save_status(scene_uid, status_payload)
+        if task_ref:
+            _task_progress(
+                0.82,
+                "Preview generated",
+                meta={
+                    "paths": {
+                        "processed": str(processed_path),
+                        "preview": str(preview_path),
+                        "status": str(status_path),
+                    }
+                },
+            )
 
         asset_metadata = {
             "job_id": job_id,
@@ -500,6 +707,8 @@ def _execute_import_job(
             "detail_level": payload.detail_level,
             "advisory_flags": advisory_flags,
         }
+        if task_ref:
+            asset_metadata["task_id"] = task_ref
         provenance_payload = {
             "source": payload.source or "roleplay_import",
             "inputs": {
@@ -512,6 +721,8 @@ def _execute_import_job(
             },
             "user_id": payload.metadata.get("submitted_by"),
         }
+        if task_ref:
+            provenance_payload["inputs"]["task_id"] = task_ref
         asset_info = _asset_registry.register_file(
             raw_path,
             asset_type=ASSET_TYPE,
@@ -570,6 +781,8 @@ def _execute_import_job(
             "participants": scene_meta.get("participants", []),
             "advisory_flags": advisory_flags,
         }
+        if task_ref:
+            result_payload["task_id"] = task_ref
         final_status = _mark_final_status(scene_uid, "ready", result=result_payload)
 
         output_payload = {
@@ -593,6 +806,8 @@ def _execute_import_job(
             },
             "status": final_status,
         }
+        if task_ref:
+            output_payload["task_id"] = task_ref
         _job_registry.update_job(
             job_id, status="completed", output_payload=output_payload
         )
@@ -608,7 +823,15 @@ def _execute_import_job(
                 )
             )
 
-        return {
+        if task_ref:
+            _task_progress(
+                1.0,
+                "Roleplay import complete",
+                status="done",
+                meta={"result": output_payload},
+            )
+
+        response = {
             "ok": True,
             "job_id": job_id,
             "scene": scene_payload,
@@ -629,43 +852,72 @@ def _execute_import_job(
             "preview": preview_payload,
             "status": final_status,
         }
+        if task_ref:
+            response["task_id"] = task_ref
+            if logs_link:
+                response["links"] = {"logs": logs_link}
+        return response
 
     except HTTPException as exc:
         error_payload = {
             "error": exc.detail if isinstance(exc.detail, str) else "invalid payload"
         }
-        _job_registry.update_job(job_id, status="failed", output_payload=error_payload)
-        if import_id is not None:
-            _import_registry.update_meta(
-                import_id,
+        if task_ref:
+            error_payload["task_id"] = task_ref
+            _task_progress(
+                1.0,
+                f"Roleplay import failed: {error_payload['error']}",
+                status="error",
                 meta={
-                    "job_id": job_id,
-                    "error": error_payload["error"],
-                    "title": payload.title,
-                    "world": payload.world,
+                    "error": {"detail": error_payload["error"], "type": "http"},
+                    "logs_path": str(log_path),
                 },
             )
+        _job_registry.update_job(job_id, status="failed", output_payload=error_payload)
+        if import_id is not None:
+            meta_update = {
+                "job_id": job_id,
+                "error": error_payload["error"],
+                "title": payload.title,
+                "world": payload.world,
+            }
+            if task_ref:
+                meta_update["task_id"] = task_ref
+            _import_registry.update_meta(import_id, meta=meta_update)
         if raw_path and raw_path.exists():
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(f"[error] {error_payload['error']}\n")
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
         LOGGER.exception("Roleplay import failed: job_id=%s", job_id)
+        error_message = str(exc)
+        error_payload = {"error": error_message}
+        if task_ref:
+            error_payload["task_id"] = task_ref
+            _task_progress(
+                1.0,
+                f"Roleplay import failed: {error_message}",
+                status="error",
+                meta={
+                    "error": {"detail": error_message, "type": "exception"},
+                    "logs_path": str(log_path),
+                },
+            )
         _job_registry.update_job(
-            job_id, status="failed", output_payload={"error": str(exc)}
+            job_id, status="failed", output_payload=error_payload
         )
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(f"[error] {exc}\n")
         if import_id is not None:
-            _import_registry.update_meta(
-                import_id,
-                meta={
-                    "job_id": job_id,
-                    "error": str(exc),
-                    "title": payload.title,
-                    "world": payload.world,
-                },
-            )
+            meta_update = {
+                "job_id": job_id,
+                "error": error_message,
+                "title": payload.title,
+                "world": payload.world,
+            }
+            if task_ref:
+                meta_update["task_id"] = task_ref
+            _import_registry.update_meta(import_id, meta=meta_update)
         raise HTTPException(status_code=500, detail=f"Import failed: {exc}") from exc
 
 
@@ -673,7 +925,12 @@ def _run_job_background(
     job_id: int, payload: RoleplayJobPayload, log_path: Path
 ) -> None:
     try:
-        _execute_import_job(job_id, payload, log_path)
+        _execute_import_job(
+            job_id,
+            payload,
+            log_path,
+            task_id=payload.task_id,
+        )
     except HTTPException as exc:
         LOGGER.warning(
             "Background roleplay import failed job_id=%s: %s", job_id, exc.detail
@@ -729,11 +986,11 @@ async def import_roleplay(request: Request):
         form = await request.form()
         uploaded = form.get("file")
         if isinstance(uploaded, UploadFile):
-            data = await uploaded.read()
-            text_content = data.decode("utf-8", errors="replace")
+            text_content = await _read_upload_text(uploaded)
             original_filename = sanitize_filename(uploaded.filename, "roleplay.txt")
         else:
             text_content = str(form.get("text") or "")
+            _validate_text_size(text_content)
         world = form.get("world")
         title = form.get("title")
         source = form.get("source") or "upload"
@@ -751,6 +1008,7 @@ async def import_roleplay(request: Request):
     elif "application/json" in content_type:
         payload = await request.json()
         text_content = str(payload.get("text") or payload.get("transcript") or "")
+        _validate_text_size(text_content)
         world = payload.get("world")
         title = payload.get("title")
         source = payload.get("source") or "api"
@@ -774,6 +1032,14 @@ async def import_roleplay(request: Request):
 
     if not text_content and (not lines_payload):
         raise HTTPException(status_code=400, detail="text or lines must be provided.")
+    if not text_content and lines_payload:
+        try:
+            flattened_preview = flatten_lines(
+                [line for line in lines_payload if isinstance(line, dict)]
+            )
+        except Exception:
+            flattened_preview = ""
+        _validate_text_size(flattened_preview)
 
     detail_level = _normalize_detail_level(detail_level_value)
     metadata = {**metadata, "llm_detail": detail_level}
@@ -810,17 +1076,56 @@ async def import_roleplay(request: Request):
     log_path.touch(exist_ok=True)
     _job_registry.update_job(job_id, logs_path=str(log_path))
 
+    task_payload = {
+        "job_id": job_id,
+        "title": job_payload.title,
+        "world": job_payload.world,
+        "source": job_payload.source,
+        "filename": job_payload.original_filename,
+        "has_lines": bool(job_payload.structured_lines),
+        "detail_level": job_payload.detail_level,
+    }
+    task_meta = {
+        "origin": "api.roleplay.import",
+        "job_id": job_id,
+        "logs_path": str(log_path),
+        "detail_level": job_payload.detail_level,
+        "has_lines": bool(job_payload.structured_lines),
+    }
+    task_message_hint = job_payload.title or job_payload.original_filename or f"job {job_id}"
+    task_id = task_registry.register(
+        "import.roleplay",
+        task_payload,
+        message=f"roleplay import {task_message_hint}",
+        meta=task_meta,
+    )
+    job_payload.task_id = task_id
+    logs_link = _job_logs_link(task_id)
+    if task_id:
+        meta_updates: Dict[str, Any] = {"task_id": task_id}
+        if logs_link:
+            meta_updates["links"] = {"logs": logs_link}
+        merged_meta = _merge_task_meta(task_id, **meta_updates)
+        if merged_meta is not None:
+            task_registry.update(task_id, meta=merged_meta)
+        task_registry.update(task_id, message="roleplay import queued", progress=0.0)
+
     if blocking:
-        return _execute_import_job(job_id, job_payload, log_path)
+        return _execute_import_job(job_id, job_payload, log_path, task_id=task_id)
 
     _spawn_import_thread(job_id, job_payload, log_path)
     _wait_for_log(log_path)
-    return {
+    response = {
         "ok": True,
         "job_id": job_id,
         "status": "queued",
         "logs_path": str(log_path),
     }
+    if task_id:
+        response["task_id"] = task_id
+        if logs_link:
+            response["links"] = {"logs": logs_link}
+    return response
 
 
 @router.get("/imports/{job_id}")
@@ -872,30 +1177,84 @@ def get_import_log(job_id: int):
 @router.get("/preview/{scene_uid}")
 def preview_scene(scene_uid: str):
     data = _load_processed_scene(scene_uid)
-    preview_payload: Optional[Dict[str, Any]] = None
     try:
         preview_payload = _load_preview(scene_uid)
     except HTTPException:
         preview_payload = None
 
-    status_payload: Optional[Dict[str, Any]] = None
     try:
         status_payload = _load_status(scene_uid)
     except HTTPException:
         status_payload = None
-    return {
+
+    lines = data.get("lines", [])
+    scene_payload = data.get("scene") or {}
+    scene_meta = scene_payload.get("meta") if isinstance(scene_payload, dict) else {}
+    context = data.get("context") or {}
+    metadata = data.get("metadata") or {}
+    persona_hints = data.get("persona_hints") or scene_meta.get("persona_hints") or {}
+    participants = scene_meta.get("participants") or context.get("participants") or []
+    detail_level = data.get("detail_level", "medium")
+    advisory_flags = data.get("advisory_flags", [])
+    task_id = data.get("task_id") or context.get("task_id")
+    logs_link = _job_logs_link(task_id)
+
+    if preview_payload is None:
+        preview_payload = build_preview_payload(
+            scene_uid=scene_uid,
+            title=(
+                (scene_payload.get("title") if isinstance(scene_payload, dict) else None)
+                or context.get("title")
+                or scene_uid
+            ),
+            detail_level=detail_level,
+            lines=lines,
+            participants=participants,
+            persona_hints=persona_hints,
+            advisory_flags=advisory_flags,
+            world=context.get("world"),
+            source=context.get("source"),
+        )
+    if task_id:
+        preview_payload.setdefault("task_id", task_id)
+    if logs_link:
+        preview_links = dict(preview_payload.get("links") or {})
+        preview_links.setdefault("logs", logs_link)
+        preview_payload["links"] = preview_links
+
+    if status_payload is None:
+        status_payload = {
+            "scene_uid": scene_uid,
+            "status": "unknown",
+            "updated_at": None,
+        }
+    if task_id:
+        status_payload["task_id"] = task_id
+    if logs_link:
+        status_links = dict(status_payload.get("links") or {})
+        status_links.setdefault("logs", logs_link)
+        status_payload["links"] = status_links
+
+    response = {
         "ok": True,
         "scene_uid": scene_uid,
-        "detail_level": data.get("detail_level", "medium"),
+        "detail_level": detail_level,
         "lines": data.get("lines", []),
-        "scene": data.get("scene"),
-        "context": data.get("context", {}),
-        "metadata": data.get("metadata", {}),
-        "advisory_flags": data.get("advisory_flags", []),
+        "scene": scene_payload,
+        "context": context,
+        "metadata": metadata,
+        "advisory_flags": advisory_flags,
         "preview": preview_payload,
         "status": status_payload,
         "final": status_payload,
     }
+    if task_id:
+        response["task_id"] = task_id
+    if logs_link:
+        response_links = dict(data.get("links") or {})
+        response_links["logs"] = logs_link
+        response["links"] = response_links
+    return response
 
 
 @router.post("/apply_corrections")

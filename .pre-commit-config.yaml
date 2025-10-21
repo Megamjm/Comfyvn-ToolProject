@@ -1,10 +1,13 @@
+# ComfyVN Architect — Phase 2/2 Project Integration Chat
 repos:
-- repo: https://github.com/psf/black
-  rev: 24.4.2
-  hooks: [{id: black}]
-- repo: https://github.com/charliermarsh/ruff-pre-commit
-  rev: v0.6.1
-  hooks: [{id: ruff}]
-- repo: https://github.com/PyCQA/isort
-  rev: 5.13.2
-  hooks: [{id: isort}]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.11

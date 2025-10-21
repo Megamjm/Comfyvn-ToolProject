@@ -66,19 +66,20 @@ class ServerBridge(QObject):
                     if self._backoff_step < len(self._backoff_schedule) - 1:
                         self._backoff_step += 1
                     self._current_interval = self._backoff_schedule[self._backoff_step]
-                    combined["retry_in"] = self._current_interval
+                combined["retry_in"] = self._current_interval
 
-                combined["state"] = "online" if success else "waiting"
-                combined["poll_interval"] = self._current_interval
-                combined["backoff_step"] = self._backoff_step
-                combined["timestamp"] = time.time()
+            combined["state"] = "online" if success else "waiting"
+            combined["poll_interval"] = self._current_interval
+            combined["backoff_step"] = self._backoff_step
+            combined["actions"] = self._build_actions(success)
+            combined["timestamp"] = time.time()
 
-                self._latest = combined
-                logger.debug("Metrics poll -> %s", combined)
-                self.status_updated.emit(dict(combined))
+            self._latest = combined
+            logger.debug("Metrics poll -> %s", combined)
+            self.status_updated.emit(dict(combined))
 
-                if success:
-                    await self._process_warnings(cli)
+            if success:
+                await self._process_warnings(cli)
         except Exception as exc:
             logger.error("Metrics polling error: %s", exc, exc_info=True)
             if self._backoff_step < len(self._backoff_schedule) - 1:
@@ -90,6 +91,7 @@ class ServerBridge(QObject):
                 "state": "waiting",
                 "retry_in": self._current_interval,
                 "backoff_step": self._backoff_step,
+                "actions": self._build_actions(False),
                 "timestamp": time.time(),
             }
             self.status_updated.emit(dict(self._latest))
@@ -395,6 +397,11 @@ class ServerBridge(QObject):
             return 0.0
         return max(self._current_interval, 0.0)
 
+    def _build_actions(self, success: bool) -> list[Dict[str, str]]:
+        if success:
+            return []
+        return [{"label": "Reconnect now", "command": "reconnect"}]
+
     def reconnect(self) -> None:
         self._backoff_step = 0
         self._current_interval = 0.0
@@ -402,7 +409,15 @@ class ServerBridge(QObject):
         self.start_polling()
         self._wake_event.set()
         snapshot: Dict[str, Any] = dict(self._latest) if self._latest else {}
-        snapshot.update({"ok": False, "state": "waiting", "retry_in": 0.0})
+        snapshot.update(
+            {
+                "ok": False,
+                "state": "waiting",
+                "retry_in": 0.0,
+                "actions": self._build_actions(False),
+                "backoff_step": 0,
+            }
+        )
         self.status_updated.emit(snapshot)
 
     def providers_activate(
