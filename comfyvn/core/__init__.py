@@ -8,6 +8,7 @@ __all__ = [
     "scene_compositor",
     "scene_preprocessor",
     "settings_manager",
+    "provenance",
     "st_sync_manager",
     "system_monitor",
     "workflow_bridge",

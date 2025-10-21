@@ -86,6 +86,30 @@ Important: Only templates and example assets belong in Git. User data (imports, 
 `renpy_project/` is a reference-only Ren'Py sample used for renderer/export validation; keep it pristine (copy assets out before editing, never write saves/build artefacts back into the repo).
 
 3) Phase plan (Studio-style delivery)
+
+Studio v0.7 release coordination (target window: 2025-10-27)
+
+Highlights:
+- Unified Studio shell under `gui/main_window/*` with scenes, characters, and timeline editors feeding the registries without regressions. ✅ GUI Code Production
+- Import infrastructure (roleplay + VN) hardened with job dashboards, provenance stamping, and asset registry parity; docs live under `docs/import_roleplay.md` and `docs/importer_engine_matrix.md`. ✅ Importer + Roleplay Chats
+- Remote compute path delivers `/jobs/ws`, GPU manager policies, and provider registry with curated templates; packaging + runtime storage docs aligned. ✅ System/Server Core + Remote Compute Chats
+- Policy gate, advisory scans, and TTS/music pipelines landed with cache + provenance scaffolding; GUI surfacing wired for acknowledgements and previews. ✅ Audio & Policy Chats
+
+Blockers (release-critical):
+- Asset inspector UX in the Studio assets panel remains unimplemented; needs thumbnails, provenance drill-down, and open-in-finder actions. Owner: Asset & Sprite System Chat.
+- Audio remix + TTS ComfyUI hand-off must write asset registry sidecars and telemetry before we can call audio automation done. Owner: Audio & Policy Chat.
+- Manga importer parity (panel segmentation → VN timeline) is still flagged 🚧; release requires at least the preview flow and asset registration parity. Owner: Importer Chat.
+
+Cross-chat dependencies:
+- Asset inspector relies on registry consistency and provenance stamping from Asset Registry + Advisory teams; GUI needs API contract finalised before implementation.
+- Manga importer outputs feed GUI timeline + advisory scans; coordinate API schema locks with Roleplay/World Lore and Advisory Chats.
+- Export orchestrator (Phase 9) consumes registry + provenance outputs; ensure Export/Packaging Chat participates in validation once inspector + audio provenance land.
+
+Documentation & packaging:
+- Update `README.md`, `docs/UPGRADE_v0.7.md`, and `docs/production_workflows_v0.6.md` (rename/extend to v0.7) to match Studio workflows. Owner: Project Integration (Chat P).
+- Cut CHANGELOG entry + docs/CHANGEME for v0.7 tag and circulate release checklist (smoke tests, doctor script, packaging guide) ahead of tagging. Owner: Project Integration.
+- Verify runtime storage + installer docs reference the new version; keep `docs/packaging_plan.md` and extension manifest guide in sync post-release.
+
 Phase 1 — Core stabilization
 
 Part A — Server health & bootstrap

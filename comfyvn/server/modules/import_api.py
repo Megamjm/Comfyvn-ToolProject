@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from PySide6.QtGui import QAction
 
+from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core.chat_import import apply_alias_map, assign_by_patterns, parse_text, to_scene_dict
 from comfyvn.server.core.manga_importer import MangaImportError, import_manga_archive
@@ -157,6 +158,15 @@ def _spawn_manga_job(task_id: str, archive: str, options: Dict[str, Any]) -> Non
     threading.Thread(target=_runner, name=f"MangaImport-{task_id[:8]}", daemon=True).start()
 @router.post("/chat")
 async def import_chat(body: Dict[str, Any], _: bool = Depends(require_scope(["content.write"]))):
+    gate = policy_gate.evaluate_action("import.chat")
+    if gate.get("requires_ack") and not gate.get("allow"):
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "message": "import blocked until legal acknowledgement is recorded",
+                "gate": gate,
+            },
+        )
     text = str(body.get("text") or "")
     if not text.strip(): raise HTTPException(status_code=400, detail="text required")
     fmt = str(body.get("format") or "auto")
@@ -199,11 +209,20 @@ async def import_chat(body: Dict[str, Any], _: bool = Depends(require_scope(["co
         data = to_scene_dict(name, seq)
         _write_scene(name, data)
         created.append(name)
-    return {"ok": True, "created": created, "count": len(created)}
+    return {"ok": True, "created": created, "count": len(created), "gate": gate}
 
 
 @router.post("/manga/import")
 async def manga_import(payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))):
+    gate = policy_gate.evaluate_action("import.manga")
+    if gate.get("requires_ack") and not gate.get("allow"):
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "message": "import blocked until legal acknowledgement is recorded",
+                "gate": gate,
+            },
+        )
     path_value = payload.get("path") or payload.get("archive_path")
     if not path_value:
         raise HTTPException(status_code=400, detail="path is required")

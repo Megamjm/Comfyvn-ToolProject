@@ -1,8 +1,14 @@
 from __future__ import annotations
 from PySide6.QtGui import QAction
 # comfyvn/core/asset_manager.py
+
+import json
+import logging
 from pathlib import Path
-import json, shutil
+
+from comfyvn.core.provenance import stamp_path
+
+LOGGER = logging.getLogger("comfyvn.core.asset_manager")
 
 ASSET_DB = Path("comfyvn/data/assets.json")
 
@@ -18,6 +24,15 @@ def register_asset(kind:str,path:str):
     data.setdefault(kind,[]).append(path)
     ASSET_DB.parent.mkdir(parents=True,exist_ok=True)
     ASSET_DB.write_text(json.dumps(data,indent=2),encoding="utf-8")
+    asset_path = Path(path)
+    if asset_path.exists():
+        stamp_path(
+            asset_path,
+            source="core.asset_manager.register",
+            inputs={"kind": kind},
+        )
+    else:  # pragma: no cover - defensive
+        LOGGER.warning("Skipped provenance stamp; asset path missing: %s", path)
 
 def import_folder(folder:str,kind:str="images"):
     p=Path(folder)

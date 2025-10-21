@@ -1,3 +1,11 @@
+## [v0.7.0-studio] — 2025-10-27 (release prep)
+- Advisory: gate + scan + provenance stamping.
+- Studio shell unified under `gui/main_window` with dockable Scenes, Characters, and Timeline editors backed by registry APIs, live job dashboards, and remote compute telemetry. Menus, bridge wiring, and settings persistence now align with launcher defaults.
+- Import infrastructure hardened: roleplay importer jobs, VN package importer, advisory scans, provenance stamping, and Studio dashboards all line up; Manga importer parity remains in-flight and is tracked as a release blocker.
+- Audio and advisory systems upgraded: TTS + music remix endpoints share cache + provenance scaffolding, policy gate/filter workflows enforce acknowledgements, and GUI surfaces warnings; ComfyUI linkage + asset inspector integration are the last audio/asset release blockers.
+- Runtime/storage + packaging docs updated: runtime paths redirected to OS-specific locations, provider templates curated, Doctor v0.7 script landed, and release coordination lives in `ARCHITECTURE.md`, `CHAT_WORK_ORDERS.md`, and `docs/CHANGEME.md`. Packaging rehearsal (wheel + PyInstaller/AppImage) to run once P0 blockers clear.
+- Known gaps before tagging: Studio asset inspector UX, audio provenance hand-off to `AssetRegistry`, Manga importer panel parity, export orchestrator full dry-run, and advisory auto-remediation events. These are noted in the release checklist and will remain in the changelog until resolved.
+
 ### 2025-10-25 — Asset & Sprite System (chat: Assets)
 - `AssetRegistry` now honours configurable asset roots, writes `<filename>.asset.json` sidecars alongside media files (while mirroring legacy `_meta` paths), and schedules thumbnails or WAV waveform previews during registration.
 - Pose tooling (`comfyvn/assets/pose_manager.py`, `playground_manager.py`) now integrates with the registry so newly saved poses write JSON payloads, emit sidecars, and appear in registry queries.

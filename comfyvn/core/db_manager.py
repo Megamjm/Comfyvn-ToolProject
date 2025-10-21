@@ -179,6 +179,30 @@ TABLE_DEFINITIONS: tuple[TableDefinition, ...] = (
         column_patches=(ColumnPatch("project_id", "TEXT DEFAULT 'default'"),),
     ),
     TableDefinition(
+        name="findings",
+        create_sql="""
+            CREATE TABLE IF NOT EXISTS findings (
+                id INTEGER PRIMARY KEY,
+                project_id TEXT DEFAULT 'default',
+                issue_id TEXT UNIQUE,
+                target_id TEXT,
+                kind TEXT,
+                message TEXT,
+                severity TEXT,
+                detail JSON,
+                resolved INTEGER DEFAULT 0,
+                notes JSON,
+                timestamp REAL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """,
+        column_patches=(
+            ColumnPatch("project_id", "TEXT DEFAULT 'default'"),
+            ColumnPatch("notes", "JSON"),
+            ColumnPatch("timestamp", "REAL"),
+        ),
+    ),
+    TableDefinition(
         name="thumbnails",
         create_sql="""
             CREATE TABLE IF NOT EXISTS thumbnails (

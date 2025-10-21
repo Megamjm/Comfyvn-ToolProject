@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core.external_extractors import extractor_manager
 from comfyvn.server.core import extractor_installer
@@ -96,6 +97,15 @@ def _spawn_import_job(task_id: str, package_path: str, overwrite: bool, tool: Op
 async def import_vn(payload: Dict[str, Any]):
     """Import a ComfyVN package (.cvnpack/.zip/.pak) into the local workspace."""
 
+    gate = policy_gate.evaluate_action("import.vn")
+    if gate.get("requires_ack") and not gate.get("allow"):
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "message": "import blocked until legal acknowledgement is recorded",
+                "gate": gate,
+            },
+        )
     path_value = payload.get("path") or payload.get("package_path")
     if not path_value:
         raise HTTPException(status_code=400, detail="path is required")
@@ -131,7 +141,7 @@ async def import_vn(payload: Dict[str, Any]):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=500, detail="vn import failed") from exc
-        return {"ok": True, "import": summary, "job": {"id": task_id}}
+        return {"ok": True, "import": summary, "job": {"id": task_id}, "gate": gate}
 
     try:
         _spawn_import_job(task_id, str(resolved_path), overwrite, tool)
@@ -139,7 +149,7 @@ async def import_vn(payload: Dict[str, Any]):
         logger.exception("Failed to spawn VN import job: %s", exc)
         raise HTTPException(status_code=500, detail="vn import spawn failed") from exc
 
-    return {"ok": True, "job": {"id": task_id}}
+    return {"ok": True, "job": {"id": task_id}, "gate": gate}
 
 
 @router.get("/import/{job_id}")

@@ -2,6 +2,8 @@ from PySide6.QtGui import QAction
 import zipfile, hashlib, json, os, time
 from pathlib import Path
 
+from comfyvn.core.provenance import stamp_path
+
 def trace_metadata(asset_path: Path):
     data = Path(asset_path).read_bytes()
     h = hashlib.sha256(data).hexdigest()[:16]
@@ -18,6 +20,16 @@ def bundle_scene(scene_json: dict, assets: list[str], outdir="exports"):
             if p.exists():
                 z.write(p, p.name)
                 bundle["assets"].append(trace_metadata(p))
+    provenance = stamp_path(
+        zipname,
+        source="core.bundler.bundle_scene",
+        inputs={
+            "scene_title": scene_json.get("title"),
+            "asset_count": len(bundle["assets"]),
+        },
+        findings=bundle.get("issues") or [],
+    )
+    bundle["provenance"] = provenance
     meta = zipname.with_suffix(".meta.json")
     meta.write_text(json.dumps(bundle, indent=2), encoding="utf-8")
     return {"ok": True, "path": str(zipname), "meta": str(meta)}

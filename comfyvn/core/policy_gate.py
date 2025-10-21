@@ -76,10 +76,16 @@ class PolicyGate:
         status = self.status()
         warnings: list[str] = []
         allow = True
+        action_scope = action.split(":", 1)[0]
+        action_root = action_scope.split(".", 1)[0].lower()
+        gate_kind = action_root or "general"
+        requires_block = gate_kind in {"export", "import"}
+
         if status.requires_ack:
-            warnings.append(
-                "Legal acknowledgement required before exporting or sharing content."
-            )
+            warnings.append("Legal acknowledgement required before exporting or importing content.")
+            if requires_block:
+                allow = False
+                LOGGER.warning("Policy gate blocked action=%s pending acknowledgement", action)
         if override and status.warn_override_enabled:
             LOGGER.warning("Policy override requested for action=%s", action)
             warnings.append("User override requested; ensure legal terms are accepted.")
@@ -89,6 +95,7 @@ class PolicyGate:
             "warnings": warnings,
             "allow": allow,
             "override_requested": override,
+            "gate": gate_kind,
         }
 
 

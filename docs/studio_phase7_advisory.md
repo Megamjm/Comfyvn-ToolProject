@@ -9,6 +9,7 @@ Subsystem Components
 --------------------
 - Core logic in `comfyvn/core/advisory.py` manages findings, resolution tracking, and log storage.
 - API layer in `comfyvn/server/modules/advisory_api.py` exposes scan, log, and resolve endpoints.
+- Findings persist to the `findings` SQLite table so audits survive process restarts and exports can reference remediation history.
 - Advisory logs are intended for `advisory.log` once a dedicated handler is added; for now they flow into `system.log` in the user log directory.
 - GUI advisory view will consume `/api/advisory/logs` and surface resolution workflows.
 
@@ -29,7 +30,7 @@ API Hooks
 
 `GET /api/policy/status`
   - Provides liability-gate status: `{ok, status{ack_legal_v1,requires_ack,ack_timestamp}, message, allow_override}`.
-  - If `requires_ack` is true, the user is reminded but still permitted to proceed (user choice retained).
+  - When `requires_ack` is true, UI shells should disable export/import triggers until acknowledgement is recorded.
 
 `POST /api/policy/ack`
   - Stores the legal acknowledgement and optional notes. Response mirrors `status`.
@@ -55,7 +56,7 @@ Scanner Behaviour
 Liability Gate & User Choice
 ---------------------------
 - Gate status is stored in `data/settings/config.json` via `comfyvn/core/policy_gate.py`.
-- Users retain full control—actions are always `allow=true`—but warnings must be surfaced when `requires_ack` is true.
+- Exports and imports are blocked (`allow=false`) until the legal acknowledgement is recorded; other actions continue to return warnings while permitting the workflow.
 - Override requests should capture the user’s identity and notes for auditing.
 
 SFW/NSFW Filters
@@ -88,3 +89,4 @@ Integration Notes
 - The liability gate can reuse advisory logs by ensuring each required acknowledgement writes a resolved note referencing the acceptance checkbox.
 - When SFW/NSFW filters arrive, reuse `AdvisoryIssue.detail` to embed classification probabilities.
 - For provenance, the `issue_id` should be stored in `provenance.inputs_json` so exports can trace remediation history.
+- Provenance stamping lives in `comfyvn/core/provenance.py` and writes `<file>.prov.json` sidecars plus best-effort PNG/JPEG metadata markers; exports call this helper so Studio and CLI flows share the same audit trail.

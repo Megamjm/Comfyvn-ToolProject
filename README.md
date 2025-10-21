@@ -229,6 +229,7 @@ Currently the file covers `libegl1`, `libxkbcommon0`, and `libdbus-1-3`; add new
 - `curl http://127.0.0.1:8001/health` validates the FastAPI wiring from `comfyvn.server.app`.
 - `curl http://127.0.0.1:8001/healthz` remains available for legacy tooling expecting the older probe.
 - `python smoke_checks.py` performs REST + WebSocket checks against a locally running server and prints any failures alongside connection debug information.
+- `python scripts/smoke_test.py --base-url http://127.0.0.1:8001` hits `/health` and `/system/metrics` (with an optional roleplay upload) and serves as the required pre-PR smoke test.
 
 ## Extension Development
 
