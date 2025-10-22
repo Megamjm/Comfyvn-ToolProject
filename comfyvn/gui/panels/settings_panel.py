@@ -35,6 +35,7 @@ from comfyvn.accessibility import AccessibilityState, accessibility_manager
 from comfyvn.accessibility import filters as accessibility_filters
 from comfyvn.accessibility.input_map import InputBinding, input_map_manager
 from comfyvn.config import feature_flags
+from comfyvn.config import ports as ports_config
 from comfyvn.config.baseurl_authority import current_authority, default_base_url
 from comfyvn.core.compute_registry import ComputeProviderRegistry
 from comfyvn.core.notifier import notifier
@@ -77,6 +78,7 @@ class SettingsPanel(QDockWidget):
         cfg_snapshot = self.settings_manager.load()
         server_cfg = cfg_snapshot.get("server", {})
         authority = current_authority()
+        port_config = ports_config.get_config()
         self.api = QLineEdit(self.bridge.base)
         self.remote_list = QLineEdit(
             self.bridge.get(
@@ -91,7 +93,21 @@ class SettingsPanel(QDockWidget):
         index = self.menu_sort.findData(current_mode)
         if index != -1:
             self.menu_sort.setCurrentIndex(index)
-        default_port = int(server_cfg.get("local_port", authority.port))
+        port_candidates = port_config.get("ports", [])
+        default_port = authority.port
+        if isinstance(port_candidates, (list, tuple)):
+            for item in port_candidates:
+                try:
+                    default_port = int(item)
+                except (TypeError, ValueError):
+                    continue
+                else:
+                    break
+        if "local_port" in server_cfg:
+            try:
+                default_port = int(server_cfg.get("local_port"))
+            except (TypeError, ValueError):
+                pass
         self.local_port = QSpinBox()
         self.local_port.setRange(1024, 65535)
         self.local_port.setValue(default_port)
@@ -1150,7 +1166,44 @@ class SettingsPanel(QDockWidget):
         server_cfg["local_port"] = self.local_port.value()
         cfg["server"] = server_cfg
         self.settings_manager.save(cfg)
-        os.environ["COMFYVN_SERVER_PORT"] = str(self.local_port.value())
+        authority = current_authority(refresh=True)
+        port_cfg = ports_config.get_config()
+        host = str(port_cfg.get("host") or authority.host)
+        public_base = port_cfg.get("public_base")
+        ports = port_cfg.get("ports") or []
+        normalized_ports: list[int] = []
+        if isinstance(ports, (list, tuple)):
+            for item in ports:
+                try:
+                    value = int(item)
+                except (TypeError, ValueError):
+                    continue
+                if value not in normalized_ports:
+                    normalized_ports.append(value)
+        new_port = int(self.local_port.value())
+        if new_port in normalized_ports:
+            normalized_ports.remove(new_port)
+        ports_config.set_config(
+            host,
+            [new_port, *normalized_ports],
+            (
+                str(public_base).strip()
+                if isinstance(public_base, str) and public_base
+                else None
+            ),
+        )
+        ports_config.record_runtime_state(
+            host=host,
+            ports=[new_port, *normalized_ports],
+            active_port=None,
+            base_url=None,
+            public_base=(
+                str(public_base).strip()
+                if isinstance(public_base, str) and public_base
+                else None
+            ),
+        )
+        os.environ["COMFYVN_SERVER_PORT"] = str(new_port)
         if api_base:
             self.bridge.set_host(api_base)
 

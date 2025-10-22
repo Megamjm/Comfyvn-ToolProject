@@ -1,0 +1,14 @@
+{
+  "active": 8001,
+  "base_url": "http://127.0.0.1:8001",
+  "config": {
+    "host": "127.0.0.1",
+    "ports": [
+      8001,
+      8000
+    ],
+    "public_base": null
+  },
+  "stamp": "3040efd772c98ee1c904169fa3b8681864a0be06f3300a543f1403741c7a983f",
+  "updated": 1761151933.6553984
+}

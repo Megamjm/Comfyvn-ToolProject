@@ -39,6 +39,28 @@ def test_settings_save_deep_merge(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         raising=False,
     )
     monkeypatch.setattr(
+        settings_api.ports_config,
+        "get_config",
+        lambda: {"host": "127.0.0.1", "ports": [8001, 8000], "public_base": None},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        settings_api.ports_config,
+        "set_config",
+        lambda host, ports, public_base: {
+            "host": host,
+            "ports": list(ports),
+            "public_base": public_base,
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        settings_api.ports_config,
+        "record_runtime_state",
+        lambda **_kwargs: None,
+        raising=False,
+    )
+    monkeypatch.setattr(
         settings_api,
         "find_open_port",
         lambda host, start: start,
@@ -107,6 +129,29 @@ def test_settings_save_updates_runtime_state(
     monkeypatch.setattr(settings_api, "write_runtime_authority", fake_write_runtime)
     monkeypatch.setattr(settings_api, "find_open_port", fake_find)
     monkeypatch.setattr(
+        settings_api.ports_config,
+        "get_config",
+        lambda: {"host": "0.0.0.0", "ports": [8001, 8000], "public_base": None},
+        raising=False,
+    )
+    captured_set: dict[str, object] = {}
+
+    def fake_set_config(host, ports, public_base):
+        captured_set["host"] = host
+        captured_set["ports"] = list(ports)
+        captured_set["public_base"] = public_base
+        return {"host": host, "ports": list(ports), "public_base": public_base}
+
+    monkeypatch.setattr(
+        settings_api.ports_config, "set_config", fake_set_config, raising=False
+    )
+    monkeypatch.setattr(
+        settings_api.ports_config,
+        "record_runtime_state",
+        lambda **kwargs: captured_set.setdefault("runtime", kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
         settings_api,
         "current_authority",
         lambda refresh=False: authority,
@@ -131,6 +176,11 @@ def test_settings_save_updates_runtime_state(
     assert captured.get("host") == "127.0.0.1"
     assert captured.get("port") == 8100
     assert captured.get("find_calls") == [("127.0.0.1", 8001)]
+    assert captured_set["host"] == "0.0.0.0"
+    assert captured_set["ports"][0] == 8100
+    runtime_state = captured_set["runtime"]
+    assert runtime_state["host"] == "0.0.0.0"
+    assert runtime_state["active_port"] == 8100
 
     base_env = os.environ["COMFYVN_SERVER_BASE"]
     assert base_env == "http://127.0.0.1:8100"

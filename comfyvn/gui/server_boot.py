@@ -9,6 +9,7 @@ import time
 import requests
 from PySide6.QtGui import QAction
 
+from comfyvn.config import ports as ports_config
 from comfyvn.config.baseurl_authority import (
     current_authority,
     default_base_url,
@@ -36,6 +37,24 @@ def _connect_host(host: str) -> str:
     if lowered in {"::", "[::]"}:
         return "localhost"
     return host
+
+
+def _normalise_ports(values) -> list[int]:
+    ports: list[int] = []
+    if not isinstance(values, (list, tuple)):
+        values = [values]
+    for value in values:
+        try:
+            port = int(value)
+        except (TypeError, ValueError):
+            continue
+        if not 0 < port < 65536:
+            continue
+        if port not in ports:
+            ports.append(port)
+    if not ports:
+        ports = [8001, 8000]
+    return ports
 
 
 def _port_open(host: str, port: int) -> bool:
@@ -102,28 +121,61 @@ def wait_for_server(
     base: str | None = None, autostart: bool = True, deadline: float = 12.0
 ) -> bool:
     host, port, starter = _pick_bridge()
-    connect_host = _connect_host(host)
+    port_config = ports_config.get_config()
+    config_host = str(port_config.get("host") or host or "127.0.0.1").strip()
+    connect_host = _connect_host(config_host or host or "127.0.0.1")
+    candidate_ports = _normalise_ports(port_config.get("ports") or [])
+    public_base = port_config.get("public_base")
     active_port = int(port)
+    if active_port not in candidate_ports:
+        candidate_ports = [
+            active_port,
+            *[p for p in candidate_ports if p != active_port],
+        ]
     target_base = (base or default_base_url()).rstrip("/")
     if autostart:
-        lowered = host.strip().lower()
+        lowered = config_host.strip().lower()
         if lowered in _LOCAL_BIND_HOSTS:
-            scanned_port = find_open_port(connect_host, active_port)
-            if scanned_port != active_port:
+            search_order = [
+                active_port,
+                *[p for p in candidate_ports if p != active_port],
+            ]
+            resolved_port = None
+            for candidate in search_order:
+                opened = find_open_port(connect_host, candidate)
+                if opened == candidate:
+                    resolved_port = candidate
+                    break
+            if resolved_port is None:
+                resolved_port = find_open_port(connect_host, active_port)
+            if resolved_port != active_port:
                 LOGGER.info(
                     "Requested port %s unavailable on %s; rolling to %s.",
                     active_port,
                     connect_host,
-                    scanned_port,
+                    resolved_port,
                 )
-                active_port = scanned_port
-        target_base = f"http://{connect_host}:{active_port}"
+                active_port = resolved_port
+        if public_base:
+            target_base = str(public_base).rstrip("/")
+        else:
+            target_base = f"http://{connect_host}:{active_port}"
         try:
             write_runtime_authority(connect_host, active_port)
         except Exception as exc:
             LOGGER.warning("Failed to persist runtime state: %s", exc)
         else:
             current_authority(refresh=True)
+            try:
+                ports_config.record_runtime_state(
+                    host=config_host or connect_host,
+                    ports=candidate_ports or [active_port],
+                    active_port=int(active_port),
+                    base_url=target_base.rstrip("/"),
+                    public_base=str(public_base) if public_base else None,
+                )
+            except Exception:
+                LOGGER.debug("Failed to update port runtime state", exc_info=True)
             try:  # keep GUI bridge globals aligned with the resolved endpoint
                 import comfyvn.gui.services.server_bridge as sb  # type: ignore
 

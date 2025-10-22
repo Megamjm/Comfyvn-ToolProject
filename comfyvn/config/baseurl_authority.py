@@ -12,8 +12,37 @@ from functools import lru_cache
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
-DEFAULT_HOST = os.environ.get("COMFYVN_SERVER_HOST", "127.0.0.1")
-DEFAULT_PORT = int(os.environ.get("COMFYVN_SERVER_PORT", "8001"))
+from comfyvn.config import ports as ports_config
+
+
+def _default_host_port() -> Tuple[str, int]:
+    cfg = ports_config.get_config()
+    host = str(cfg.get("host") or "127.0.0.1").strip() or "127.0.0.1"
+    ports = cfg.get("ports")
+    candidate_ports: list[int] = []
+    if isinstance(ports, (list, tuple)):
+        for item in ports:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value not in candidate_ports and 0 < value < 65536:
+                candidate_ports.append(value)
+    if not candidate_ports:
+        candidate_ports = [8001, 8000]
+    env_port = os.environ.get("COMFYVN_SERVER_PORT")
+    if env_port:
+        try:
+            env_value = int(env_port)
+        except (TypeError, ValueError):
+            env_value = None
+        else:
+            if env_value not in candidate_ports:
+                candidate_ports.insert(0, env_value)
+    return host, int(candidate_ports[0])
+
+
+DEFAULT_HOST, DEFAULT_PORT = _default_host_port()
 ENV_BASE = os.environ.get("COMFYVN_BASE_URL")
 
 try:
@@ -108,31 +137,48 @@ def _first_writable(paths):
 
 
 def _from_config_json() -> Optional[BaseAuthority]:
-    for p in COMFY_CONFIG_CANDIDATES:
-        cfg = _load_json(p)
-        if not cfg:
-            continue
-        s = cfg.get("server", {})
-        base = s.get("base_url")
-        if base:
-            host, port = _parse_base(base)
+    cfg = ports_config.get_config()
+    host = str(cfg.get("host") or DEFAULT_HOST).strip() or DEFAULT_HOST
+    ports = cfg.get("ports")
+    port = DEFAULT_PORT
+    if isinstance(ports, (list, tuple)):
+        for item in ports:
+            try:
+                port = int(item)
+            except (TypeError, ValueError):
+                continue
+            else:
+                break
+    public_base = cfg.get("public_base")
+    if public_base:
+        base_url = str(public_base).strip().rstrip("/")
+        if base_url and "://" not in base_url:
+            base_url = f"http://{base_url}"
+        if base_url:
+            parsed = urlparse(base_url)
+            if parsed.hostname and parsed.port:
+                host = parsed.hostname
+                port = parsed.port
+            elif parsed.hostname and not parsed.port:
+                host = parsed.hostname
+                if parsed.scheme == "https":
+                    port = 443
+                elif parsed.scheme == "http":
+                    port = 80
             return BaseAuthority(
-                base_url=f"http://{host}:{port}",
+                base_url=base_url.rstrip("/"),
                 host=host,
                 port=port,
-                source=f"config:{p}",
-                path=p,
+                source="config:ports",
+                path=str(ports_config.CONFIG_PATH),
             )
-        host = s.get("host") or DEFAULT_HOST
-        port = int(s.get("port") or DEFAULT_PORT)
-        return BaseAuthority(
-            base_url=f"http://{host}:{port}",
-            host=host,
-            port=port,
-            source=f"config:{p}",
-            path=p,
-        )
-    return None
+    return BaseAuthority(
+        base_url=f"http://{host}:{port}",
+        host=host,
+        port=port,
+        source="config:ports",
+        path=str(ports_config.CONFIG_PATH),
+    )
 
 
 def _from_settings() -> Optional[BaseAuthority]:
@@ -241,6 +287,30 @@ def write_runtime_authority(host: str, port: int) -> str:
         }
     }
     _save_json(rp, data)
+    try:
+        cfg = ports_config.get_config()
+        ports = cfg.get("ports") or ()
+        normalized_ports: list[int] = []
+        if isinstance(ports, (list, tuple)):
+            for item in ports:
+                try:
+                    value = int(item)
+                except (TypeError, ValueError):
+                    continue
+                if value not in normalized_ports:
+                    normalized_ports.append(value)
+        if int(port) not in normalized_ports:
+            normalized_ports.insert(0, int(port))
+        ports_config.record_runtime_state(
+            host=host,
+            ports=normalized_ports or [int(port)],
+            active_port=int(port),
+            base_url=f"http://{host}:{port}",
+            public_base=str(cfg.get("public_base")) if cfg.get("public_base") else None,
+        )
+    except Exception:
+        # Avoid breaking legacy call sites; record_runtime_state failures are non-fatal.
+        pass
     return rp
 
 

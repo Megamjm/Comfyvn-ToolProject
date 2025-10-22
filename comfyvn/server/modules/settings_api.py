@@ -12,6 +12,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     QAction = None  # type: ignore
 
+from comfyvn.config import ports as ports_config
 from comfyvn.config.baseurl_authority import (
     current_authority,
     find_open_port,
@@ -119,10 +120,12 @@ def _format_base_value(original: str, host: str, port: int) -> str:
     return updated.geturl()
 
 
-def _apply_server_overrides(settings: dict, host: str, port: int) -> bool:
+def _apply_server_overrides(
+    settings: dict, host: str, port: int
+) -> tuple[bool, str | None]:
     server_cfg = settings.get("server")
     if not isinstance(server_cfg, dict):
-        return False
+        return False, None
     changed = False
     connect_host = _connect_host(host)
     if server_cfg.get("local_port") != port:
@@ -134,6 +137,7 @@ def _apply_server_overrides(settings: dict, host: str, port: int) -> bool:
     if "host" in server_cfg and server_cfg.get("host") != connect_host:
         server_cfg["host"] = connect_host
         changed = True
+    derived_public_base: str | None = None
     for key in ("base_url", "endpoint", "url"):
         value = server_cfg.get(key)
         if not isinstance(value, str) or not value.strip():
@@ -142,7 +146,9 @@ def _apply_server_overrides(settings: dict, host: str, port: int) -> bool:
         if formatted != value.strip():
             server_cfg[key] = formatted
             changed = True
-    return changed
+        if not derived_public_base:
+            derived_public_base = formatted
+    return changed, derived_public_base
 
 
 def _sync_runtime_state(settings: dict) -> None:
@@ -151,6 +157,20 @@ def _sync_runtime_state(settings: dict) -> None:
         connect_host = _connect_host(host)
         lowered = host.strip().lower()
         resolved_port = requested_port
+        port_config = ports_config.get_config()
+        configured_ports = port_config.get("ports") or []
+        candidate_ports: list[int] = []
+        if isinstance(configured_ports, (list, tuple)):
+            for value in configured_ports:
+                try:
+                    normalized = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if normalized not in candidate_ports:
+                    candidate_ports.append(normalized)
+        for seed in (requested_port, resolved_port):
+            if seed not in candidate_ports and 0 < seed < 65536:
+                candidate_ports.insert(0, seed)
         if lowered in _LOCAL_HOSTS:
             resolved_port = find_open_port(connect_host, requested_port)
         if resolved_port != requested_port:
@@ -160,7 +180,18 @@ def _sync_runtime_state(settings: dict) -> None:
                 connect_host,
                 resolved_port,
             )
-        overrides_changed = _apply_server_overrides(settings, host, resolved_port)
+        overrides_changed, derived_public_base = _apply_server_overrides(
+            settings, host, resolved_port
+        )
+        public_base = derived_public_base or port_config.get("public_base")
+        formatted_public_base = None
+        if isinstance(public_base, str) and public_base.strip():
+            formatted_public_base = public_base.strip()
+        ports_config.set_config(
+            host,
+            [resolved_port, *[p for p in candidate_ports if p != resolved_port]],
+            formatted_public_base,
+        )
         state_path = write_runtime_authority(connect_host, resolved_port)
         LOGGER.debug(
             "runtime_state.json updated at %s (host=%s port=%s)",
@@ -179,6 +210,13 @@ def _sync_runtime_state(settings: dict) -> None:
         os.environ["COMFYVN_BASE_URL"] = base_url
         os.environ["COMFYVN_SERVER_HOST"] = connect_host
         os.environ["COMFYVN_SERVER_PORT"] = str(resolved_port)
+        ports_config.record_runtime_state(
+            host=host,
+            ports=[resolved_port, *[p for p in candidate_ports if p != resolved_port]],
+            active_port=resolved_port,
+            base_url=base_url,
+            public_base=formatted_public_base,
+        )
         if overrides_changed:
             LOGGER.info(
                 "Persisted server settings now point at %s:%s",

@@ -11,6 +11,8 @@ import sys
 import time
 from urllib import error, request
 
+from comfyvn.config import ports as ports_config
+
 DEF_CONF = "tools/check_profiles.json"
 DEF_FLAGS = "config/comfyvn.json"
 
@@ -92,31 +94,20 @@ def _discover_base(cli_base: str, flags_file: str):
         base = _try_candidate(cli_base, "--base")
         return (base or ""), tried, warnings
 
-    flags = load_json(flags_file)
-    server = (flags.get("server") or {}) if isinstance(flags, dict) else {}
-
     env_base = (os.getenv("COMFYVN_BASE") or "").strip()
     base = _try_candidate(env_base, "COMFYVN_BASE")
     if base:
         return base, tried, warnings
 
-    public_base = (server.get("public_base") or "").strip()
+    cfg = ports_config.get_config()
+    public_base = (cfg.get("public_base") or "").strip()
     base = _try_candidate(public_base, "server.public_base")
     if base:
         return base, tried, warnings
 
-    host = os.getenv("COMFYVN_HOST") or server.get("host") or "127.0.0.1"
-    ports_env = os.getenv("COMFYVN_PORTS")
-    if ports_env:
-        raw_ports = [
-            token.strip()
-            for token in ports_env.replace(";", ",").split(",")
-            if token.strip()
-        ]
-        ports_source = "COMFYVN_PORTS"
-    else:
-        raw_ports = server.get("ports") or []
-        ports_source = "server.ports"
+    host = str(cfg.get("host") or "127.0.0.1")
+    raw_ports = cfg.get("ports") or []
+    ports_source = "config.ports"
 
     norm_ports = []
     for item in raw_ports:
