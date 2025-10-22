@@ -22,7 +22,7 @@ for path in (DATA_DIR, TEMPLATES_DIR, SNAPSHOT_DIR, EXPORTS_DIR, LOGS_DIR):
 
 
 @router.get("/health")
-async def health() -> Dict[str, str]:
+async def health() -> Dict[str, Any]:
     return {"status": "ok", "ok": True}
 
 
