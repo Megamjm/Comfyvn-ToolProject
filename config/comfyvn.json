@@ -59,7 +59,16 @@
     "enable_diffmerge_tools": false,
     "enable_security_api": false,
     "enable_security_sandbox_guard": true,
-    "enable_collaboration": true
+    "enable_collaboration": true,
+    "enable_publish_web": false,
+    "enable_persona_importers": false,
+    "enable_image2persona": false,
+    "enable_asset_ingest": false,
+    "enable_public_model_hubs": false,
+    "enable_marketplace": false,
+    "enable_collab": false,
+    "enable_security_sandbox": false,
+    "enable_export_bake": false
   },
   "sync": {
     "include": [
@@ -89,5 +98,13 @@
     "crash_opt_in": false,
     "diagnostics_opt_in": false,
     "dry_run": true
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "ports": [
+      8001,
+      8000
+    ],
+    "public_base": null
   }
 }

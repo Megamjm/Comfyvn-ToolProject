@@ -45,6 +45,104 @@ def load_json(path):
         return {}
 
 
+def _compose_base(host: str, port: str) -> str:
+    host = (host or "").strip()
+    port = str(port).strip()
+    if not host:
+        host = "127.0.0.1"
+    if "://" in host:
+        host = host.rstrip("/")
+        # Only append the port if host does not already end with one.
+        tail = host.rsplit(":", 1)[-1]
+        if tail.isdigit():
+            return host
+        return f"{host}:{port}" if port else host
+    scheme = "http://"
+    return f"{scheme}{host}:{port}" if port else f"{scheme}{host}"
+
+
+def _probe_base(base: str):
+    if not base:
+        return False
+    base = base.rstrip("/")
+    code, _ = _http_get(f"{base}/health")
+    return code is not None and 200 <= code < 500
+
+
+def _discover_base(cli_base: str, flags_file: str):
+    tried, warnings = [], []
+    seen = set()
+
+    def _try_candidate(candidate: str, label: str):
+        if not candidate:
+            return None
+        base = candidate.rstrip("/")
+        if not base or base in seen:
+            return None
+        seen.add(base)
+        tried.append(base)
+        if _probe_base(base):
+            return base
+        if label:
+            warnings.append(f"{label} not responding: {base}")
+        return None
+
+    # Explicit CLI override: do not fall back further.
+    if cli_base:
+        base = _try_candidate(cli_base, "--base")
+        return (base or ""), tried, warnings
+
+    flags = load_json(flags_file)
+    server = (flags.get("server") or {}) if isinstance(flags, dict) else {}
+
+    env_base = (os.getenv("COMFYVN_BASE") or "").strip()
+    base = _try_candidate(env_base, "COMFYVN_BASE")
+    if base:
+        return base, tried, warnings
+
+    public_base = (server.get("public_base") or "").strip()
+    base = _try_candidate(public_base, "server.public_base")
+    if base:
+        return base, tried, warnings
+
+    host = os.getenv("COMFYVN_HOST") or server.get("host") or "127.0.0.1"
+    ports_env = os.getenv("COMFYVN_PORTS")
+    if ports_env:
+        raw_ports = [
+            token.strip()
+            for token in ports_env.replace(";", ",").split(",")
+            if token.strip()
+        ]
+        ports_source = "COMFYVN_PORTS"
+    else:
+        raw_ports = server.get("ports") or []
+        ports_source = "server.ports"
+
+    norm_ports = []
+    for item in raw_ports:
+        try:
+            norm_ports.append(str(int(item)))
+        except (TypeError, ValueError):
+            text = str(item).strip()
+            if text:
+                norm_ports.append(text)
+
+    for p in norm_ports:
+        label = f"{ports_source}[{p}]"
+        base = _try_candidate(_compose_base(host, p), label)
+        if base:
+            return base, tried, warnings
+
+    for fallback_port in ("8001", "8000"):
+        base = _try_candidate(
+            _compose_base("127.0.0.1", fallback_port), f"fallback[{fallback_port}]"
+        )
+        if base:
+            return base, tried, warnings
+
+    return "", tried, warnings
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Check how current systems work (flags, routes, files)."
@@ -54,21 +152,39 @@ def main():
     )
     ap.add_argument("--conf", default=DEF_CONF)
     ap.add_argument("--flags-file", default=DEF_FLAGS)
-    ap.add_argument("--base", default="http://127.0.0.1:8001")
+    ap.add_argument("--base", default="")
     args = ap.parse_args()
 
     profiles = load_json(args.conf)
     profile = profiles.get(args.profile, {})
+    base, tried, warnings = _discover_base(args.base, args.flags_file)
     out = {
         "ts": time.time(),
         "profile": args.profile,
-        "base": args.base,
+        "base": base,
+        "tried": tried,
+        "warnings": warnings,
         "pass": True,
         "flags": [],
         "routes": [],
         "files": [],
         "notes": [],
     }
+
+    if base:
+        print(
+            f"[check_current_system] base={base} tried={tried}",
+            file=sys.stderr,
+        )
+    else:
+        out["pass"] = False
+        out["notes"].append("No reachable server base discovered.")
+        print(
+            f"[check_current_system] no reachable base; tried={tried}",
+            file=sys.stderr,
+        )
+        print(json.dumps(out, indent=2))
+        sys.exit(2)
 
     # Flags
     flags = load_json(args.flags_file)
@@ -86,7 +202,7 @@ def main():
             out["pass"] = False
 
     # Routes
-    base = args.base.rstrip("/")
+    base = base.rstrip("/")
     for r in profile.get("routes", []):
         path = r.get("path")
         method = (r.get("method") or "GET").upper()

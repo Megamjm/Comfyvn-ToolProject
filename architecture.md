@@ -47,6 +47,7 @@ The `docs/` tree is split by delivery lane so every chat knows where to drop sta
 - `docs/dev_notes_anim_25d.md` — debugging cookbook covering anchor tagging, preview sequencing, preset management, and hook emission verification.
 - `docs/PROMPT_PACKS/` — reusable prompt templates (POV rewrite, battle narration) with strict JSON schemas for narrative tooling.
 - `docs/development/theme_world_changer.md` — Theme & World Changer REST contracts, checksum guarantees, debug flows, and modder automation tips.
+- `docs/PORTS_ROLLOVER.md` — launcher host/port rollover design, runtime authority resolution, REST probes, and CLI drills teams can script against when deploying Studio alongside modded servers.
 
 Community connectors (F-List & FurAffinity)
 -------------------------------------------

@@ -1,3 +1,15 @@
+### 2025-10-21 — Ports Source of Truth & REST Controls
+- Added `comfyvn/config/ports.py` to manage the canonical `{host, ports[], public_base}` block, apply `COMFYVN_HOST/COMFYVN_PORTS/COMFYVN_BASE` overrides, and stamp configs while persisting `.runtime/last_server.json`.
+- Introduced FastAPI router `comfyvn/server/routes/settings_ports.py` exposing `/api/settings/ports/{get,set,probe}` with structured probe attempts so modders and automation can inspect bindings without touching disk.
+- `comfyvn/server/app.py` now logs the resolved base once on startup and records runtime state, while `run_comfyvn.py` gained `--host/--port` aliases plus ordered roll-over when the port flag is omitted.
+- Documentation sweep: README one-liner, refreshed `docs/PORTS_ROLLOVER.md` (config, env, curl recipes), CHANGELOG entry.
+
+### 2025-12-24 — Desktop Settings: Port Binding Panel
+- Added `comfyvn/gui/settings/network_panel.py`, providing a GUI surface for host binding, rollover port order, and optional public base overrides. The panel consumes `/api/settings/ports/{get,set,probe}` so Studio mirrors launcher config updates without editing JSON.
+- Shipped `/studio/settings/network.html`, an admin-gated web page that reuses the same API, verifies Bearer tokens via `/api/auth/me`, mirrors probe attempts (“would bind to” summary), and surfaces ready-to-share curl drills for modders and automation teams.
+- `/api/settings/ports/probe` responses now surface in the UI, helping teams confirm which port bound successfully before restarting the backend. Probe output includes selected host/port, HTTP status, and latency where available.
+- Documentation sweep: refreshed `README.md` (Settings → Network / Port Binding), `architecture.md` (docs index), `architecture_updates.md` (Settings snapshot), new `apps/web/README.md`, updated `docs/PORTS_ROLLOVER.md` for automation/debug drills, and refreshed `docs/dev_notes_network_ports.md` for contributor guidance. Logged in this CHANGELOG.
+
 ### 2025-12-23 — Community Connectors: F-List & FurAffinity
 - Added `comfyvn/connectors/{flist,furaffinity}.py` to parse F-List profile exports into persona payloads and to store user-supplied FurAffinity uploads with hashed filenames, provenance sidecars, and NSFW tag trimming when the gate is closed.
 - Introduced FastAPI router `comfyvn/server/routes/connectors_persona.py` (`/api/connect/flist/consent|import_text`, `/api/connect/furaffinity/upload`, `/api/connect/persona/map`) behind `features.enable_persona_importers`. All routes respect the consent gate (`data/persona/consent.json`) and broadcast new modder hooks `on_flist_profile_parsed`, `on_furaffinity_asset_uploaded`, and `on_connector_persona_mapped` (alongside `on_persona_imported`).

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -26,14 +27,16 @@ import shutil
 import subprocess
 import types
 import venv
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
+from comfyvn.config import ports as ports_config
 from comfyvn.config.baseurl_authority import (
     current_authority,
     find_open_port,
     write_runtime_authority,
 )
 from comfyvn.logging_config import init_logging as init_gui_logging
+from comfyvn.server.bootstrap.headless import ensure_headless_ready
 from setup import install_defaults as defaults_install
 
 VENV_DIR = REPO_ROOT / ".venv"
@@ -44,14 +47,49 @@ LOGGER = logging.getLogger("comfyvn.launcher")
 
 
 AUTHORITY_DEFAULT = current_authority()
-DEFAULT_SERVER_HOST = os.environ.get(
-    "COMFYVN_SERVER_HOST", AUTHORITY_DEFAULT.host
-).strip()
+PORT_SETTINGS = ports_config.get_config()
+
+
+def _dedupe_ports(values: Sequence[object]) -> list[int]:
+    result: list[int] = []
+    for value in values:
+        try:
+            port = int(value)
+        except (TypeError, ValueError):
+            continue
+        if not 0 < port < 65536:
+            continue
+        if port not in result:
+            result.append(port)
+    return result
+
+
+DEFAULT_PORT_CANDIDATES = _dedupe_ports(
+    PORT_SETTINGS.get("ports")
+    if isinstance(PORT_SETTINGS.get("ports"), (list, tuple))
+    else []
+)
+if not DEFAULT_PORT_CANDIDATES:
+    DEFAULT_PORT_CANDIDATES = [8001, 8000]
+
+DEFAULT_SERVER_HOST = os.environ.get("COMFYVN_SERVER_HOST")
+if DEFAULT_SERVER_HOST:
+    DEFAULT_SERVER_HOST = DEFAULT_SERVER_HOST.strip()
+else:
+    DEFAULT_SERVER_HOST = str(
+        PORT_SETTINGS.get("host") or AUTHORITY_DEFAULT.host
+    ).strip()
+
 ENV_PORT = os.environ.get("COMFYVN_SERVER_PORT")
 try:
-    DEFAULT_SERVER_PORT = int(ENV_PORT) if ENV_PORT else AUTHORITY_DEFAULT.port
+    DEFAULT_PORT_OVERRIDE = int(ENV_PORT) if ENV_PORT else None
 except (TypeError, ValueError):
-    DEFAULT_SERVER_PORT = AUTHORITY_DEFAULT.port
+    DEFAULT_PORT_OVERRIDE = None
+
+if DEFAULT_PORT_OVERRIDE and DEFAULT_PORT_OVERRIDE not in DEFAULT_PORT_CANDIDATES:
+    DEFAULT_PORT_CANDIDATES.insert(0, DEFAULT_PORT_OVERRIDE)
+
+DEFAULT_PORT_HELP = ", ".join(str(p) for p in DEFAULT_PORT_CANDIDATES)
 DEFAULT_SERVER_APP = os.environ.get("COMFYVN_SERVER_APP", "comfyvn.server.app:app")
 DEFAULT_SERVER_LOG_LEVEL = os.environ.get("COMFYVN_SERVER_LOG_LEVEL", "info")
 
@@ -80,6 +118,45 @@ def _connect_host(host: str) -> str:
     if lowered in {"::", "[::]"}:
         return "localhost"
     return host
+
+
+def _is_port_free(host: str, port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.25)
+            return sock.connect_ex((host, int(port))) != 0
+    except OSError:
+        return False
+
+
+def _select_server_port(
+    host: str, requested_port: Optional[int], candidates: Sequence[int]
+) -> tuple[int, bool]:
+    candidate_list: list[int] = []
+    for candidate in candidates:
+        try:
+            value = int(candidate)
+        except (TypeError, ValueError):
+            continue
+        if not 0 < value < 65536:
+            continue
+        if value not in candidate_list:
+            candidate_list.append(value)
+    if not candidate_list:
+        candidate_list = [8001, 8000]
+    initial_port = (
+        int(requested_port) if requested_port is not None else candidate_list[0]
+    )
+    lowered = host.strip().lower()
+    connect_host = _connect_host(host)
+    if lowered not in _LOCAL_BIND_HOSTS:
+        return initial_port, False
+    search_order = [initial_port, *[p for p in candidate_list if p != initial_port]]
+    for port in search_order:
+        if _is_port_free(connect_host, port):
+            return port, port != initial_port
+    fallback = find_open_port(connect_host, search_order[-1])
+    return fallback, fallback != initial_port
 
 
 def ensure_repo_cwd() -> None:
@@ -170,14 +247,18 @@ def parse_arguments(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--server-host",
-        default=DEFAULT_SERVER_HOST,
+        "--host",
+        dest="server_host",
+        default=None,
         help=f"Host interface for the server (default: {DEFAULT_SERVER_HOST}).",
     )
     parser.add_argument(
         "--server-port",
+        "--port",
+        dest="server_port",
         type=int,
-        default=DEFAULT_SERVER_PORT,
-        help=f"TCP port for the server (default: {DEFAULT_SERVER_PORT}).",
+        default=None,
+        help=f"TCP port for the server (roll-over order: {DEFAULT_PORT_HELP}).",
     )
     parser.add_argument(
         "--server-url",
@@ -266,22 +347,54 @@ def derive_server_base(host: str, port: int) -> str:
 
 
 def apply_launcher_environment(args: argparse.Namespace) -> None:
+    raw_config = ports_config.get_config()
+    raw_ports = raw_config.get("ports")
+    if isinstance(raw_ports, (list, tuple)):
+        candidate_ports = _dedupe_ports(raw_ports)
+    else:
+        candidate_ports = list(DEFAULT_PORT_CANDIDATES)
+    if not candidate_ports:
+        candidate_ports = list(DEFAULT_PORT_CANDIDATES)
+    if DEFAULT_PORT_OVERRIDE and DEFAULT_PORT_OVERRIDE not in candidate_ports:
+        candidate_ports.insert(0, DEFAULT_PORT_OVERRIDE)
+    public_base = raw_config.get("public_base")
+
+    if args.server_host is None:
+        args.server_host = str(raw_config.get("host") or DEFAULT_SERVER_HOST)
+
     if args.server_url:
         target_base = args.server_url.rstrip("/")
+        if args.server_port is None:
+            args.server_port = candidate_ports[0]
     else:
-        requested_port = int(args.server_port)
-        bind_host = args.server_host
-        connect_host = _connect_host(bind_host)
-        if bind_host.strip().lower() in _LOCAL_BIND_HOSTS:
-            resolved_port = find_open_port(connect_host, requested_port)
-            if resolved_port != requested_port:
-                log(
-                    f"⚠️ Port {requested_port} unavailable on {connect_host}; rolling to {resolved_port}."
-                )
-                args.server_port = resolved_port
-        target_base = derive_server_base(args.server_host, args.server_port)
+        requested_port = args.server_port if args.server_port is not None else None
+        selected_port, rolled = _select_server_port(
+            args.server_host,
+            requested_port,
+            candidate_ports,
+        )
+        if requested_port is not None and selected_port != requested_port:
+            log(
+                f"⚠️ Port {requested_port} unavailable on {_connect_host(args.server_host)}; rolling to {selected_port}."
+            )
+        elif requested_port is None and rolled:
+            log(
+                f"⚠️ Rolled server port to {selected_port} (preferred order: {', '.join(str(p) for p in candidate_ports)})."
+            )
+        args.server_port = selected_port
+        if public_base:
+            target_base = str(public_base).rstrip("/")
+        else:
+            target_base = derive_server_base(args.server_host, args.server_port)
         runtime_host = _connect_host(args.server_host)
         write_runtime_authority(runtime_host, args.server_port)
+        ports_config.record_runtime_state(
+            host=args.server_host,
+            ports=candidate_ports,
+            active_port=int(args.server_port),
+            base_url=target_base,
+            public_base=str(public_base) if public_base else None,
+        )
         current_authority(refresh=True)
 
     os.environ["COMFYVN_SERVER_BASE"] = target_base
@@ -632,6 +745,14 @@ def main(argv: Optional[list[str]] = None) -> None:
         args.server_only = True
 
     apply_launcher_environment(args)
+    headless_env_flag = os.environ.get("COMFYVN_HEADLESS", "").strip().lower()
+    run_headless_bootstrap = args.server_only or headless_env_flag in {
+        "1",
+        "true",
+        "yes",
+    }
+    if run_headless_bootstrap:
+        ensure_headless_ready()
     supports_render = True
     render_reason = ""
     if not args.server_only:

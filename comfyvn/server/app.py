@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
+from comfyvn.config import ports as ports_config
 from comfyvn.core.warning_bus import warning_bus
 from comfyvn.logging_config import init_logging
 from comfyvn.obs.crash_reporter import install_sys_hook
@@ -82,6 +83,57 @@ PRIORITY_MODULES: tuple[str, ...] = (
     "comfyvn.server.routes.diffmerge",
     "comfyvn.manga.routes",
 )
+
+_LOGGED_BASE = False
+
+
+def _connect_host(host: str) -> str:
+    lowered = host.strip().lower()
+    if lowered in {"0.0.0.0", "0", "*"}:
+        return "127.0.0.1"
+    if lowered in {"::", "[::]", "::0"}:
+        return "localhost"
+    return host
+
+
+def _port_candidates(port_config: dict[str, object]) -> list[int]:
+    ports = port_config.get("ports") or []
+    numbers: list[int] = []
+    for raw in ports if isinstance(ports, (list, tuple)) else [ports]:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if value not in numbers:
+            numbers.append(value)
+    if not numbers:
+        numbers = [8001, 8000]
+    return numbers
+
+
+def _resolve_server_base(
+    port_config: dict[str, object]
+) -> tuple[str, list[int], int, str]:
+    host = str(port_config.get("host") or "127.0.0.1")
+    candidates = _port_candidates(port_config)
+    env_port = os.getenv("COMFYVN_SERVER_PORT")
+    active_port: int | None = None
+    if env_port:
+        try:
+            active_port = int(env_port)
+        except (TypeError, ValueError):
+            active_port = None
+    if active_port is None:
+        active_port = candidates[0]
+    base_override = os.getenv("COMFYVN_SERVER_BASE") or os.getenv("COMFYVN_BASE_URL")
+    public_base = port_config.get("public_base")
+    if base_override:
+        base_url = base_override.rstrip("/")
+    elif public_base:
+        base_url = str(public_base).rstrip("/")
+    else:
+        base_url = f"http://{_connect_host(host)}:{active_port}"
+    return base_url, candidates, active_port, host
 
 
 def _collect_route_signatures(routes: Iterable[Any]) -> Set[Tuple[str, str]]:
@@ -210,11 +262,38 @@ def create_app(
     install_sys_hook()
     log_path = _configure_logging()
 
+    port_config = ports_config.get_config()
+    base_url, port_candidates, active_port, bind_host = _resolve_server_base(
+        port_config
+    )
+    public_base_value = port_config.get("public_base")
     default_kwargs = {"default_response_class": _ORJSON} if _ORJSON else {}
     app = FastAPI(title="ComfyVN", version=APP_VERSION, **default_kwargs)
     app.state.version = APP_VERSION
     app.state.log_path = log_path
     app.state.telemetry = get_telemetry(app_version=APP_VERSION)
+    app.state.port_config = port_config
+    app.state.port_candidates = port_candidates
+    app.state.server_base = base_url
+    app.state.bind_host = bind_host
+
+    global _LOGGED_BASE
+    if not _LOGGED_BASE:
+        LOGGER.info(
+            "Server base configured -> %s (host=%s, ports=%s)",
+            base_url,
+            bind_host,
+            port_candidates,
+        )
+        _LOGGED_BASE = True
+
+    ports_config.record_runtime_state(
+        host=bind_host,
+        ports=port_candidates,
+        active_port=active_port,
+        base_url=base_url,
+        public_base=str(public_base_value) if public_base_value else None,
+    )
 
     if enable_cors:
         origins = _resolve_cors_origins(allowed_origins)

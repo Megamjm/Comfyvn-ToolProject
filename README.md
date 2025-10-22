@@ -2,6 +2,8 @@
 
 This update transforms ComfyVN from a static scene exporter into a multi-layer, interactive VN engine that merges SillyTavern-style roleplay logs, ComfyUI rendering, and Ren’Py exports under one adaptive framework.
 
+**Base URL** defaults to first free in `[8001, 8000]` (auto-discovered by tools).
+
 Highlights:
 
 🛡️ Legal & Creative Responsibility
@@ -615,6 +617,7 @@ Environment variables honour the same knobs:
 - Viewer helpers honour `COMFYVN_RENPY_PROJECT_DIR` (override the default `renpy_project` path), `COMFYVN_RENPY_EXECUTABLE` (explicit runtime binary), `COMFYVN_RENPY_SDK` (SDK folder), plus the feature flags `enable_viewer_webmode` and `enable_mini_vn`. See `docs/VIEWER_README.md` for the decision tree and API surface.
 - Base URL authority lives in `comfyvn/config/baseurl_authority.py`. Resolution order: explicit `COMFYVN_BASE_URL` → runtime state file (`config/runtime_state.json` or cache override) → persisted settings (`settings/config.json`) → `comfyvn.json` fallback → default `http://127.0.0.1:8001`. The launcher writes the resolved host/port back to `config/runtime_state.json` after binding so parallel launchers, the GUI, and helper scripts stay aligned.
 - When no `--server-url` is provided the launcher derives a connectable URL from the chosen host/port (coercing `0.0.0.0` to `127.0.0.1` etc.), persists it via the base URL authority, and exports `COMFYVN_SERVER_BASE`/`COMFYVN_BASE_URL`/`COMFYVN_SERVER_PORT` for child processes.
+- Settings → **Network / Port Binding** now ships a web admin page at `/studio/settings/network.html` (token guard requires an admin role). It calls `/api/settings/ports/{get,set,probe}` to edit host, rollover ports, and optional public base overrides, mirrors the “would bind to” probe result, and surfaces ready-to-share curl drills for modders. Changes persist through `config/comfyvn.json` and update `.runtime/last_server.json`; see `docs/PORTS_ROLLOVER.md` for automation hooks.
 - GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
 - Backend `features.enable_compute` now defaults to `false`. Enable it explicitly before wiring remote GPUs; compute APIs still respond while disabled but remote advice and cost previews stay informational only. After toggling, call `feature_flags.refresh_cache()` (or restart the backend) so long-lived workers see the change.
 - Compute routes add structured debug hooks: append `?debug=1` to `/api/gpu/list` or `/api/providers`, post `{"debug": true}` to `/api/compute/advise` for advisor thresholds + queue snapshots, and use `/api/compute/costs` to preview base/transfer/VRAM costs without dispatching jobs. All responses echo the feature flag state so Studio and modders can surface clear guidance.
@@ -778,6 +781,11 @@ Embed this block (copy/paste) into every PR description so reviewers can confirm
 - GUI messages write to `gui.log`; launcher activity goes to `launcher.log` under the same directory.
 - The Studio status bar now shows a dedicated “Scripts” indicator. Installers and scripted utilities update the indicator so failed runs surface as a red icon with the last error message while keeping the application responsive.
 - CLI commands (e.g. `python -m comfyvn bundle ...`) create timestamped run directories under `run-*/run.log` in the user log directory via `comfyvn.logging_setup`.
+
+## Tools & Ports
+
+- CLI diagnostics (`python tools/check_current_system.py`, `python tools/doctor_phase_all.py`) now auto-discover the backend base URL by reading `config/comfyvn.json` (`server.host`, `server.ports`, `server.public_base`) and the `COMFYVN_BASE|HOST|PORTS` environment overrides. The first `/health` probe that responds becomes the active base; failures exit `2` and print the attempted URLs.
+- Pin a specific backend in CI or remote staging with `--base` to bypass rollover probing. See `docs/PORTS_ROLLOVER.md` for the discovery order, debugging tips, and guidance on adding new ports.
 
 ## Policy Enforcement & Audit
 

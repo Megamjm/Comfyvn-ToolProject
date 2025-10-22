@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>ComfyVN — Network Port Binding</title>
+  <link rel="stylesheet" href="/studio/theme.css">
+  <style>
+    body{margin:0;background:radial-gradient(1200px 600px at 10% -10%, #1d2230 0%, var(--bg) 60%);color:var(--text);font-family:var(--sans)}
+    .network-grid{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:12px;padding:12px}
+    .network-grid .card{min-height:0}
+    .network-grid .card h3 span{font-size:12px;color:var(--muted);margin-left:6px}
+    .stack{display:flex;flex-direction:column;gap:.5rem}
+    .status{margin:.4rem 0;font-size:13px;color:var(--muted)}
+    .status.ok{color:var(--ok)}
+    .status.warn{color:var(--warn)}
+    .status.err{color:var(--err)}
+    .status.info{color:var(--accent)}
+    .badge.ok{color:var(--ok)}
+    .badge.warn{color:var(--warn)}
+    .badge.err{color:var(--err)}
+    .field{display:flex;flex-direction:column;gap:.3rem}
+    .field label{font-size:13px;color:var(--muted)}
+    .field input,.field textarea{padding:.45rem .6rem;border:1px solid var(--bd);background:var(--panel-solid);color:var(--text);border-radius:10px;font-family:inherit;font-size:14px}
+    .field textarea{min-height:120px;resize:vertical}
+    .btnrow{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem}
+    .btnrow .btn{min-width:120px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border-bottom:1px solid var(--bd);padding:.4rem .3rem;text-align:left;vertical-align:top}
+    th{color:var(--muted);font-weight:600}
+    pre{margin:0;background:#090c12;border:1px solid var(--bd);border-radius:10px;padding:.6rem;font-size:12.5px;font-family:var(--mono);overflow:auto;color:#dfe6ff}
+    code{font-family:var(--mono);background:rgba(255,255,255,0.05);padding:0 .25rem;border-radius:6px}
+    .pair{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+    .pair .inp{min-width:220px}
+    @media (max-width:960px){
+      .network-grid{grid-template-columns:1fr}
+      header.nav .spacer{display:none}
+    }
+  </style>
+</head>
+<body>
+  <header class="header nav">
+    <nav>
+      <a class="link" href="/studio/">Studio</a>
+      <a class="link" href="/studio/assets.html">Assets</a>
+      <a class="link" href="/studio/roleplay.html">Roleplay</a>
+      <a class="link" href="/studio/scheduler.html">Scheduler</a>
+      <a class="link" href="/studio/env.html">Env</a>
+      <a class="link" href="/studio/settings/network.html">Settings ▸ Network</a>
+    </nav>
+    <div class="spacer"></div>
+    <span class="badge">Admin only</span>
+    <div class="pair">
+      <input id="apiBase" class="inp" placeholder="http://127.0.0.1:8001"/>
+      <input id="authToken" class="inp" placeholder="Bearer admintoken / atk_..."/>
+      <button id="btnAuth" class="btn neutral">Check Access</button>
+      <span id="guardStatus" class="badge"></span>
+    </div>
+  </header>
+
+  <main class="network-grid">
+    <section class="card">
+      <h3>Binding Configuration <span>(/api/settings/ports/get & set)</span></h3>
+      <div class="body">
+        <div id="statusMessage" class="status info">Provide an admin token and press “Check Access”.</div>
+        <div class="stack">
+          <div class="field">
+            <label for="hostInput">Bind Host</label>
+            <input id="hostInput" placeholder="127.0.0.1" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="portsInput">Rollover Ports (CSV or whitespace)</label>
+            <input id="portsInput" placeholder="8001,8000,9001" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="publicBaseInput">Public Base (optional external URL)</label>
+            <input id="publicBaseInput" placeholder="https://studio.example.com" autocomplete="off">
+          </div>
+        </div>
+        <div class="btnrow">
+          <button id="btnLoad" class="btn neutral">Reload</button>
+          <button id="btnSave" class="btn">Save</button>
+          <button id="btnProbe" class="btn neutral">Probe</button>
+        </div>
+        <div class="status" id="stampStatus"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Probe Result <span>(/api/settings/ports/probe)</span></h3>
+      <div class="body">
+        <div id="probeSummary" class="status info">No probe run yet.</div>
+        <table>
+          <thead>
+            <tr><th>Attempt</th><th>Status</th><th>Details</th></tr>
+          </thead>
+          <tbody id="probeAttempts">
+            <tr><td colspan="3">Run Probe to populate attempts.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Raw Responses</h3>
+      <div class="body stack">
+        <div>
+          <div class="small" style="margin-bottom:.25rem;color:var(--muted)">Last /get or /set response</div>
+          <pre id="debugConfig">–</pre>
+        </div>
+        <div>
+          <div class="small" style="margin-bottom:.25rem;color:var(--muted)">Last /probe response</div>
+          <pre id="debugProbe">–</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>API Hooks &amp; Curl Helpers</h3>
+      <div class="body stack">
+        <p style="margin:0;font-size:13px;color:var(--muted)">
+          These endpoints mirror the launcher config (`config/comfyvn.json`) and runtime authority (`.runtime/last_server.json`).
+          Share this panel with modders or automation scripts.
+        </p>
+        <ul style="margin:0;padding-left:1.1rem;font-size:13px;color:var(--muted)">
+          <li><code>GET /api/settings/ports/get</code> → current host, ports, public base, stamp</li>
+          <li><code>POST /api/settings/ports/set</code> → persist overrides</li>
+          <li><code>POST /api/settings/ports/probe</code> → resolve active binding</li>
+        </ul>
+        <div>
+          <div class="small" style="margin-bottom:.25rem;color:var(--muted)">Sample curl drill (updates when values change)</div>
+          <pre id="curlSample">curl -s http://127.0.0.1:8001/api/settings/ports/get</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function(){
+      const ls = window.localStorage;
+      const baseInput = document.getElementById("apiBase");
+      const tokenInput = document.getElementById("authToken");
+      const guardStatus = document.getElementById("guardStatus");
+      const statusMessage = document.getElementById("statusMessage");
+      const stampStatus = document.getElementById("stampStatus");
+      const hostInput = document.getElementById("hostInput");
+      const portsInput = document.getElementById("portsInput");
+      const publicBaseInput = document.getElementById("publicBaseInput");
+      const btnAuth = document.getElementById("btnAuth");
+      const btnLoad = document.getElementById("btnLoad");
+      const btnSave = document.getElementById("btnSave");
+      const btnProbe = document.getElementById("btnProbe");
+      const probeSummary = document.getElementById("probeSummary");
+      const probeAttempts = document.getElementById("probeAttempts");
+      const debugConfig = document.getElementById("debugConfig");
+      const debugProbe = document.getElementById("debugProbe");
+      const curlSample = document.getElementById("curlSample");
+
+      let adminOk = false;
+      let lastConfig = null;
+      let lastProbe = null;
+
+      function storageGet(key, fallback){
+        try{return ls.getItem(key) || fallback;}catch(e){return fallback;}
+      }
+      function storageSet(key, value){
+        try{ls.setItem(key, value);}catch(e){}
+      }
+
+      baseInput.value = storageGet("studio.network.apiBase", window.location.origin);
+      tokenInput.value = storageGet("studio.network.auth", "");
+
+      baseInput.addEventListener("change", ()=>{storageSet("studio.network.apiBase", baseInput.value); updateCurl();});
+      tokenInput.addEventListener("change", ()=>storageSet("studio.network.auth", tokenInput.value));
+      hostInput.addEventListener("input", ()=>updateCurl());
+      portsInput.addEventListener("input", ()=>updateCurl());
+      publicBaseInput.addEventListener("input", ()=>updateCurl());
+
+      function setStatus(text, tone){
+        statusMessage.textContent = text;
+        statusMessage.className = "status " + (tone || "info");
+      }
+
+      function authHeader(){
+        const raw = tokenInput.value.trim();
+        if(!raw){return {};}
+        const value = raw.toLowerCase().startsWith("bearer ") ? raw : "Bearer " + raw;
+        return {"Authorization": value};
+      }
+
+      function apiBase(){
+        const base = (baseInput.value || window.location.origin).trim();
+        if(!base){return window.location.origin;}
+        return base.replace(/\/$/, "");
+      }
+
+      function apiUrl(path){
+        if(!path.startsWith("/")){path = "/" + path;}
+        return apiBase() + path;
+      }
+
+      async function apiFetch(path, opts){
+        const options = Object.assign({method:"GET"}, opts || {});
+        const headers = Object.assign({}, options.headers || {}, authHeader());
+        if(options.body && !headers["Content-Type"]){
+          headers["Content-Type"] = "application/json";
+        }
+        options.headers = headers;
+        const response = await fetch(apiUrl(path), options);
+        const contentType = response.headers.get("content-type") || "";
+        let payloadText = "";
+        try{payloadText = await response.text();}catch(e){}
+        let data = null;
+        if(payloadText){
+          if(contentType.includes("application/json")){
+            try{data = JSON.parse(payloadText);}catch(e){data = payloadText;}
+          }else{
+            data = payloadText;
+          }
+        }
+        if(!response.ok){
+          const detail = data && data.detail ? data.detail : payloadText || response.statusText;
+          const error = new Error(detail || ("Request failed (" + response.status + ")"));
+          error.status = response.status;
+          error.payload = data;
+          throw error;
+        }
+        return data;
+      }
+
+      function disableControls(disabled){
+        [btnLoad, btnSave, btnProbe, hostInput, portsInput, publicBaseInput].forEach(el => {
+          el.disabled = !!disabled;
+        });
+      }
+
+      function parsePorts(text){
+        const tokens = (text || "").split(/[\s,;]+/).filter(Boolean);
+        const seen = new Set();
+        const out = [];
+        for(const token of tokens){
+          const value = Number(token);
+          if(!Number.isFinite(value)){continue;}
+          if(value <= 0 || value > 65535){continue;}
+          if(seen.has(value)){continue;}
+          seen.add(value);
+          out.push(value);
+        }
+        return out;
+      }
+
+      function updateForm(config){
+        hostInput.value = config.host || "127.0.0.1";
+        portsInput.value = (config.ports || []).join(", ");
+        publicBaseInput.value = config.public_base || "";
+        stampStatus.textContent = config.stamp ? ("Configuration stamp: " + config.stamp) : "";
+      }
+
+      function updateCurl(){
+        const host = hostInput.value || "127.0.0.1";
+        const ports = parsePorts(portsInput.value);
+        const json = {
+          host: host || "127.0.0.1",
+          ports: ports.length ? ports : [8001,8000],
+          public_base: publicBaseInput.value.trim() || null
+        };
+        const payload = JSON.stringify(json);
+        const base = apiBase();
+        const tok = tokenInput.value.trim() ? " -H \"Authorization: " + (tokenInput.value.trim().toLowerCase().startsWith("bearer ") ? tokenInput.value.trim() : "Bearer " + tokenInput.value.trim()) + "\"" : "";
+        curlSample.textContent =
+`curl -s ${base}/api/settings/ports/get${tok}
+
+curl -s -X POST ${base}/api/settings/ports/set${tok} \\
+  -H "Content-Type: application/json" \\
+  -d '${payload}'
+
+curl -s -X POST ${base}/api/settings/ports/probe${tok} \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify({host: json.host, ports: json.ports})}'`;
+      }
+
+      async function loadConfig(){
+        try{
+          setStatus("Loading configuration…", "info");
+          const data = await apiFetch("/api/settings/ports/get");
+          lastConfig = data;
+          updateForm(data);
+          debugConfig.textContent = JSON.stringify(data, null, 2);
+          setStatus("Configuration loaded.", "ok");
+          updateCurl();
+        }catch(err){
+          console.error(err);
+          setStatus("Failed to load configuration: " + err.message, "err");
+          debugConfig.textContent = err.payload ? JSON.stringify(err.payload, null, 2) : String(err);
+        }
+      }
+
+      async function saveConfig(){
+        const host = hostInput.value.trim() || "127.0.0.1";
+        const ports = parsePorts(portsInput.value);
+        if(!ports.length){
+          setStatus("Please provide at least one valid port (1-65535).", "warn");
+          return;
+        }
+        const payload = {
+          host,
+          ports,
+          public_base: publicBaseInput.value.trim() || null
+        };
+        try{
+          setStatus("Saving configuration…", "info");
+          const data = await apiFetch("/api/settings/ports/set", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          });
+          lastConfig = data;
+          updateForm(data);
+          debugConfig.textContent = JSON.stringify(data, null, 2);
+          setStatus("Configuration saved. Restart the backend if the active port changes.", "ok");
+          updateCurl();
+        }catch(err){
+          console.error(err);
+          setStatus("Save failed: " + err.message, "err");
+          debugConfig.textContent = err.payload ? JSON.stringify(err.payload, null, 2) : String(err);
+        }
+      }
+
+      function renderProbeAttempts(attempts){
+        probeAttempts.innerHTML = "";
+        if(!attempts || !attempts.length){
+          const row = document.createElement("tr");
+          row.innerHTML = '<td colspan="3">No attempts recorded.</td>';
+          probeAttempts.appendChild(row);
+          return;
+        }
+        attempts.forEach((attempt, idx)=>{
+          const row = document.createElement("tr");
+          const status = attempt.status_code != null ? attempt.status_code : "—";
+          const detail = attempt.error ? attempt.error : "OK";
+          row.innerHTML = `<td>${idx+1}. <code>${attempt.url}</code></td><td>${status}</td><td>${detail}</td>`;
+          probeAttempts.appendChild(row);
+        });
+      }
+
+      async function probeConfig(){
+        const host = hostInput.value.trim() || "127.0.0.1";
+        const ports = parsePorts(portsInput.value);
+        const payload = {
+          host,
+          ports: ports.length ? ports : undefined
+        };
+        try{
+          setStatus("Probing ports…", "info");
+          const data = await apiFetch("/api/settings/ports/probe", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          });
+          lastProbe = data;
+          renderProbeAttempts(data.attempts || []);
+          debugProbe.textContent = JSON.stringify(data, null, 2);
+          if(data.ok){
+            probeSummary.textContent = `Would bind to ${data.base_url || (data.host + ":" + data.port)} (HTTP ${data.status_code || "?"}).`;
+            probeSummary.className = "status ok";
+            setStatus("Probe succeeded. Active binding recorded.", "ok");
+          }else{
+            probeSummary.textContent = "Probe failed — reviewed attempts below.";
+            probeSummary.className = "status warn";
+            setStatus("Probe failed. Check attempts table for errors.", "warn");
+          }
+        }catch(err){
+          console.error(err);
+          probeSummary.textContent = "Probe request failed: " + err.message;
+          probeSummary.className = "status err";
+          debugProbe.textContent = err.payload ? JSON.stringify(err.payload, null, 2) : String(err);
+          setStatus("Probe request failed.", "err");
+        }
+      }
+
+      async function verifyAdmin(){
+        guardStatus.textContent = "Checking…";
+        guardStatus.className = "badge";
+        disableControls(true);
+        adminOk = false;
+        const endpoints = ["/api/auth/me", "/auth/me", "/me"];
+        let info = null;
+        for(const path of endpoints){
+          try{
+            info = await apiFetch(path, {method:"GET"});
+            break;
+          }catch(err){
+            info = null;
+          }
+        }
+        if(info && (info.role === "admin" || (Array.isArray(info.scopes) && info.scopes.includes("*")))){
+          adminOk = true;
+          guardStatus.textContent = "Admin verified";
+          guardStatus.className = "badge ok";
+          setStatus("Admin access confirmed. Configuration controls unlocked.", "ok");
+          disableControls(false);
+          await loadConfig();
+        }else{
+          guardStatus.textContent = info && info.role ? ("Role: " + info.role) : "Access denied";
+          guardStatus.className = "badge warn";
+          setStatus("Provide an admin Bearer token to continue.", "warn");
+          disableControls(true);
+        }
+      }
+
+      btnAuth.addEventListener("click", ()=>verifyAdmin());
+      btnLoad.addEventListener("click", ()=>adminOk && loadConfig());
+      btnSave.addEventListener("click", ()=>adminOk && saveConfig());
+      btnProbe.addEventListener("click", ()=>adminOk && probeConfig());
+
+      updateCurl();
+      if(tokenInput.value.trim()){
+        verifyAdmin();
+      }else{
+        disableControls(true);
+      }
+    })();
+  </script>
+</body>
+</html>
