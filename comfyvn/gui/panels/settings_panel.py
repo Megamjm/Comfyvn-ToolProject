@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Mapping, Optional
 from urllib.parse import urlparse
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 
 # comfyvn/gui/panels/settings_panel.py  [Studio-090]
@@ -49,6 +49,9 @@ logger = logging.getLogger(__name__)
 
 
 class SettingsPanel(QDockWidget):
+    settings_changed = Signal()
+    settings_saved = Signal()
+
     def __init__(self, bridge: ServerBridge):
         super().__init__("Settings")
         self.setAllowedAreas(Qt.AllDockWidgetAreas)
@@ -65,6 +68,9 @@ class SettingsPanel(QDockWidget):
         self._input_rows: dict[
             str, tuple[ShortcutCapture, ShortcutCapture, QComboBox]
         ] = {}
+
+        self._dirty = False
+        self._suppress_dirty = False
 
         w = QWidget()
         root = QVBoxLayout(w)
@@ -244,14 +250,20 @@ class SettingsPanel(QDockWidget):
         details = QFormLayout()
         self.server_status_label = QLabel("Select a server to view status.")
         self.server_name_edit = QLineEdit()
+        self.server_name_edit.textChanged.connect(self._mark_dirty)
         self.server_url_edit = QLineEdit()
+        self.server_url_edit.textChanged.connect(self._mark_dirty)
         self.server_kind_combo = QComboBox()
         self.server_kind_combo.addItems(["remote", "local"])
+        self.server_kind_combo.currentIndexChanged.connect(self._mark_dirty)
         self.server_service_combo = QComboBox()
         self.server_service_combo.addItems(["comfyui", "render", "lan", "custom"])
+        self.server_service_combo.currentIndexChanged.connect(self._mark_dirty)
         self.server_priority_spin = QSpinBox()
         self.server_priority_spin.setRange(0, 1000)
+        self.server_priority_spin.valueChanged.connect(self._mark_dirty)
         self.server_active_check = QCheckBox("Active")
+        self.server_active_check.stateChanged.connect(self._mark_dirty)
 
         details.addRow(self.server_status_label)
         details.addRow("Name:", self.server_name_edit)
@@ -301,7 +313,7 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_comfy_bridge_hardening", False))
         )
         self.bridge_hardening_checkbox.stateChanged.connect(
-            self._on_bridge_hardening_toggled
+            self._wrap_toggle(self._on_bridge_hardening_toggled)
         )
         layout.addWidget(self.bridge_hardening_checkbox)
 
@@ -321,8 +333,10 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_comfy_preview_stream", False))
         )
         self.preview_stream_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox(
-                "enable_comfy_preview_stream", state
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_comfy_preview_stream", state
+                )
             )
         )
         layout.addWidget(self.preview_stream_checkbox)
@@ -340,8 +354,10 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_sillytavern_bridge", False))
         )
         self.silly_bridge_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox(
-                "enable_sillytavern_bridge", state
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_sillytavern_bridge", state
+                )
             )
         )
         layout.addWidget(self.silly_bridge_checkbox)
@@ -358,7 +374,11 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_narrator_mode", False))
         )
         self.narrator_mode_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox("enable_narrator_mode", state)
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_narrator_mode", state
+                )
+            )
         )
         layout.addWidget(self.narrator_mode_checkbox)
 
@@ -380,7 +400,7 @@ class SettingsPanel(QDockWidget):
         )
         self.public_image_checkbox.setChecked(image_flag_default)
         self.public_image_checkbox.stateChanged.connect(
-            lambda state: self._on_public_media_flag("image", state)
+            self._wrap_toggle(lambda state: self._on_public_media_flag("image", state))
         )
         layout.addWidget(self.public_image_checkbox)
 
@@ -403,7 +423,7 @@ class SettingsPanel(QDockWidget):
         )
         self.public_video_checkbox.setChecked(video_flag_default)
         self.public_video_checkbox.stateChanged.connect(
-            lambda state: self._on_public_media_flag("video", state)
+            self._wrap_toggle(lambda state: self._on_public_media_flag("video", state))
         )
         layout.addWidget(self.public_video_checkbox)
 
@@ -422,7 +442,9 @@ class SettingsPanel(QDockWidget):
             )
         )
         self.telemetry_checkbox.setChecked(telemetry_flag_default)
-        self.telemetry_checkbox.stateChanged.connect(self._on_observability_flag)
+        self.telemetry_checkbox.stateChanged.connect(
+            self._wrap_toggle(self._on_observability_flag)
+        )
         layout.addWidget(self.telemetry_checkbox)
 
         telemetry_hint = QLabel(
@@ -441,7 +463,11 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_crash_uploader", False))
         )
         self.crash_upload_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox("enable_crash_uploader", state)
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_crash_uploader", state
+                )
+            )
         )
         layout.addWidget(self.crash_upload_checkbox)
 
@@ -459,8 +485,10 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_accessibility_controls", True))
         )
         self.accessibility_controls_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox(
-                "enable_accessibility_controls", state
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_accessibility_controls", state
+                )
             )
         )
         layout.addWidget(self.accessibility_controls_checkbox)
@@ -479,8 +507,10 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_accessibility_api", True))
         )
         self.accessibility_api_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox(
-                "enable_accessibility_api", state
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_accessibility_api", state
+                )
             )
         )
         layout.addWidget(self.accessibility_api_checkbox)
@@ -499,8 +529,10 @@ class SettingsPanel(QDockWidget):
             bool(features.get("enable_controller_profiles", True))
         )
         self.controller_profiles_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox(
-                "enable_controller_profiles", state
+            self._wrap_toggle(
+                lambda state: self._on_feature_flag_checkbox(
+                    "enable_controller_profiles", state
+                )
             )
         )
         layout.addWidget(self.controller_profiles_checkbox)
@@ -514,6 +546,30 @@ class SettingsPanel(QDockWidget):
 
         layout.addStretch(1)
         return widget
+
+    # --------------------
+    # Dirty tracking helpers
+    # --------------------
+    def _wrap_toggle(self, fn):
+        def _wrapper(state: int) -> None:
+            fn(state)
+            self._mark_dirty()
+
+        return _wrapper
+
+    def _mark_dirty(self) -> None:
+        if self._suppress_dirty:
+            return
+        if not self._dirty:
+            self._dirty = True
+            self.settings_changed.emit()
+
+    def reset_dirty(self) -> None:
+        self._dirty = False
+        self.settings_saved.emit()
+
+    def is_dirty(self) -> bool:
+        return self._dirty
 
     # --------------------
     # Feature config helpers

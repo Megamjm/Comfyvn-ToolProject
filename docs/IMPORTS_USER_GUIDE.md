@@ -18,6 +18,7 @@ This guide walks through the refreshed import workflow that ships with the
   Sends prepared JSON payloads to `/api/imports/furaffinity` and
   `/api/imports/roleplay`. Use the Import Manager to tweak payloads or retry
   failed submissions.
+  Inside the Import Manager, use **Load From File…** to open a transcript or JSON bundle directly into the request editor before sending.
 
 ## Supported Formats
 

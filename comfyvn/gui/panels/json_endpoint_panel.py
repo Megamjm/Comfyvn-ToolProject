@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import textwrap
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urljoin
 
@@ -11,6 +12,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtGui import QGuiApplication, QTextOption
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -130,6 +132,10 @@ class JsonEndpointPanel(QWidget):
         root.addLayout(form)
 
         controls = QHBoxLayout()
+        self._load_file_button = QPushButton("Load From File…")
+        self._load_file_button.clicked.connect(self._load_payload_from_file)
+        controls.addWidget(self._load_file_button)
+
         self._load_button = QPushButton("Send Request")
         self._load_button.clicked.connect(self._send_request)
         controls.addWidget(self._load_button)
@@ -198,7 +204,30 @@ class JsonEndpointPanel(QWidget):
         clipboard = QGuiApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(url)
-            self._status.setText(f"Copied URL to clipboard:\n{url}")
+
+    def _load_payload_from_file(self) -> None:
+        start_dir = str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Request Payload",
+            start_dir,
+            "JSON Files (*.json *.jsonl *.txt);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.warning(self, "Load Payload", f"Failed to read file:\n{exc}")
+            return
+
+        try:
+            payload = json.loads(text)
+            formatted = json.dumps(payload, indent=2, ensure_ascii=False)
+        except Exception:
+            formatted = text
+        self._payload.setPlainText(formatted)
+        self._status.setText(f"Loaded payload from {path}")
 
     def _send_request(self) -> None:
         path = self._path.text().strip()

@@ -72,6 +72,9 @@
     "enable_security_sandbox": false,
     "enable_export_bake": false
   },
+  "logging": {
+    "suppress_httpx_info": true
+  },
   "sync": {
     "include": [
       "assets",

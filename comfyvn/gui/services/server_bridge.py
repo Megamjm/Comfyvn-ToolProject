@@ -14,6 +14,7 @@ import httpx
 from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from comfyvn.config import feature_flags
 from comfyvn.config.baseurl_authority import current_authority, default_base_url
