@@ -4,6 +4,13 @@ This update transforms ComfyVN from a static scene exporter into a multi-layer, 
 
 **Base URL** defaults to first free in `[8001, 8000]` (auto-discovered by tools).
 
+Studio highlights for this drop:
+
+- Detached server launches now shell out to `python -m uvicorn comfyvn.app:app`, inheriting the unified base authority (`config/baseurl_authority.py`) so Windows launches stop failing with `ModuleNotFoundError: comfyvn`.
+- Tools → Import Assets / Ren'Py Exporter / External Tool Installer ship interactive panels backed by live API testers (`comfyvn/gui/panels/json_endpoint_panel.py`). Quick presets cover SillyTavern persona/lore/chat imports, FurAffinity drops, and remote installer plans for modders.
+- Settings is available as a modal dialog (Tools → Settings Window) while the legacy dock stays for advanced workflows.
+- CLI helpers (`tools/check_current_system.py`, `tools/doctor_phase_all.py`) reuse the new `discover_base()` helper so scripted diagnostics honour the same rollover order (CLI override → env → public base → configured ports → fallback).
+
 Highlights:
 
 🛡️ Legal & Creative Responsibility

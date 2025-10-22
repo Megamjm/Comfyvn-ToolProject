@@ -9,7 +9,9 @@ import socket
 import time
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from urllib.parse import urlparse
 
 from comfyvn.config import ports as ports_config
@@ -97,6 +99,36 @@ def _save_json(path: str, data: dict) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+
+
+def _compose_base(host: str, port: str | int) -> str:
+    host = (host or "").strip()
+    if not host:
+        host = DEFAULT_HOST
+    port = str(port).strip()
+    if "://" in host:
+        host = host.rstrip("/")
+        tail = host.rsplit(":", 1)[-1]
+        if tail.isdigit() or not port:
+            return host
+        return f"{host}:{port}"
+    scheme = "http://"
+    return f"{scheme}{host}:{port}" if port else f"{scheme}{host}"
+
+
+def _probe_base(base: str, *, path: str = "/health", timeout: float = 3.0) -> bool:
+    if not base:
+        return False
+    target = base.rstrip("/") + path
+    try:
+        req = urllib_request.Request(target, method="GET")
+        with urllib_request.urlopen(req, timeout=timeout) as resp:
+            code = resp.getcode()
+            return code is not None and 200 <= int(code) < 500
+    except urllib_error.HTTPError:
+        return True
+    except Exception:
+        return False
 
 
 def _parse_base(base: str) -> Tuple[str, int]:
@@ -345,3 +377,79 @@ def current_authority(refresh: bool = False) -> BaseAuthority:
 
 def default_base_url(refresh: bool = False) -> str:
     return current_authority(refresh=refresh).base_url
+
+
+def discover_base(
+    cli_base: str = "",
+    *,
+    env_var: str = "COMFYVN_BASE",
+    fallback_ports: Iterable[int | str] = (8001, 8000),
+) -> tuple[str, List[str], List[str]]:
+    """Resolve the most appropriate server base URL.
+
+    Returns a tuple ``(base, tried, warnings)`` mirroring the legacy
+    ``tools.check_current_system._discover_base`` helper so CLI tooling can share
+    the same discovery logic as the GUI.
+    """
+
+    tried: List[str] = []
+    warnings: List[str] = []
+    seen: set[str] = set()
+
+    def _try_candidate(candidate: Optional[str], label: str) -> Optional[str]:
+        if not candidate:
+            return None
+        base = str(candidate).strip().rstrip("/")
+        if not base or base in seen:
+            return None
+        seen.add(base)
+        tried.append(base)
+        if _probe_base(base):
+            return base
+        if label:
+            warnings.append(f"{label} not responding: {base}")
+        return None
+
+    if cli_base:
+        base = _try_candidate(cli_base, "--base")
+        return (base or ""), tried, warnings
+
+    env_base = (os.getenv(env_var) or "").strip()
+    base = _try_candidate(env_base, env_var)
+    if base:
+        return base, tried, warnings
+
+    cfg = ports_config.get_config()
+    public_base = (cfg.get("public_base") or "").strip()
+    base = _try_candidate(public_base, "config.public_base")
+    if base:
+        return base, tried, warnings
+
+    host = str(cfg.get("host") or DEFAULT_HOST).strip() or DEFAULT_HOST
+    raw_ports = cfg.get("ports") or []
+    for entry in raw_ports:
+        try:
+            candidate = str(int(entry))
+        except (TypeError, ValueError):
+            candidate = str(entry).strip()
+        if not candidate:
+            continue
+        base = _try_candidate(
+            _compose_base(host, candidate), f"config.ports[{candidate}]"
+        )
+        if base:
+            return base, tried, warnings
+
+    for fallback in fallback_ports:
+        base = _try_candidate(
+            _compose_base(DEFAULT_HOST, fallback), f"fallback[{fallback}]"
+        )
+        if base:
+            return base, tried, warnings
+
+    authority = read_authority()
+    base = _try_candidate(authority.base_url, authority.source)
+    if base:
+        return base, tried, warnings
+
+    return "", tried, warnings
