@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 from pathlib import Path
@@ -22,6 +24,7 @@ import hashlib
 import logging
 import shutil
 import subprocess
+import types
 import venv
 from typing import Optional, Tuple
 
@@ -81,6 +84,66 @@ def _connect_host(host: str) -> str:
 
 def ensure_repo_cwd() -> None:
     _bootstrap_repo_cwd()
+
+
+QT_STUB_INSTALLED = False
+
+
+def qt_runtime_available() -> tuple[bool, str]:
+    try:
+        from PySide6.QtGui import QAction  # type: ignore
+
+        _ = QAction
+        return True, ""
+    except Exception as exc:  # pragma: no cover - defensive headless path
+        return False, str(exc)
+
+
+def install_headless_qt_stub() -> None:
+    global QT_STUB_INSTALLED
+    if QT_STUB_INSTALLED:
+        return
+    QT_STUB_INSTALLED = True
+
+    for name in list(sys.modules):
+        if name == "PySide6" or name.startswith("PySide6."):
+            sys.modules.pop(name, None)
+
+    stub = types.ModuleType("PySide6")
+    qtgui = types.ModuleType("PySide6.QtGui")
+
+    class _HeadlessSignal:
+        def connect(self, *_args, **_kwargs) -> None:
+            return None
+
+        def emit(self, *_args, **_kwargs) -> None:
+            return None
+
+    class _HeadlessAction:
+        def __init__(self, *args, **_kwargs) -> None:
+            self.text = args[0] if args else ""
+            self.triggered = _HeadlessSignal()
+
+        def setShortcut(self, *_args, **_kwargs) -> None:
+            return None
+
+        def setIcon(self, *_args, **_kwargs) -> None:
+            return None
+
+        def setObjectName(self, *_args, **_kwargs) -> None:
+            return None
+
+        def __getattr__(self, _name):
+            def _noop(*_args, **_kwargs):
+                return None
+
+            return _noop
+
+    qtgui.QAction = _HeadlessAction  # type: ignore[attr-defined]
+    stub.QtGui = qtgui  # type: ignore[attr-defined]
+
+    sys.modules["PySide6"] = stub
+    sys.modules["PySide6.QtGui"] = qtgui
 
 
 def configure_launcher_logging() -> None:
@@ -550,8 +613,25 @@ def main(argv: Optional[list[str]] = None) -> None:
     if args.install_defaults:
         exit_code = install_defaults_flow(args)
         sys.exit(exit_code)
-    apply_launcher_environment(args)
     bootstrap_environment()
+    qt_available, qt_reason = qt_runtime_available()
+    headless_stub_active = False
+    if args.server_only:
+        if not qt_available:
+            install_headless_qt_stub()
+            headless_stub_active = True
+            log(
+                f"Qt runtime unavailable ({qt_reason}). Installing a headless compatibility stub for server-only mode."
+            )
+    elif not qt_available:
+        install_headless_qt_stub()
+        headless_stub_active = True
+        log(
+            f"⚠️ Qt runtime unavailable ({qt_reason}). Switching to --server-only mode with a headless compatibility stub."
+        )
+        args.server_only = True
+
+    apply_launcher_environment(args)
     supports_render = True
     render_reason = ""
     if not args.server_only:
