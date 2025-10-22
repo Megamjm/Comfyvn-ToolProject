@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -22,6 +22,7 @@ from comfyvn.studio.core import CharacterRegistry
 
 from .character_designer import CharacterDesigner
 from .chat_panel import VNChatPanel
+from .playground_view import PlaygroundView
 from .vn_viewer import VNViewer
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ class CenterRouter(QTabWidget):
         viewer_layout.addWidget(self._chat_panel, 0)
 
         self._designer = CharacterDesigner(api_client=self.bridge, parent=self)
+        self._playground: Optional[PlaygroundView] = None
+        self._playground_label = "Playground"
 
         self._views = {
             "VN Viewer": viewer_container,
@@ -78,6 +81,7 @@ class CenterRouter(QTabWidget):
 
         self._build_corner_widget()
         notifier.attach(self._handle_notifier_event)
+        self._ensure_playground_view(initial=True)
         self._restore_last_space()
         self._apply_features()
 
@@ -173,6 +177,7 @@ class CenterRouter(QTabWidget):
             text = " • ".join(badges)
             self._feature_label.setText(text)
             self._feature_label.setVisible(bool(text))
+        self._ensure_playground_view()
 
     def _handle_notifier_event(self, event: dict) -> None:
         meta = event.get("meta")
@@ -198,6 +203,47 @@ class CenterRouter(QTabWidget):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Failed to persist center router state: %s", exc)
 
-        if widget is self._views["Character Designer"]:
+    # ------------------------------------------------------------------ playground plumbing
+    def _ensure_playground_view(self, *, initial: bool = False) -> None:
+        enabled = bool(self._feature_flags.get("enable_playground"))
+        if enabled and self._playground is None:
+            self._playground = PlaygroundView(parent=self)
+            self._playground.register_hook(
+                "on_stage_snapshot", self._handle_playground_snapshot
+            )
+            self._playground.register_hook("on_stage_log", self._handle_playground_log)
+            self._views[self._playground_label] = self._playground
+            self.addTab(self._playground, self._playground_label)
+            logger.info("Playground view enabled via feature flag.")
+            if not initial:
+                self.activate(self._playground_label)
+        elif not enabled and self._playground is not None:
+            idx = self.indexOf(self._playground)
+            if idx != -1:
+                self.removeTab(idx)
+            self._views.pop(self._playground_label, None)
+            self._playground.deleteLater()
+            self._playground = None
+            logger.info("Playground view disabled via feature flag.")
+
+    def _handle_playground_snapshot(self, payload: Dict[str, Any]) -> None:
+        path = payload.get("path")
+        logger.info("Playground snapshot captured: %s", path or payload.get("workflow"))
+
+    def _handle_playground_log(self, payload: Dict[str, Any]) -> None:
+        level = (payload or {}).get("level", "info")
+        message = (payload or {}).get("message", "")
+        detail = (payload or {}).get("detail")
+        log_line = f"[Playground] {message}"
+        if detail:
+            log_line = f"{log_line} ({detail})"
+        if level == "warning":
+            logger.warning(log_line)
+        elif level == "error":
+            logger.error(log_line)
+        else:
+            logger.info(log_line)
+
+        if self.currentWidget() is self._designer:
             current_id = self._designer.id_edit.text().strip() or None
             self._designer.refresh(select_id=current_id)

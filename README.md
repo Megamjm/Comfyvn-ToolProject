@@ -7,6 +7,7 @@ Highlights:
 🛡️ Legal & Creative Responsibility
 - You retain full creative freedom over the stories, assets, and exports you craft with ComfyVN. The platform provides guardrails—like the advisory scanner and liability gate—to surface risks, not to dictate content.
 - Before distributing builds, acknowledge the legal terms once per installation (Studio: **Settings → Advisory**, CLI: `scripts/export_bundle.py` prompts on block-level findings). This acknowledgement records that you accept all downstream responsibility for compliance with licences, ratings, and local regulations.
+- Flat → Layers pipeline (`docs/FLAT_TO_LAYERS.md`) documents the rembg/SAM/MiDaS workflow, provenance sidecars, `tools/depth_planes.py` helper, and Playground hooks for interactive mask refinement.
 - Block-level advisory findings halt exports; warnings flag items for manual review while keeping your workflow unblocked. See `docs/development/advisory_modding.md` for plugin hooks, troubleshooting, and override workflows.
 - Contributors shipping mods or automation scripts should reference the debug/API matrix in the same doc to understand available hooks, expected audit trails, and how to publish their own scanners without restricting user choice.
 
@@ -23,22 +24,28 @@ Highlights:
 
 🪟 Expanded GUI with Tray Notifications
 
+📦 Importing Existing VNs
+- On-demand installer: `python tools/install_third_party.py --list` to review licences/hashes, then `--tool <name>` or `--all --yes` to fetch binaries into `third_party/` (no repo commits, acknowledgement required).
+- Health check: `python tools/doctor_extractors.py --table` prints installed versions, shim status, and warns when Wine/.NET are missing.
+- Extraction wrapper: `python tools/vn_extract.py /path/to/game --plan-only` to preview, `--dry-run` to capture logs/licence snapshots without running the extractor, and full runs emit `imports/<game>/raw_assets/` plus `extract_log.json`.
+- Debug hooks: both installer (`--info <tool>`) and wrapper (`--engine`, `--tool`, `--clean`) expose CLI overrides for automation; see `docs/EXTRACTORS.md` for end-to-end instructions and ToS notes.
+
 🌍 Enhanced World + Audio + Persona sync
 
 ⚙️ Unified Logging, Config, and Async Safety
 
 🧱 Fully modular directory structure
 
-🎨 Theme & World Changer
-- Theme presets live in `comfyvn/themes/templates.py`, coordinating LUT stacks, ambience assets, music packs, and prompt styles across `Modern`, `Fantasy`, `Romantic`, `Dark`, and `Action`.
-- `/api/themes/templates` hydrates Studio pickers; `POST /api/themes/apply` returns checksum-stable `plan_delta` payloads with `mutations` for assets, LUTs, music, prompts, and per-character overrides so you can preview tone swaps without triggering renders.
-- Deterministic checksums make it safe to cache ambience mixes or thumbnails; use the same response as a diff source in automation scripts before queuing renders or advisory scans.
-- Modder/CLI guidance lives in `docs/development/theme_world_changer.md` with curl examples, troubleshooting flow, and notes on chaining deltas with `/api/presentation/plan` or asset registry hooks.
+🎨 Theme Kits & Swap Wizard
+- Fourteen legal-clean kits (`ModernSchool`, `UrbanNoir`, `Gothic`, `Cosmic`, `Cyberpunk`, `Space`, `PostApoc`, `HighFantasy`, `Historical`, `Steampunk`, `Pirate`, `Superhero`, `Mecha`, `Cozy`) coordinate LUT stacks, ambience assets, music packs, camera defaults, prompt flavors, props, and tag remaps in `comfyvn/themes/templates.py`.
+- Feature flag `enable_themes` defaults **false**; flip it in `config/comfyvn.json` to expose `/api/themes/{templates,preview,apply}`. Preview composes checksum-stable deltas (no writes), while apply forks or updates a VN Branch worldline so OFFICIAL⭐ stays untouched.
+- Responses surface `mutations`, palette/camera previews, anchor preservation, and style tags—perfect for diff viewers, automation queues, or cache keys. Checksums let you skip redundant renders or advisory scans.
+- Modder hooks `on_theme_preview` and `on_theme_apply` broadcast plan payloads plus branch metadata for dashboards or OBS overlays. Full payload docs, curl recipes, and debug tips live in `docs/THEME_SWAP_WIZARD.md`; flavor notes and palettes live in `docs/THEME_KITS.md` with shared vocabulary in `docs/STYLE_TAGS_REGISTRY.md`.
 
 🌦️ Weather, Lighting & Transitions
-- `comfyvn/weather/engine.py` compiles world state (`time_of_day`, `weather`, `ambience`) into deterministic background-layer stacks, light rigs, transition envelopes, particle payloads, and ambience SFX. `WeatherPlanStore` exposes versioned snapshots with timestamps and hashes so exporters can diff quickly.
-- `/api/weather/state` (GET/POST) updates or reads the shared planner without blocking the GUI. A shared feature flag (`enable_weather_planner`) under `config/comfyvn.json → features` lets deployments toggle the surface; Studio surfaces the switch under **Settings → Debug & Feature Flags**.
-- Every plan update emits `on_weather_plan` over the modder hook bus with `{state, summary, transition, particles, meta}` so automation scripts can queue renders or bake overlays. Watch `logs/server.log` (logger name `comfyvn.server.routes.weather`) for structured updates that include hash, exposure shift, and particle type.
+- `comfyvn/weather/engine.py` compiles world state (`time_of_day`, `weather`, `ambience`) into deterministic background-layer stacks, light rigs, LUT metadata, transition envelopes, particle payloads, and ambience SFX. `WeatherPlanStore` exposes versioned snapshots with timestamps, hashes, and bake flags so exporters can diff quickly.
+- `/api/weather/state` (GET/POST) updates or reads the shared planner without blocking the GUI. Feature flag `enable_weather_overlays` (default `false`) lives under `config/comfyvn.json → features`; Studio surfaces the switch under **Settings → Debug & Feature Flags**.
+- Every plan update emits `on_weather_changed` over the modder hook bus with `{state, summary, transition, particles, sfx, lut, bake_ready, flags, meta}` so automation scripts can queue renders, swap LUTs, or bake overlays. Watch `logs/server.log` (logger name `comfyvn.server.routes.weather`) for structured updates that include hash, exposure shift, particle type, and LUT path.
 - Quick curl sample:
   ```bash
   curl -s -X POST http://127.0.0.1:8000/api/weather/state \
@@ -46,6 +53,12 @@ Highlights:
     -d '{"weather": "rain", "time_of_day": "dusk"}' | jq '.scene.summary'
   ```
 - Docs: `docs/WEATHER_PROFILES.md` captures presets, payload schema, feature flag setup, and modder automation tips; changelog coverage keeps exporters aligned with hash/version expectations.
+
+🎭 Props & Visual Anchors
+- `comfyvn/props/manager.py` centralises prop ensures, anchor presets, tween defaults, and condition grammar so Studio previews and exporters can reuse the same placement logic.
+- `/api/props/ensure` (feature gated by `enable_props`, default `false`) writes deterministic sidecars + thumbnails while deduping repeated ensures. `/api/props/apply` evaluates anchors against scenario state and returns `{visible, tween, evaluations, thumbnail, applied_at}`.
+- `GET /api/props/anchors` shares normalised anchor definitions (`root`, `left`, `center`, `right`, `upper`, `lower`, `foreground`, `background`) and default tween payloads for UI drop-downs.
+- Hook `on_prop_applied` mirrors the apply response so OBS overlays, automation scripts, or exporters can react in real time. Docs: `docs/PROPS_SPEC.md` (API schema, anchors) and `docs/VISUAL_STYLE_MAPPER.md` (style tags shared with battle outcomes).
 
 📊 Performance Budgets & Profiler
 - `comfyvn/perf/budgets.py` gates CPU/VRAM consumption with queue caps and lazy asset eviction, while `comfyvn/perf/profiler.py` tracks spans + peak deltas for dashboard reporting. Both ship as shared singletons exposed via `from comfyvn.perf import budget_manager, perf_profiler`.
@@ -69,7 +82,7 @@ Highlights:
 - Manifests declare permissions via known scopes (`assets.read`, `hooks.listen`, `ui.panels`, `api.global`, etc.) and list expected modder hooks (`hooks: [...]`) so contributors can wire dashboards or automation against `docs/dev_notes_modder_hooks.md`. Verified packages may expose allowlisted global routes (`/api/modder/*`, `/api/hooks/*`); unverified packages are sandboxed under `/api/extensions/{id}`.
 
 🛠️ Modder Hook Bus & Debug Integrations
-- `comfyvn/core/modder_hooks.py` fans out scenario (`on_scene_enter`, `on_choice_render`), asset (`on_asset_registered`, legacy alias `on_asset_saved`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`), and planner (`on_weather_plan`) envelopes to in-process listeners, optional dev plugins (`COMFYVN_DEV_MODE=1`), REST webhooks, and the shared WebSocket stream.
+- `comfyvn/core/modder_hooks.py` fans out scenario (`on_scene_enter`, `on_choice_render`), asset (`on_asset_registered`, legacy alias `on_asset_saved`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`), props (`on_prop_applied`), and planner (`on_weather_changed`) envelopes to in-process listeners, optional dev plugins (`COMFYVN_DEV_MODE=1`), REST webhooks, and the shared WebSocket stream.
 - REST + WS surfaces: `GET /api/modder/hooks` exposes specs, history, and plugin host state; `POST /api/modder/hooks/webhooks` registers signed callbacks; `ws://<host>/api/modder/hooks/ws` streams `modder.on_*` topics with timestamps so automation dashboards can react without polling.
 - Asset registry writes now broadcast the refreshed asset type, sidecar path, and metadata snapshot across `on_asset_registered`, `on_asset_meta_updated`, `on_asset_removed`, and `on_asset_sidecar_written`, aligning with `/assets/{list,upload,register,delete}` payloads and the structured logs under `logs/server.log` (`comfyvn.studio.core.asset_registry`) for provenance audits.
 - New registry debug surfaces live under `/assets/debug/{hooks,modder-hooks,history}` so contributors can inspect active in-process callbacks, filter the Modder Hook Bus to asset events, and quickly diff hook payloads without standing up custom dashboards.
@@ -129,16 +142,24 @@ Highlights:
     -d '{"source": "branch_a", "target": "canon", "mask_pov": true}' | jq '.node_changes'
   ```
   Successful calls emit `on_worldline_diff` / `on_worldline_merge` events so modder dashboards or CI bots can subscribe via `/api/modder/hooks/ws`. Studio exposes a **Modules → Worldline Graph** dock (feature flag respected) that renders 1k+ node timelines without freezing and lets you preview/apply merges directly from the GUI.
+- **Worldline Lanes & Timeline Overlay** ship behind `enable_worldlines` + `enable_timeline_overlay` (both default `false`). When toggled on, `/api/pov/worlds`, `/api/pov/worlds/switch`, `/api/pov/confirm_switch`, and `/api/pov/auto_bio_suggest` coordinate OFFICIAL⭐/VN Branch🔵/Scratch⚪ lanes, Ctrl/⌘-K snapshots, delta-over-base metadata, and fork-on-confirm workflows. The registry now stores `_wl_delta` payloads so forks persist only the differences from their parent, while overlay lanes stream deterministic thumbnails (cache keys include `{scene,node,worldline,pov,vars,seed,theme,weather}`), POV badges, and diff badges computed via masked worldline deltas. Snapshot sidecars capture `{tool,version,workflow_hash,seed,worldline,pov,theme,weather}` and the modder hooks `on_worldline_created` / `on_snapshot` expose `delta`, `workflow_hash`, and `sidecar` fields for automation. Quick provenance suggestions land at:
+  ```bash
+  curl -s http://127.0.0.1:8000/api/pov/auto_bio_suggest \
+    -H 'Content-Type: application/json' \
+    -d '{"world": "official", "mask_pov": true}' | jq '.suggestions'
+  ```
+  `docs/TIMELINE_OVERLAY.md` collects payload/GUI notes for contributors.
+- **Depth-from-2D Planes** toggle with `enable_depth2d` (default `false`). Auto mode heuristically carves 3–6 planes per scene; manual masks (`data/depth_masks/<scene>.json`) override when authors flip the per-scene mode via the manager or REST helpers, and the preference persists to `cache/depth2d_state.json` so scene toggles survive restarts. `comfyvn/visual/depth2d.py` exposes `resolve_depth_planes` for renderers, while docs highlight preview tooling + JSON mask format.
 - **Feature Flags** panel persists toggles (including `enable_public_image_providers` and `enable_public_video_providers`, which keep the legacy `enable_public_image_video` flag in sync for automation) to `config/comfyvn.json`; changes broadcast through the notifier bus so Studio panels react instantly. Secrets for public providers live in `config/comfyvn.secrets.json` and are merged automatically when the backend builds dry-run payloads.
 - Panels → **Log Hub** tails runtime logs (`gui.log`, `server.log`, `render.log`, `advisory.log`, `combined.log`) without leaving Studio. Inline Scenario Runner notes help designers correlate UI actions with backend events; modders can fetch `/api/modder/hooks/history` or subscribe to `ws://<host>/api/modder/hooks/ws` for deeper inspection.
-- Viewer control routes (`POST /api/viewer/start`, `/stop`, `GET /api/viewer/status`) launch or embed the Ren’Py viewer. `docs/VIEWER_README.md` covers payload keys (`project_path`, `renpy_executable`, `renpy_sdk`) and environment overrides.
+- Viewer control routes now auto-fallback native → web → Mini-VN when the native process exits or fails to embed; status polling triggers the switch and the Mini-VN thumbnailer emits deterministic 16:9 captures via the `on_thumbnail_captured` hook. `docs/VIEWER_README.md` captures the decision tree plus `/api/viewer/{web|mini}/*` helpers.
 - Narrative automation can lean on the POV Rewrite prompt pack documented in `docs/PROMPT_PACKS/POV_REWRITE.md`, which mirrors the `on_scene_enter`/`on_choice_render` payloads so LLM tooling can restyle narration without diverging from canonical choices.
 
-⚔️ Battle Layer Planner
-- `comfyvn/battle/plan()` (new stub) returns a deterministic three-phase timeline (`setup`, `engagement`, `resolution`) while the full simulator is under construction. It records POV/world metadata and keeps payloads predictable for UI prototyping.
-- `/api/battle/plan` is feature-gated by `enable_battle` and echoes `{plan, feature}` so Studio panels and automation scripts know when the simulation stack is offline. Docs outline how to swap in a real engine without breaking callers.
-- Debug hooks: set `COMFYVN_LOG_LEVEL=DEBUG` to audit battle planning payloads; modders can emit custom envelopes with `POST /api/modder/hooks/test` to mirror plan updates in bespoke overlays.
-- The Battle Narration prompt pack at `docs/PROMPT_PACKS/BATTLE_NARRATION.md` defines 4–8 beat JSON outputs that align with `/api/battle/{resolve,simulate}` responses and `vars_patch.battle_outcome`, keeping LLM narrators deterministic.
+⚔️ Battle UX & Simulation v0
+- `comfyvn/battle/engine.py` now owns both authoring and simulation flows. Editor picks call `POST /api/battle/resolve` and always receive `editor_prompt: "Pick winner"` plus deterministic breakdowns, RNG state, provenance, and a predicted outcome; optional `stats`, `seed`, `rounds`, and `narrate` flags let designers preview seeded narration or keep the response silent.
+- `POST /api/battle/sim` (feature gated by `enable_battle_sim`, default `false`; legacy `/simulate` aliases remain) applies the v0 formula `base + STR*1.0 + AGI*0.5 + weapon_tier*0.75 + status_mod + rng(seed)` and returns `{outcome, seed, rng, weights, breakdown[], formula, provenance}`. Set `"narrate": true` for POV-aware logs or `false` for CI-friendly roll sheets.
+- Modder hooks `on_battle_resolved` and `on_battle_simulated` now include `weights`, `breakdown`, `rng`, `provenance`, `predicted_outcome`, `narrate`, `rounds`, and optional `log`/`narration` fields so overlays, telemetry, or exporters can mirror Studio output without re-querying REST.
+- The Battle Narration prompt pack at `docs/PROMPT_PACKS/BATTLE_NARRATION.md` remains the canonical beat library; pair outcomes with prop styling guidance in `docs/VISUAL_STYLE_MAPPER.md` when dressing victory/defeat scenes.
 
 🌐 Public Provider Catalog & Dry-Run Adapters
 - `/api/providers/{gpu,image-video,translate,llm}/public/catalog` returns curated pricing snapshots (RunPod, HF, Replicate, Modal, Runway, Pika, Luma, fal.ai, Google, AWS, DeepL, Deepgram, AssemblyAI, OpenAI, Anthropic, Gemini, OpenRouter, Azure) sourced from their current pricing sheets.
@@ -353,6 +374,7 @@ Runtime & GUI Helpers:
   ```
   Responses include `{"status":"installed|noop","log_path":"...","status_path":"...","plan":[...]}` so toolchains can replay commands over SSH or diff planned steps via `"dry_run":true` before execution. See `docs/development_notes.md` for module metadata, log format, and tips on broadcasting structured events (e.g. task registry hooks) after each install step.
 - Doctor Phase 4: run `python tools/doctor_phase4.py --base http://127.0.0.1:8000` to exercise `/health`, verify crash dumps, and ensure the structured logger is wired. The doctor emits a JSON report and returns non-zero when any probe fails, making it CI-friendly.
+- Doctor Phase 8: run `python tools/doctor_phase8.py --pretty` to instantiate the app factory in-process, assert there are no duplicate router mounts, confirm core debug surfaces (`/api/weather/state`, `/api/props/*`, `/api/battle/*`, `/api/modder/hooks`, `/api/viewer/mini/*`, `/api/narrator/status`, `/api/pov/confirm_switch`) and verify feature defaults (`enable_mini_vn`/`enable_viewer_webmode` **ON**, external providers **OFF**, `enable_compute` **ON**). The script emits a JSON summary with `"pass": true` when the integration surface is healthy and returns non-zero otherwise—ideal for CI gates.
 - Scenario E2E contract: `tests/e2e/test_scenario_flow.py` drives `/api/scenario`, `/api/save`, `/api/presentation/plan`, and `/api/export/*` endpoints against `tests/e2e/golden/phase4_payloads.json`. Update the golden file intentionally and call out payload changes in the changelog so modders can sync.
 - Translation overrides: add locale files, then call `POST /api/i18n/lang` to refresh the active language during UI testing.
 - SillyTavern bridge endpoints: `GET /st/health` now returns ping stats **plus** bundled vs installed manifest versions for the extension and comfyvn-data-exporter plugin, along with watch-path diagnostics. `GET /st/paths` surfaces the resolved copy targets. Use `POST /st/extension/sync` with `{"dry_run": true}` to preview copy plans (flip to `false` to write files), `POST /st/import` for `worlds`, `personas`, `characters`, or `chats`, and `POST /st/session/sync` to push the active VN scene/variables/history to SillyTavern and pull back a reply for the VN Chat panel (2 s timeout by default). Persona payloads continue to land in the registry while chat transcripts become Studio scenes automatically.
@@ -361,11 +383,31 @@ Runtime & GUI Helpers:
 - Automation helpers: run `python tools/assets_enforcer.py --dry-run --json` to audit sidecar coverage in CI, or add `--fill-metadata` to backfill tags/licences from folder structure before committing assets.
 - Studio developer tooling: enable Developer Tools to surface an inline request inspector for `/api/*` calls when building custom panels or external modding scripts.
 
+🎙️ Narrator Outliner & Role Mapping
+- Server rails: `/api/narrator/{status,mode,propose,apply,stop,rollback,chat}` stay behind `features.enable_narrator` (default OFF). Proposals are deterministic offline drafts that queue JSON `{choice_id?, vars_patch, rationale}` without mutating variables until `/api/narrator/apply` approves them; each node enforces a three-turn cap and rollback replays emit the same hook payloads.
+- Role routing: `/api/llm/{roles,assign,health}` (flag `features.enable_llm_role_mapping`) maps Narrator/MC/Antagonist/Extras to adapters or devices, tracks sticky sessions/budgets, and dry-runs routing plans for the VN Chat drawer. Offline adapter `offline.local` remains the default reply engine so multi-GPU setups are strictly opt-in.
+- Modder hooks: `on_narrator_proposal` and `on_narrator_apply` surface scene/node/turn metadata, choice ids, vars patches, and digests for dashboards; hook specs live in `comfyvn/core/modder_hooks.py` and the spec recap sits in `docs/NARRATOR_SPEC.md`.
+- Debug: run `python tools/check_current_system.py --profile p2_narrator --base http://127.0.0.1:8001` to confirm flags, routes, and docs exist; failures flip `"pass": false` for CI.
+```bash
+curl -s -X POST http://127.0.0.1:8001/api/narrator/propose \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "scene_id": "demo_scene",
+    "node_id": "demo_scene.node_1",
+    "prompt": "Offer a reflective beat before the next choice.",
+    "choices": [{"id": "choice_continue"}],
+    "context": [{"speaker": "MC", "text": "I need a second."}],
+    "force": true
+  }' | jq '.state.queue[0]'
+
+curl -s "http://127.0.0.1:8001/api/llm/roles?dry_run=true&role=Narrator" | jq '.plans[0]'
+```
+
 🛰️ Phase 6 POV & Viewer Foundations
 - Docs: `docs/WORKBOARD_PHASE6_POV.md`, `docs/POV_DESIGN.md`, `docs/VIEWER_README.md`, and `docs/LLM_RECOMMENDATIONS.md` outline the roadmap, manager/runner internals, viewer API, and adapter guidance for modders.
 - API: `/api/viewer/{start,stop,status}`, `/api/pov/{get,set,fork,candidates}`, and `/api/llm/{registry,runtime,test-call}` are wired directly in `create_app()` so Studio, CLI, and automation clients share the same surface without requiring the unfinished `/api/llm/chat` proxy.
 - GUI: the main window hosts a `CenterRouter` that defaults to the VN Viewer and registers the Character Designer stub; switching views keeps registries in sync and exposes quick actions for assets/timeline/logs.
-- Config: new feature flags (`enable_st_bridge`, `enable_llm_proxy`, `enable_narrator_mode`) live in `config/comfyvn.json` with safe defaults.
+- Config: new feature flags (`enable_st_bridge`, `enable_llm_proxy`, `enable_narrator_mode`, `enable_narrator`, `enable_llm_role_mapping`) live in `config/comfyvn.json` with safe defaults. Toggle them through **Settings → Debug & Feature Flags** or edit the JSON and call `feature_flags.refresh_cache()` in long-lived processes.
 - Runtime LLM registry: `comfyvn/models/runtime_registry.py` plus `/api/llm/runtime/*` enable temporary adapter registration without editing the on-disk registry.
 
 🪟 GUI Framework Expansion
@@ -397,7 +439,7 @@ Linked to AudioManager for ambience syncing.
 
 Extended /data/worlds/ format with environmental metadata.
 
-Theme templates now live under `comfyvn/themes/templates.py`, pairing ambience and prompt styles across `Modern`, `Fantasy`, `Romantic`, `Dark`, and `Action`. Use `/api/themes/templates` to hydrate pickers and `POST /api/themes/apply` to generate checksum-stable `plan_delta` payloads (assets, LUTs, music, prompts, character overrides) before pushing renders or advisory scans. Debug and automation tips: `docs/development/theme_world_changer.md`.
+Theme kits now span fourteen palettes (`ModernSchool` → `Cozy`) with prompt flavors, camera defaults, props, and tag remaps captured in `comfyvn/themes/templates.py`. `/api/themes/{templates,preview,apply}` expose catalog data, deterministic plan deltas, and VN Branch commits so OFFICIAL⭐ lanes remain clean. Debug, hook payloads, and curl walkthroughs live in `docs/THEME_SWAP_WIZARD.md`; flavor matrices and shared vocabulary live in `docs/THEME_KITS.md` + `docs/STYLE_TAGS_REGISTRY.md`.
 
 🫂 Persona & Group Layout
 
@@ -442,11 +484,10 @@ Enable `LOG_LEVEL=DEBUG` (or scope `comfyvn.pov.render`) to trace cache hits/mis
 
 🧪 Playground Expansion
 
-Scene mutation API stubs created.
-
-Undo/Redo stack base implemented (collections.deque).
-
-Safe auto-backup of live edits to /data/playground/history/.
+- Feature flags `enable_playground` + `enable_stage3d` now reveal the **Playground** tab (Tier-0 parallax + Tier-1 Stage 3D) inside the Studio center router. The view lives in `comfyvn/gui/central/playground_view.py` and hot-loads as soon as the flag flips on.
+- Snapshots land in `exports/playground/render_config.json` with deterministic camera/layer/light payloads and fire `on_stage_snapshot` hooks so Codex A (“Add node” / “Fork”) flows can ingest them directly from Studio.
+- Stage 3D no longer requires CDN access: Three.js `0.159.0` + `@pixiv/three-vrm@2.0.1` modules are vendored under `comfyvn/playground/stage3d/vendor/`, and the HTML import map keeps everything offline-friendly.
+- Docs: `docs/PLAYGROUND.md`, `docs/3D_ASSETS.md` capture tier behaviour, asset layout, hooks, and the offline runtime notes.
 
 🛠️ Production Workflow Baselines
 
@@ -502,10 +543,11 @@ Environment variables honour the same knobs:
 - `COMFYVN_SERVER_BASE` / `COMFYVN_BASE_URL` – default authority for the GUI, CLI helpers, and background workers (populated automatically from `--server-url` or the derived host/port).
 - `COMFYVN_SERVER_AUTOSTART=0` – disable GUI auto-start of a local server.
 - `COMFYVN_SERVER_HOST`, `COMFYVN_SERVER_PORT`, `COMFYVN_SERVER_APP`, `COMFYVN_SERVER_LOG_LEVEL` – default values consumed by the launcher when flags are omitted.
-- Viewer helpers honour `COMFYVN_RENPY_PROJECT_DIR` (override the default `renpy_project` path), `COMFYVN_RENPY_EXECUTABLE` (explicit runtime binary), and `COMFYVN_RENPY_SDK` (SDK folder). These map directly to the payload options accepted by `/api/viewer/start`; see `docs/VIEWER_README.md` for launch examples.
+- Viewer helpers honour `COMFYVN_RENPY_PROJECT_DIR` (override the default `renpy_project` path), `COMFYVN_RENPY_EXECUTABLE` (explicit runtime binary), `COMFYVN_RENPY_SDK` (SDK folder), plus the feature flags `enable_viewer_webmode` and `enable_mini_vn`. See `docs/VIEWER_README.md` for the decision tree and API surface.
 - Base URL authority lives in `comfyvn/config/baseurl_authority.py`. Resolution order: explicit `COMFYVN_BASE_URL` → runtime state file (`config/runtime_state.json` or cache override) → persisted settings (`settings/config.json`) → `comfyvn.json` fallback → default `http://127.0.0.1:8001`. The launcher writes the resolved host/port back to `config/runtime_state.json` after binding so parallel launchers, the GUI, and helper scripts stay aligned.
 - When no `--server-url` is provided the launcher derives a connectable URL from the chosen host/port (coercing `0.0.0.0` to `127.0.0.1` etc.), persists it via the base URL authority, and exports `COMFYVN_SERVER_BASE`/`COMFYVN_BASE_URL`/`COMFYVN_SERVER_PORT` for child processes.
 - GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
+- Backend `features.enable_compute` (defaults to `true`) keeps the compute advisor and provider routers online; flip it to `false` for offline builds that must exclude `/api/compute/*` surfaces, then call `feature_flags.refresh_cache()` to propagate the change to long-lived workers.
 - The Settings panel also exposes a local backend port selector with a “Find Open Port” helper so you can avoid clashes with other services; the selection is saved to the user config directory (`settings/config.json`), mirrored to the current environment, and honoured by the next launcher run.
 - Backend `/settings/{get,set,save}` endpoints now use the shared settings manager with deep-merge semantics, so GUI updates and CLI edits land in the same file without clobbering unrelated sections.
 - Settings → **Debug & Feature Flags** hosts the ComfyUI hardened bridge toggle; once enabled the flag is persisted to `config/comfyvn.json` so subsequent ComfyUI submissions pick up prompt overrides, per-character LoRAs, and sidecar polling without needing to edit JSON by hand.
@@ -585,6 +627,9 @@ Use `python scripts/export_renpy.py --project <id>` to build a playable Ren'Py p
 - Pass `--publish --publish-out exports/renpy/<name>.zip` to generate a deterministic archive containing `game/`, `publish_manifest.json`, and per-platform placeholders. Combine with `--invoke-sdk --renpy-sdk /path/to/renpy` when you want the orchestrator to call the Ren'Py launcher immediately after zipping.
 - Use `--no-per-scene` to skip auxiliary `.rpy` modules or `--platform <id>` to customise placeholder folders for downstream packagers.
 - `--pov-mode` (`auto`, `master`, `forks`, `both`, `disabled`) and `--no-pov-switch` govern POV-aware exports. In the default `auto` mode the orchestrator analyses scene/timeline metadata, emits a master build with an in-game “Switch POV” menu, and materialises per-POV forks under `forks/<slug>/`. Disable the menu when distribution bundles should select POV externally (e.g., standalone character routes).
+- `--bake-weather` toggles deterministic weather/lighting baking (default inherits the `enable_export_bake` feature flag) and writes `<out>/label_manifest.json` with POV label coverage plus the `battle_labels` catalogue hashed for cache invalidation.
+- Successful runs now drop `provenance_bundle.zip` and a readable `provenance.json` beside the export. The CLI summary echoes `provenance_bundle`, `provenance_json`, and `provenance_findings` so downstream jobs can archive or lint the provenance payloads without unpacking the archive.
+- Modder hooks `on_export_started` / `on_export_completed` broadcast CLI runs (project, timeline, weather bake flag, label manifest path, provenance bundle status) so CI/CD can react without tailing logs.
 
 See `docs/development_notes.md` for additional CLI samples, REST hooks, and environment toggles aimed at modders and tooling authors.
 
@@ -642,6 +687,7 @@ Embed this block (copy/paste) into every PR description so reviewers can confirm
 - [ ] **Security** — secrets pulled only from `config/comfyvn.secrets.json` (git-ignored).
 - [ ] **Dry-run mode** — ensure any paid/public API call honours dry-run toggles.
 - [ ] 🧪 Run `python tools/prompt_pack_linter.py <KIND> <file.json>` for prompt-pack payloads before merging.
+- [ ] 🩺 Run `python tools/doctor_phase8.py --pretty` and confirm the report ends with `"pass": true`.
 
 ## Logging & Debugging
 

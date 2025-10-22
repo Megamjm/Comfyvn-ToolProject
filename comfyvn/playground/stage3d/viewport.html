@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Codex Playground Stage</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: "Inter", "Segoe UI", sans-serif;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      #stage-root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+      }
+
+      #hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgba(15, 23, 42, 0.7);
+        font-size: 12px;
+        pointer-events: none;
+        line-height: 1.45;
+        max-width: 320px;
+        backdrop-filter: blur(8px);
+      }
+
+      #hud strong {
+        color: #38bdf8;
+      }
+
+      #hud span {
+        display: block;
+      }
+
+      #hud .status-ok {
+        color: #34d399;
+      }
+
+      #hud .status-warn {
+        color: #facc15;
+      }
+
+      #hud .status-error {
+        color: #f87171;
+      }
+    </style>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="stage-root">
+      <div id="hud">
+        <strong>Stage</strong>
+        <span>Initialising Three.js runtime…</span>
+      </div>
+    </div>
+    <script type="module">
+      import * as THREE from "./vendor/three.module.js";
+      import { OrbitControls } from "./vendor/controls/OrbitControls.js";
+      import { TransformControls } from "./vendor/controls/TransformControls.js";
+      import { GLTFLoader } from "./vendor/loaders/GLTFLoader.js";
+      import { RGBELoader } from "./vendor/loaders/RGBELoader.js";
+
+      let VRM, VRMUtils;
+      try {
+        const vrmMod = await import("./vendor/three-vrm.module.js");
+        VRM = vrmMod.VRM;
+        VRMUtils = vrmMod.VRMUtils;
+      } catch (error) {
+        console.warn("VRM support unavailable, falling back to billboards.", error);
+      }
+
+      const DEFAULT_BG_COLOR = "#0f172a";
+
+      const hud = document.getElementById("hud");
+
+      function hudStatus(state, message) {
+        if (!hud) return;
+        hud.innerHTML = `
+          <strong>Stage</strong>
+          <span class="status-${state}">${message}</span>
+          <span>Orbit: Left drag • Pan: Middle drag • Zoom: Wheel.</span>
+          <span>Transform gizmo: click asset, press W/E/R to switch move/rotate/scale.</span>
+        `;
+      }
+
+      const cloneConfig = (value) => {
+        try {
+          return JSON.parse(JSON.stringify(value ?? {}));
+        } catch (error) {
+          console.warn("Config clone failed", error);
+          return {};
+        }
+      };
+
+      class StageApp {
+        constructor(root) {
+          this.root = root;
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(DEFAULT_BG_COLOR);
+          this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+          this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+          this.renderer.setSize(root.clientWidth, root.clientHeight);
+          this.renderer.physicallyCorrectLights = true;
+          this.renderer.outputEncoding = THREE.sRGBEncoding;
+          root.appendChild(this.renderer.domElement);
+
+          this.camera = new THREE.PerspectiveCamera(45, root.clientWidth / root.clientHeight, 0.1, 1000);
+          this.camera.position.set(0, 1.5, 6.5);
+          this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
+          this.orbit.enableDamping = true;
+          this.orbit.dampingFactor = 0.08;
+          this.orbit.screenSpacePanning = true;
+          this.orbit.target.set(0, 1.25, 0);
+
+          this.transform = new TransformControls(this.camera, this.renderer.domElement);
+          this.transform.addEventListener("dragging-changed", (event) => {
+            this.orbit.enabled = !event.value;
+          });
+          this.transform.addEventListener("change", () => {
+            this._scheduleStateFlush();
+          });
+          this.transform.setSize(0.8);
+          this.scene.add(this.transform);
+
+          this.loader = new GLTFLoader();
+          this.textureLoader = new THREE.TextureLoader();
+          this.hdrLoader = new RGBELoader();
+
+          this.clock = new THREE.Clock();
+          this.assets = new Map();
+          this.stageSets = [];
+          this.billboards = [];
+          this.lights = [];
+          this.environment = { type: "color", value: DEFAULT_BG_COLOR };
+          this.bridge = null;
+          this.pendingSnapshot = null;
+          this.snapThrottle = 0;
+          this.pointer = new THREE.Vector2();
+          this.raycaster = new THREE.Raycaster();
+          this.lastConfig = {};
+          this.lastHDRPath = null;
+
+          this.renderer.domElement.addEventListener("pointerdown", (event) => this.onPointerDown(event));
+          window.addEventListener("resize", () => this.onResize());
+          window.addEventListener("keydown", (event) => this.onKey(event));
+
+          this.loop();
+          hudStatus("ok", "Ready.");
+        }
+
+        setBridge(bridge) {
+          this.bridge = bridge;
+          this.notifyHost("stage.ready", {
+            renderer: {
+              antialias: true,
+              version: THREE.REVISION,
+            },
+            capabilities: {
+              vrm: Boolean(VRM),
+              gltf: true,
+            },
+          });
+        }
+
+        onResize() {
+          if (!this.root.isConnected) {
+            return;
+          }
+          const width = this.root.clientWidth || window.innerWidth;
+          const height = this.root.clientHeight || window.innerHeight;
+          this.camera.aspect = width / Math.max(1, height);
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(width, height);
+        }
+
+        onKey(event) {
+          if (event.repeat) return;
+          if (event.key === "w" || event.key === "W") {
+            this.transform.setMode("translate");
+          } else if (event.key === "e" || event.key === "E") {
+            this.transform.setMode("rotate");
+          } else if (event.key === "r" || event.key === "R") {
+            this.transform.setMode("scale");
+          }
+        }
+
+        async loadScene(rawConfig) {
+          const config = cloneConfig(rawConfig);
+          this.lastConfig = cloneConfig(rawConfig);
+          this.clearScene();
+
+          const setConfig = config.set || {};
+          if (typeof setConfig.background === "string") {
+            this.scene.background = new THREE.Color(setConfig.background);
+            this.environment = { type: "color", value: setConfig.background };
+          }
+          if (setConfig.hdr) {
+            await this.loadHDR(setConfig.hdr);
+          }
+          if (setConfig.gltf || setConfig.vrm || setConfig.billboard) {
+            await this.spawnSet(setConfig);
+          }
+
+          const sceneCards = [
+            ...(Array.isArray(setConfig.cards) ? setConfig.cards : []),
+            ...(Array.isArray(config.cards) ? config.cards : []),
+          ];
+          for (const card of sceneCards) {
+            await this.spawnCard(card);
+          }
+
+          if (config.camera) {
+            this.applyCamera(config.camera);
+          }
+
+          this.configureLights(config.lights);
+
+          const actors = Array.isArray(config.actors) ? config.actors : [];
+          for (const actor of actors) {
+            await this.spawnActor(actor);
+          }
+          this.notifyHost("stage.load", { assets: [...this.assets.keys()], config: this.lastConfig });
+          return true;
+        }
+
+        clearScene() {
+          for (const object of this.assets.values()) {
+            this._disposeObject(object);
+          }
+          this.assets.clear();
+          this.stageSets = [];
+          this.transform.detach();
+          this._clearBillboards();
+          this._clearLights();
+          this.environment = { type: "color", value: DEFAULT_BG_COLOR };
+          this.scene.background = new THREE.Color(DEFAULT_BG_COLOR);
+          this.scene.environment = null;
+          this.lastHDRPath = null;
+        }
+
+        _disposeObject(object) {
+          if (!object) return;
+          this.scene.remove(object);
+          object.traverse?.((child) => {
+            if (!child.isMesh) {
+              return;
+            }
+            child.geometry?.dispose?.();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((mat) => mat?.dispose?.());
+            } else {
+              child.material?.dispose?.();
+            }
+          });
+        }
+
+        _clearBillboards() {
+          for (const billboard of this.billboards) {
+            this.scene.remove(billboard);
+            billboard.geometry?.dispose?.();
+            billboard.material?.dispose?.();
+          }
+          this.billboards = [];
+        }
+
+        _clearLights() {
+          for (const light of this.lights) {
+            this.scene.remove(light);
+            light.dispose?.();
+          }
+          this.lights = [];
+        }
+
+        async loadHDR(path) {
+          return new Promise((resolve, reject) => {
+            this.hdrLoader.load(
+              path,
+              (texture) => {
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                this.scene.environment = texture;
+                this.scene.background = texture;
+                this.environment = { type: "hdr", path };
+                this.lastHDRPath = path;
+                resolve(true);
+              },
+              undefined,
+              (error) => {
+                console.warn("HDR load failed, falling back to colour.", error);
+                this.scene.background = new THREE.Color(DEFAULT_BG_COLOR);
+                this.scene.environment = null;
+                this.environment = { type: "color", value: DEFAULT_BG_COLOR };
+                this.lastHDRPath = null;
+                resolve(false);
+              }
+            );
+          });
+        }
+
+        configureLights(entries) {
+          const items = Array.isArray(entries) ? entries : [];
+          this._clearLights();
+          const queue = items.length
+            ? items
+            : [
+                { type: "directional", name: "Key", position: [4, 6, 8], color: "#ffffff", intensity: 2.2 },
+                { type: "ambient", name: "Fill", color: "#8da2fb", intensity: 0.4 }
+              ];
+          for (const entry of queue) {
+            let light;
+            const color = new THREE.Color(entry.color || "#ffffff");
+            const intensity = entry.intensity ?? 1.0;
+            switch (entry.type) {
+              case "ambient":
+                light = new THREE.AmbientLight(color, intensity);
+                break;
+              case "spot":
+                light = new THREE.SpotLight(color, intensity);
+                light.angle = entry.angle ?? Math.PI / 5;
+                light.penumbra = entry.penumbra ?? 0.3;
+                break;
+              case "hemisphere":
+                light = new THREE.HemisphereLight(color, entry.groundColor || "#4b5563", intensity);
+                break;
+              case "directional":
+              default:
+                light = new THREE.DirectionalLight(color, intensity);
+                break;
+            }
+            const pos = entry.position || [2, 4, 6];
+            light.position.set(pos[0] || 0, pos[1] || 0, pos[2] || 0);
+            if (entry.target) {
+              light.target.position.set(entry.target[0] || 0, entry.target[1] || 0, entry.target[2] || 0);
+              this.scene.add(light.target);
+            }
+            light.name = entry.name || `Light-${this.lights.length}`;
+            light.userData = {
+              ...(light.userData || {}),
+              metadata: entry.metadata || {},
+              stageRole: "light",
+              assetSource: {
+                type: entry.type || "directional",
+              },
+            };
+            this.scene.add(light);
+            this.lights.push(light);
+          }
+        }
+
+        async spawnSet(entry) {
+          const name = entry.name || `Set-${this.stageSets.length}`;
+          try {
+            if (entry.gltf) {
+              const object = await this.loadGLTF(entry.gltf, name);
+              this.applyTransform(object, entry.transform);
+              object.userData = {
+                ...(object.userData || {}),
+                stageRole: "set",
+                metadata: entry.metadata || {},
+                assetSource: { gltf: entry.gltf },
+                pickable: entry.pickable === true,
+              };
+              this.scene.add(object);
+              this.stageSets.push(object);
+              this.assets.set(name, object);
+              return object;
+            }
+
+            if (entry.vrm && VRM) {
+              const object = await this.loadVRM(entry.vrm, name);
+              this.applyTransform(object, entry.transform);
+              object.userData = {
+                ...(object.userData || {}),
+                stageRole: "set",
+                metadata: entry.metadata || {},
+                assetSource: { vrm: entry.vrm },
+                pickable: entry.pickable === true,
+              };
+              this.scene.add(object);
+              this.stageSets.push(object);
+              this.assets.set(name, object);
+              return object;
+            }
+          } catch (error) {
+            console.warn(`Set load failed for ${name}`, error);
+            this.notifyHost("stage.log", {
+              level: "warning",
+              message: `Set load failed for ${name}`,
+              detail: String(error),
+            });
+          }
+
+          if (entry.billboard) {
+            const billboard = await this.spawnBillboard(entry);
+            billboard.name = name;
+            billboard.userData.stageRole = "set";
+            billboard.userData.pickable = entry.pickable === true;
+            billboard.userData.assetSource = {
+              texture: entry.billboard?.texture || null,
+            };
+            this.stageSets.push(billboard);
+            this.assets.set(name, billboard);
+            return billboard;
+          }
+          return null;
+        }
+
+        async spawnActor(entry) {
+          const name = entry.name || `Actor-${this.assets.size}`;
+          try {
+            if (entry.vrm && VRM) {
+              const object = await this.loadVRM(entry.vrm, name);
+              this.applyTransform(object, entry.transform);
+              object.userData = {
+                ...(object.userData || {}),
+                stageRole: "actor",
+                metadata: entry.metadata || {},
+                assetSource: {
+                  vrm: entry.vrm,
+                  billboard: entry.billboard?.texture || null,
+                },
+                pickable: entry.pickable !== false,
+              };
+              this.assets.set(name, object);
+              this.scene.add(object);
+              return object;
+            }
+
+            if (entry.gltf) {
+              const object = await this.loadGLTF(entry.gltf, name);
+              this.applyTransform(object, entry.transform);
+              object.userData = {
+                ...(object.userData || {}),
+                stageRole: "actor",
+                metadata: entry.metadata || {},
+                assetSource: {
+                  gltf: entry.gltf,
+                  billboard: entry.billboard?.texture || null,
+                },
+                pickable: entry.pickable !== false,
+              };
+              this.assets.set(name, object);
+              this.scene.add(object);
+              return object;
+            }
+          } catch (error) {
+            console.warn(`Actor load failed for ${name}`, error);
+            this.notifyHost("stage.log", { level: "warning", message: `Actor load failed for ${name}`, detail: String(error) });
+          }
+
+          // Fallback billboard
+          const billboard = await this.spawnBillboard(entry);
+          billboard.name = name;
+          billboard.userData.stageRole = "actor";
+          billboard.userData.pickable = entry.pickable !== false;
+          this.assets.set(name, billboard);
+          this.scene.add(billboard);
+          return billboard;
+        }
+
+        async spawnCard(entry) {
+          const plane = await this.spawnBillboard(entry);
+          plane.position.set(...(entry.position || [0, 0, -2]));
+          plane.name = entry.name || `Card-${this.assets.size}`;
+          plane.userData.stageRole = entry.overlay ? "overlay" : "card";
+          plane.userData.overlay = Boolean(entry.overlay);
+          plane.userData.pickable = entry.pickable !== false;
+          this.assets.set(plane.name, plane);
+          this.scene.add(plane);
+        }
+
+        async spawnBillboard(entry) {
+          const width = entry.size?.[0] ?? 2.5;
+          const height = entry.size?.[1] ?? 2.5;
+          const geometry = new THREE.PlaneGeometry(width, height);
+          let material;
+
+          if (entry.billboard && entry.billboard.texture) {
+            try {
+              const texture = await this.loadTexture(entry.billboard.texture);
+              material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+            } catch (error) {
+              console.warn("Billboard texture failed", error);
+              material = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+            }
+          } else {
+            material = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+          }
+
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(...(entry.position || [0, 1.4, 0]));
+          mesh.userData.billboard = true;
+          mesh.userData.metadata = entry.metadata || {};
+          mesh.userData.assetSource = {
+            texture: entry.billboard?.texture || null,
+          };
+          if (typeof entry.overlay === "boolean") {
+            mesh.userData.overlay = entry.overlay;
+          }
+          if (typeof entry.pickable === "boolean") {
+            mesh.userData.pickable = entry.pickable;
+          }
+          this.billboards.push(mesh);
+          return mesh;
+        }
+
+        async loadTexture(path) {
+          return new Promise((resolve, reject) => {
+            this.textureLoader.load(
+              path,
+              (texture) => {
+                texture.encoding = THREE.sRGBEncoding;
+                resolve(texture);
+              },
+              undefined,
+              (error) => reject(error)
+            );
+          });
+        }
+
+        async loadGLTF(path, name) {
+          return new Promise((resolve, reject) => {
+            this.loader.load(
+              path,
+              (gltf) => {
+                const scene = gltf.scene;
+                scene.name = name;
+                resolve(scene);
+              },
+              undefined,
+              (error) => reject(error)
+            );
+          });
+        }
+
+        async loadVRM(path, name) {
+          return new Promise((resolve, reject) => {
+            this.loader.load(
+              path,
+              (gltf) => {
+                VRMUtils?.removeUnnecessaryVertices?.(gltf.scene);
+                VRMUtils?.removeUnnecessaryJoints?.(gltf.scene);
+                VRM.from(gltf).then((vrm) => {
+                  vrm.scene.name = name;
+                  resolve(vrm.scene);
+                });
+              },
+              undefined,
+              (error) => reject(error)
+            );
+          });
+        }
+
+        applyTransform(object, transform) {
+          const t = transform || {};
+          if (Array.isArray(t.position)) {
+            object.position.set(t.position[0] || 0, t.position[1] || 0, t.position[2] || 0);
+          }
+          if (Array.isArray(t.rotation)) {
+            object.rotation.set(t.rotation[0] || 0, t.rotation[1] || 0, t.rotation[2] || 0);
+          }
+          if (Array.isArray(t.scale)) {
+            object.scale.set(t.scale[0] || 1, t.scale[1] || 1, t.scale[2] || 1);
+          } else if (typeof t.scale === "number") {
+            object.scale.setScalar(t.scale);
+          }
+        }
+
+        applyCamera(config) {
+          if (!config) return;
+          if (Array.isArray(config.position)) {
+            this.camera.position.set(config.position[0] || 0, config.position[1] || 0, config.position[2] || 0);
+          }
+          if (Array.isArray(config.target)) {
+            this.orbit.target.set(config.target[0] || 0, config.target[1] || 0, config.target[2] || 0);
+          }
+          if (Array.isArray(config.quaternion)) {
+            this.camera.quaternion.fromArray(config.quaternion);
+          } else if (Array.isArray(config.rotation)) {
+            this.camera.rotation.set(config.rotation[0] || 0, config.rotation[1] || 0, config.rotation[2] || 0);
+          }
+          if (typeof config.fov === "number") {
+            this.camera.fov = config.fov;
+          }
+          if (typeof config.near === "number") {
+            this.camera.near = Math.max(0.01, config.near);
+          }
+          if (typeof config.far === "number") {
+            this.camera.far = Math.max(this.camera.near + 0.1, config.far);
+          }
+          this.camera.updateProjectionMatrix();
+          this.orbit.update();
+        }
+
+        onPointerDown(event) {
+          const rect = this.renderer.domElement.getBoundingClientRect();
+          this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          this.raycaster.setFromCamera(this.pointer, this.camera);
+
+          const pickables = [...this.assets.values()].filter((item) => item.userData?.pickable !== false);
+          const hits = this.raycaster.intersectObjects(pickables, true);
+          if (hits.length > 0) {
+            const target = hits[0].object;
+            const root = this.findRoot(target);
+            this.transform.attach(root);
+            this.notifyHost("stage.select", { name: root.name, position: root.position, rotation: root.rotation, scale: root.scale });
+          } else {
+            this.transform.detach();
+          }
+        }
+
+        findRoot(object) {
+          let current = object;
+          while (current.parent && !this.assets.has(current.name)) {
+            current = current.parent;
+          }
+          return current;
+        }
+
+        _buildSnapshotPayload() {
+          const environment = {
+            ...(typeof this.environment === "object" ? this.environment : {}),
+          };
+          if (this.scene.background?.isColor) {
+            environment.background = `#${this.scene.background.getHexString()}`;
+          }
+          if (this.lastHDRPath) {
+            environment.hdr = this.lastHDRPath;
+          }
+
+          const payload = {
+            mode: "tier1",
+            workflow: "comfyvn.playground.stage3d.v1",
+            timestamp: Date.now() / 1000,
+            camera: {
+              position: this.camera.position.toArray(),
+              target: [this.orbit.target.x, this.orbit.target.y, this.orbit.target.z],
+              quaternion: this.camera.quaternion.toArray(),
+              rotation: [this.camera.rotation.x, this.camera.rotation.y, this.camera.rotation.z],
+              fov: this.camera.fov,
+              near: this.camera.near,
+              far: this.camera.far,
+            },
+            actors: [],
+            cards: [],
+            sets: [],
+            lights: this.lights.map((light) => ({
+              name: light.name,
+              type: light.userData?.assetSource?.type || light.type,
+              color: `#${light.color.getHexString()}`,
+              intensity: light.intensity,
+              position: light.position.toArray(),
+              target: light.target ? light.target.position.toArray() : null,
+              metadata: light.userData?.metadata || {},
+            })),
+            overlays: [],
+            environment,
+            config: cloneConfig(this.lastConfig),
+          };
+
+          for (const [name, object] of this.assets.entries()) {
+            const entry = {
+              name,
+              position: object.position.toArray(),
+              rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+              scale: object.scale.toArray ? object.scale.toArray() : [object.scale.x, object.scale.y, object.scale.z],
+              quaternion: object.quaternion?.toArray?.() ?? [object.quaternion.x, object.quaternion.y, object.quaternion.z, object.quaternion.w],
+              userData: object.userData || {},
+              type: object.userData?.billboard ? "billboard" : "mesh",
+            };
+            const role = object.userData?.stageRole || null;
+            entry.stageRole = role;
+            entry.metadata = object.userData?.metadata || {};
+            entry.source = object.userData?.assetSource || {};
+            entry.overlay = Boolean(object.userData?.overlay);
+            entry.pickable = object.userData?.pickable !== false;
+
+            if (role === "set") {
+              payload.sets.push(entry);
+            } else if (object.userData?.billboard) {
+              payload.cards.push(entry);
+              if (entry.overlay) {
+                payload.overlays.push(entry);
+              }
+            } else {
+              payload.actors.push(entry);
+            }
+          }
+
+          return payload;
+        }
+
+        takeSnapshot() {
+          const payload = this._buildSnapshotPayload();
+          const data = JSON.stringify(payload);
+          this.notifyHost("stage.snapshot", payload);
+          return data;
+        }
+
+        debugState() {
+          return this._buildSnapshotPayload();
+        }
+
+        loop() {
+          requestAnimationFrame(() => this.loop());
+          const delta = this.clock.getDelta();
+          this.orbit.update();
+          this.renderer.render(this.scene, this.camera);
+          if (this.snapThrottle > 0) {
+            this.snapThrottle -= delta;
+          }
+        }
+
+        _scheduleStateFlush() {
+          if (this.snapThrottle > 0) return;
+          this.snapThrottle = 0.35;
+          const snapshot = this.takeSnapshot();
+          if (this.pendingSnapshot) {
+            this.pendingSnapshot(snapshot);
+            this.pendingSnapshot = null;
+          }
+        }
+
+        requestSnapshot(callback) {
+          try {
+            const result = this.takeSnapshot();
+            callback(result);
+          } catch (error) {
+            console.error("Snapshot failed", error);
+            callback(null);
+          }
+        }
+
+        notifyHost(eventName, payload) {
+          if (!this.bridge) return;
+          try {
+            this.bridge.notifyEvent(eventName, JSON.stringify(payload || {}));
+          } catch (error) {
+            console.warn("Stage host notify failed", error);
+          }
+        }
+      }
+
+      function bootstrap() {
+        const root = document.getElementById("stage-root");
+        const app = new StageApp(root);
+        window.codexStage = app;
+
+        function attachBridge() {
+          if (window.qt?.webChannelTransport) {
+            new QWebChannel(window.qt.webChannelTransport, (channel) => {
+              const bridge = channel.objects.StageBridge;
+              app.setBridge(bridge);
+              bridge.notifyReady(JSON.stringify({ ok: true, message: "Stage initialised." }));
+            });
+          } else {
+            setTimeout(attachBridge, 50);
+          }
+        }
+
+        attachBridge();
+      }
+
+      bootstrap();
+    </script>
+  </body>
+</html>

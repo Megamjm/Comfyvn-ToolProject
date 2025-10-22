@@ -9,6 +9,8 @@ sidecars that are safe to automate against during the v0.7 run-up.
 
 ---
 
+> Integration tip: `python tools/doctor_phase8.py --pretty` now exercises the modder hook catalogue alongside key REST routes (battle/props/weather/viewer/narrator/pov). Add it to automation pipelines after tweaking hooks or feature flags—the script emits `"pass": true` when the expected topics remain available.
+
 ## 1. Bridge & Import APIs
 
 ### 1.1 SillyTavern extension sync
@@ -126,7 +128,11 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
 - `GET /api/pov/get` mirrors the viewer header; append `?debug=true` to include runner context (active filters + history).
 - `POST /api/pov/fork` supports asset automation: send `{"slot": "save-1", "pov": "alice"}` and reuse the returned suffix when rendering POV-specific thumbnails.
 - `POST /api/pov/candidates` accepts either `{ "scene": {...} }` or a raw scene mapping and returns filtered POV candidates. Add `"debug": true` to receive per-filter traces.
-- `/api/pov/worlds` returns named POV worldlines with metadata (`nodes`, `choices`, `assets`); `POST /api/pov/worlds` upserts entries (set `"activate": true` to switch), while `/api/diffmerge/{scene,worldlines/graph,worldlines/merge}` (feature flag `enable_diffmerge_tools`) surfaces POV-masked node diffs, timeline graphs, and dry-run/apply merges. Exports echo the resolved selection in `export_manifest.json["worlds"]`, and the CLI/server preview accept `--world` / `--world-mode` for canonical vs multi-world builds (see `docs/development/pov_worldlines.md`). Modder hooks `on_worldline_diff` / `on_worldline_merge` forward delta summaries, fast-forward flags, and merge conflicts in realtime for dashboards or CI bots.
+- `/api/pov/worlds` returns named POV worldlines with metadata (`nodes`, `choices`, `assets`, `lane`, `lane_color`, `parent_id`) plus `_wl_delta` so callers can inspect the stored delta over the parent. `POST /api/pov/worlds` upserts entries (set `"activate": true` to switch) and accepts inline `snapshot` payloads which now echo `workflow_hash` + `sidecar` fields; `/api/diffmerge/{scene,worldlines/graph,worldlines/merge}` (feature flag `enable_diffmerge_tools`) surfaces POV-masked node diffs, timeline graphs, and dry-run/apply merges. `/api/pov/auto_bio_suggest` summarises deltas, recent snapshots, and optional diffs for bios/dashboards. Exports echo the resolved selection in `export_manifest.json["worlds"]`, and the CLI/server preview accept `--world` / `--world-mode` for canonical vs multi-world builds (see `docs/development/pov_worldlines.md`). Modder hooks `on_worldline_diff` / `on_worldline_merge` forward delta summaries, fast-forward flags, and merge conflicts in realtime for dashboards or CI bots.
+- Timeline overlay stack (feature flags `enable_worldlines` + `enable_timeline_overlay`) unlocks `/api/pov/confirm_switch` plus fork-on-confirm flows. Snapshot payloads follow the cache-key recipe `{scene,node,worldline,pov,vars,seed,theme,weather}` and now add provenance metadata (`workflow_hash`, `sidecar`). The system emits:
+  - `on_worldline_created` when a lane is first registered or forked (payload includes `delta`, lane colour, and parent id).
+  - `on_snapshot` after `WorldlineRegistry.record_snapshot()` writes thumbnail metadata (hash, badges, lane color, timestamp) and now mirrors `workflow_hash`, `sidecar`, and `worldline` fields for automation.
+- Hook consumers should subscribe to `modder.on_worldline_created` / `modder.on_snapshot` via `/api/modder/hooks/ws` to keep dashboards aligned with Studio’s Ctrl/⌘-K workflow.
 - `GET /api/viewer/status` returns `{ "running": false, "project_id": null, ... }` so out-of-process tools can stay in sync with the Studio center without Qt bindings.
 - Character Designer stubs live in the center router. API scaffolding (`/api/characters{,/save}`) is planned for Phase 6B; rely on the shared registry helpers in the meantime.
 
@@ -167,20 +173,20 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
   Registered assets emit the local `asset_registered` hook plus the Modder Hook bus topics `modder.on_asset_registered`, `modder.on_asset_meta_updated`, and `modder.on_asset_sidecar_written`, each carrying provenance + sidecar paths so automation scripts can chain additional processing. Deletions publish `modder.on_asset_removed` before files are trashed.
 - Debugging: export `COMFYVN_LOG_LEVEL=DEBUG` to trace hardened bridge submissions (`comfyvn.server.routes.characters`), watch `data/characters/<id>/` for updated JSON, and use `AssetRegistry.wait_for_thumbnails()` in scripting contexts that need to block on thumbnail generation.
 
-### 2.6 Battle Layer Choice & Sim
-- Endpoints: `/api/battle/resolve` deterministically stamps `vars.battle_outcome` and `/api/battle/simulate` returns `{outcome, seed, log[], weights}`. Both routes dispatch to `comfyvn/battle/engine.py` and surface errors as 4xx when payloads are invalid.
-- Choice mode (resolve) suits authors picking winners manually or automation scripts replaying recorded fights. Pass `{ "winner": "<branch_id>", "persist_state": false }` to dry-run without mutating scenario state.
-- Sim mode accepts weighted odds (`stats` map), optional `seed`, `pov`, and `rounds`. The response always echoes the seed used, so external tools can replay narration beats exactly.
-- Debug hooks: set `COMFYVN_LOG_LEVEL=DEBUG` (or scope `comfyvn.battle.engine`) to log normalized weights, RNG draws, and narration template selections. `COMFYVN_BATTLE_SEED=<int>` overrides Studio’s default seed when one isn’t supplied, enabling fully deterministic test harnesses.
-- Integration tips: the Scenario Runner emits `battle.simulated` and `battle.resolved` events for panel extensions; use them to display odds or trigger asset jobs. Pair simulation logs with `/api/schedule/enqueue` to render VO/SFX ahead of calling `resolve`.
-- Docs: `docs/development/battle_layer_hooks.md` contains full payload schemas, CLI snippets, and troubleshooting notes for modders.
+### 2.6 Battle Layer Choice & Sim (v0)
+- Endpoints: `/api/battle/resolve` deterministically stamps `vars.battle_outcome`, always returns `editor_prompt: "Pick winner"`, and optionally generates a narration log when `stats` + `seed` are supplied. `/api/battle/sim` (guarded by feature flag `enable_battle_sim`, default **OFF**; legacy `/simulate` alias still routes here) runs the v0 formula `base + STR*1.0 + AGI*0.5 + weapon_tier*0.75 + status_mod + rng(seed)` and returns `{outcome, seed, rng, weights, breakdown[], formula, provenance}` with narration only when `"narrate": true`.
+- Stats schema accepts either a scalar (treated as `base`) or an object with `base`, `str`, `agi`, `weapon_tier`, `status_mod`, and optional `rng` variance multiplier per contender. Breakdowns expose component totals so overlays and QA harnesses can display and assert roll sheets.
+- Hooks: `on_battle_resolved` now ships `{editor_prompt, formula, seed, rng, weights, breakdown, log?, narration?, predicted_outcome, provenance, narrate, rounds}`; `on_battle_simulated` mirrors the simulation payload plus the `narrate` flag and optional narration beats. Subscribe via `/api/modder/hooks/subscribe?topics=on_battle_resolved,on_battle_simulated` or register listeners through `comfyvn.core.modder_hooks` to keep overlays and telemetry in sync.
+- Debug hooks: set `COMFYVN_LOG_LEVEL=DEBUG` (or scope `comfyvn.battle.engine`) to log breakdowns and RNG draws. `COMFYVN_BATTLE_SEED=<int>` overrides Studio’s default seed when one isn’t supplied, enabling deterministic regression tests.
+- Integration tips: Scenario Runner emits `battle.simulated`/`battle.resolved` for UI extensions; pair simulation logs with `/api/schedule/enqueue` or props styling via `docs/VISUAL_STYLE_MAPPER.md` before resolving.
+- Docs: `docs/BATTLE_DESIGN.md` and `docs/development/battle_layer_hooks.md` capture payload schemas, CLI snippets, and troubleshooting notes. Prompt beats remain under `docs/PROMPT_PACKS/BATTLE_NARRATION.md`.
 
 ### 2.7 Weather planner & transitions
-- Planner core: `comfyvn/weather/engine.py` normalises `{time_of_day, weather, ambience}` (aliases included) and returns deterministic payloads featuring `scene.background_layers`, `scene.light_rig`, `transition`, optional `particles`, and ambience `sfx`. Each plan carries `meta.hash`, `meta.version`, and `meta.updated_at` so exporters can diff state changes.
+- Feature flag: `/api/weather/state` sits behind `enable_weather_overlays` (default **OFF**). Partial updates merge into the canonical state before compilation. Studio mirrors the toggle in **Settings → Debug & Feature Flags**.
+- Planner core: `comfyvn/weather/engine.py` normalises `{time_of_day, weather, ambience}` (aliases included) and returns deterministic payloads featuring `scene.background_layers`, `scene.light_rig`, `scene.lut`, `scene.bake_ready`, `transition`, optional `particles`, and ambience `sfx` (with `fade_in`/`fade_out`). Each plan carries `meta.hash`, `meta.version`, `meta.updated_at`, and `meta.flags`.
 - Shared store: `comfyvn/weather/__init__.py` exposes `WEATHER_PLANNER` — call `.snapshot()` for the latest plan or `.update(state_dict)` to compile new values inside automation scripts (locks ensure thread safety).
-- REST surface: `/api/weather/state` (GET/POST) under `comfyvn/server/routes/weather.py`. Partial updates are merged with the existing state before compilation. Feature flag `enable_weather_planner` (default true in `config/comfyvn.json → features`) gates both routes; Studio mirrors the toggle in **Settings → Debug & Feature Flags**.
-- Modder hook: every snapshot or POST update emits `on_weather_plan` with payload `{state, summary, transition, particles, sfx, meta, trigger}`. Subscribe through `/api/modder/hooks/subscribe` (`topics: ["on_weather_plan"]`) or register an in-process listener via `comfyvn.core.modder_hooks.register_listener` to enqueue renders or stash overlay diffs.
-- Logging: enable `COMFYVN_LOG_LEVEL=DEBUG` or watch `logs/server.log` for `comfyvn.server.routes.weather` entries containing the state hash, exposure shift, and particle type. Useful when verifying automated transitions.
+- Modder hook: every snapshot or POST update emits `on_weather_changed` with `{state, summary, transition, particles, sfx, lut, bake_ready, flags, meta, trigger}`. Subscribe through `/api/modder/hooks/subscribe` (`topics: ["on_weather_changed"]`) or register an in-process listener via `comfyvn.core.modder_hooks.register_listener` to enqueue renders, bake overlays, or sync LUTs.
+- Logging: enable `COMFYVN_LOG_LEVEL=DEBUG` or watch `logs/server.log` for `comfyvn.server.routes.weather` entries containing the state hash, exposure shift, particle type, and LUT path.
 - curl quickstart:
   ```bash
   curl -s -X POST http://127.0.0.1:8000/api/weather/state \
@@ -188,6 +194,17 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
     -d '{"state": {"time_of_day": "sunrise", "weather": "stormy", "ambience": "dramatic"}}' | jq '.meta'
   ```
 - Reference doc: `docs/WEATHER_PROFILES.md` lists preset tables, alias mapping, hook payloads, feature-flag setup, and exporter checklist.
+
+### 2.8 Prop Manager & Anchors
+- Feature flag `enable_props` (default **OFF**) gates `/api/props/{anchors,ensure,apply}`. Anchors return normalised coordinates; ensure writes deterministic sidecars/thumbnails (deduped via digest); apply evaluates conditions + tweens against flattened scenario state.
+- Hook `on_prop_applied` mirrors apply responses (`prop_id`, `anchor`, `z_order`, `visible`, `tween`, `evaluations`, `thumbnail`, `context`, `applied_at`) so automation scripts, OBS overlays, or exporter daemons can react without polling.
+- Conditions support `and`/`or`/`not` + chained comparisons. Missing identifiers resolve to `0`, keeping expressions safe. Tween payloads default to `{duration: 0.45, ease: "easeInOutCubic", hold: 0, stop_at_end: true}` unless overridden.
+- Docs: `docs/PROPS_SPEC.md` covers anchors, API payloads, and condition grammar; styling guidance ties into `docs/VISUAL_STYLE_MAPPER.md`. Tests live in `tests/test_props_routes.py`.
+
+### 2.9 Theme Swap Wizard
+- Feature flag `enable_themes` (default **OFF**) unlocks `/api/themes/{templates,preview,apply}`. Preview composes checksum-stable plan deltas (assets, palette, camera, props, style tags, per-character overrides, anchor preservation); apply forks or updates a VN Branch lane and appends `theme_swap` provenance without touching OFFICIAL⭐.
+- Hooks `on_theme_preview` and `on_theme_apply` broadcast `{theme, theme_label, subtype, variant, anchors_preserved, plan, branch?, branch_created?, checksum, scene, timestamp}` over REST/WebSocket. Use them to feed dashboards (palette previews, diff overlays), OBS layers, advisory pipelines, or CI bots—checksums let you dedupe repeated previews instantly.
+- Reference material: `docs/THEME_SWAP_WIZARD.md` (payload diagrams, curl cookbook, provenance rules), `docs/THEME_KITS.md` (flavor/palette matrices), `docs/STYLE_TAGS_REGISTRY.md` (shared vocabulary for filters).
 
 ---
 
@@ -338,6 +355,49 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
     "pov": "narrator",
     "finished": false,
     "timestamp": 1734806400.123
+  }
+  ```
+- `on_narrator_proposal` — emitted whenever `/api/narrator/propose` enqueues a draft. Payload mirrors the queued proposal (choice id, vars patch, rationale, turn index) plus a deterministic digest so instrumentation can match proposals with offline planner outputs without storing raw dialogue.
+  ```jsonc
+  {
+    "scene_id": "demo_scene",
+    "node_id": "demo_scene.node_3",
+    "proposal_id": "p0002",
+    "choice_id": "choice_continue",
+    "vars_patch": {
+      "$narrator": {
+        "scene_id": "demo_scene",
+        "node_id": "demo_scene.node_3",
+        "turn": 2,
+        "choice_id": "choice_continue",
+        "digest": "7ea891aa"
+      }
+    },
+    "rationale": "Offline planner suggested choice 'choice_continue' using adapter offline.local.",
+    "turn_index": 2,
+    "mode": "propose",
+    "timestamp": 1735660800.12
+  }
+  ```
+- `on_narrator_apply` — fired when `/api/narrator/apply` commits a proposal or when rollback replays an apply (`rolled_back: true`). Use it to drive dashboards, audit variable changes, or rebuild deterministic transcripts.
+  ```jsonc
+  {
+    "scene_id": "demo_scene",
+    "node_id": "demo_scene.node_3",
+    "proposal_id": "p0002",
+    "choice_id": "choice_continue",
+    "vars_patch": {
+      "$narrator": {
+        "scene_id": "demo_scene",
+        "node_id": "demo_scene.node_3",
+        "turn": 2,
+        "choice_id": "choice_continue",
+        "digest": "7ea891aa"
+      }
+    },
+    "turn_index": 2,
+    "timestamp": 1735660810.42,
+    "rolled_back": false
   }
   ```
 - `on_collab_operation` — emitted whenever the collaboration hub applies a batch of CRDT ops to a scene. Fired by WebSocket clients (`doc.apply`) and REST consumers replaying `/api/collab/history`. Use it to mirror live edits, stream activity dashboards, or rebuild state without fetching full snapshots.
@@ -530,6 +590,17 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
 - `on_rating_decision` — emitted for every classifier evaluation when `enable_rating_modder_stream` is enabled. Payload mirrors `/api/rating/classify` (`item_id`, `rating`, `nsfw`, `confidence`, `mode`, `matched`, `ack_status`, `allowed`) so dashboards can surface high-risk content in real time.
 - `on_rating_override` — raised after reviewers store or remove overrides; persisted payload includes `{item_id, rating, reviewer, reason, scope, timestamp, removed}` to stay in sync with the override JSON store.
 - `on_rating_acknowledged` — published once an acknowledgement token is confirmed via `/api/rating/ack`, carrying `{token, item_id, action, rating, user, acknowledged_at}` for legal/audit dashboards.
+
+### 7.0 Viewer & Ren'Py export hooks
+
+- `on_thumbnail_captured` (viewer Mini-VN thumbnailer)
+  - Emitted whenever the deterministic Mini-VN thumbnailer writes or refreshes a cached thumbnail.
+  - Payload: `{scene_id, timeline_id, pov, seed, path, filename, digest, width, height, timestamp}`.
+  - Token: `viewer.thumbnail_captured` on the WebSocket bus.
+- `on_export_started` (Ren'Py export CLI + `/api/export/renpy/*`)
+  - Fires before the orchestrator runs. Payload includes `{project, timeline, world, options:{pov_mode,dry_run,bake_weather}, timestamp}`.
+- `on_export_completed`
+  - Fires after export (success or failure). Payload: `{project, timeline, ok, output_dir, weather_bake, label_manifest, error?, timestamp}`. Dry runs inline the manifest instead of returning a path.
 
 ### 7.1 Export publish hooks
 

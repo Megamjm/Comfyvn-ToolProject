@@ -12,7 +12,7 @@ import logging
 import os
 import pkgutil
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Set
+from typing import Any, Iterable, Optional, Sequence, Set, Tuple
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,6 +84,17 @@ PRIORITY_MODULES: tuple[str, ...] = (
 )
 
 
+def _collect_route_signatures(routes: Iterable[Any]) -> Set[Tuple[str, str]]:
+    signatures: Set[Tuple[str, str]] = set()
+    for route in routes:
+        if not isinstance(route, APIRoute):
+            continue
+        methods = getattr(route, "methods", None) or set()
+        for method in methods:
+            signatures.add((route.path, method))
+    return signatures
+
+
 def _configure_logging() -> Path:
     level = os.getenv("COMFYVN_LOG_LEVEL", "INFO")
     DEFAULT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -107,6 +118,19 @@ def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) ->
         return
     router = getattr(module, "router", None)
     if router is None:
+        return
+    router_routes = getattr(router, "routes", None)
+    if not router_routes:
+        return
+    existing_signatures = _collect_route_signatures(app.routes)
+    router_signatures = _collect_route_signatures(router_routes)
+    collisions = router_signatures.intersection(existing_signatures)
+    if collisions:
+        LOGGER.debug(
+            "Skipping router %s (route collision on %s)",
+            module_name,
+            ", ".join(sorted({path for path, _ in collisions})[:3]),
+        )
         return
     try:
         app.include_router(router)
@@ -238,18 +262,27 @@ def create_app(
 
     _include_routers(app, seen=preloaded_modules)
 
-    @app.get("/health", tags=["System"], summary="Simple health probe")
-    async def core_health():
-        return {"status": "ok"}
+    if not _route_exists(app, "/health", {"GET"}):
+
+        @app.get("/health", tags=["System"], summary="Simple health probe")
+        async def core_health():
+            return {"status": "ok"}
 
     @app.get("/healthz", include_in_schema=False)
     async def _healthz():
         return {"ok": True}
 
-    @app.get("/status", tags=["System"], summary="Service status overview")
-    async def core_status():
-        routes = [route.path for route in app.routes if isinstance(route, APIRoute)]
-        return {"status": "ok", "ok": True, "version": APP_VERSION, "routes": routes}
+    if not _route_exists(app, "/status", {"GET"}):
+
+        @app.get("/status", tags=["System"], summary="Service status overview")
+        async def core_status():
+            routes = [route.path for route in app.routes if isinstance(route, APIRoute)]
+            return {
+                "status": "ok",
+                "ok": True,
+                "version": APP_VERSION,
+                "routes": routes,
+            }
 
     if not _route_exists(app, "/system/metrics", {"GET"}):
 

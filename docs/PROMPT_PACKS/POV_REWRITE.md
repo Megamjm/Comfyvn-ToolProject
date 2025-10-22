@@ -7,6 +7,7 @@
 - `pov` (character id)
 - `canonical_node` { text, stage_directions, choices[] }
 - `world_lore[]`, `character_sheet[pov]`, `vars{}`, `seed`
+- Optional: `role_hint` (maps to narrator role planner when `enable_llm_role_mapping` is enabled)
 
 ## System Template
 ```
@@ -42,6 +43,11 @@ Context:
 - No new facts, no new characters.
 - `visible_choices` must be a subset of canonical choices filtered by POV.
 - Target 500–1200 characters overall.
+
+## Orchestration Notes
+- When narrator role routing is disabled the offline adapter still consumes this prompt pack deterministically.
+- Provide `role_hint` to mirror the role drawer (`Narrator`, `MC`, `Antagonist`, `Extras`) and keep token budgets aligned with `/api/llm/assign`.
+- The resulting narration can be fed into the narrator proposal queue by storing a `$narrator` patch alongside any POV-specific rewrites.
 
 ### Router Hints
 - tags: `["chat","worldbuild","json","long-context"]`

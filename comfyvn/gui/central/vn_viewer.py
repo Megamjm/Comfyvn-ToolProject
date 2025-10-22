@@ -4,13 +4,15 @@ import functools
 import logging
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urljoin
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
 from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -22,7 +24,84 @@ from comfyvn.accessibility.input_map import input_map_manager
 from comfyvn.accessibility.subtitles import SubtitleOverlay
 from comfyvn.gui.services.server_bridge import ServerBridge
 
+try:  # Qt WebEngine optional
+    from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    QWebEngineView = None  # type: ignore
+
 LOGGER = logging.getLogger(__name__)
+
+
+class MiniVNFallbackWidget(QWidget):
+    """Simple textual representation of Mini-VN fallback snapshots."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        self._header = QLabel("Mini-VN fallback preparing…")
+        self._header.setWordWrap(True)
+        layout.addWidget(self._header)
+
+        self._scene_list = QListWidget(self)
+        self._scene_list.setAlternatingRowColors(True)
+        self._scene_list.setSelectionMode(QListWidget.NoSelection)
+        layout.addWidget(self._scene_list, 1)
+
+        self._details = QLabel("")
+        self._details.setWordWrap(True)
+        layout.addWidget(self._details)
+
+        self._digest: Optional[str] = None
+
+    def update_snapshot(self, snapshot: dict[str, Any], base_url: str) -> None:
+        digest = str(snapshot.get("digest") or "")
+        if digest and digest == self._digest:
+            return
+        self._digest = digest
+
+        timeline = snapshot.get("timeline_id") or "timeline"
+        seed = snapshot.get("seed")
+        pov = snapshot.get("pov") or "auto"
+        self._header.setText(f"Mini-VN fallback — {timeline} · seed={seed} · pov={pov}")
+
+        self._scene_list.clear()
+        scenes = snapshot.get("scenes") or []
+        for entry in scenes:
+            if not isinstance(entry, dict):
+                continue
+            order = entry.get("order")
+            scene_id = entry.get("scene_id") or "scene"
+            title = entry.get("title") or ""
+            preview = entry.get("preview_text") or ""
+            prefix = f"{order:02d}" if isinstance(order, int) else "--"
+            text = f"{prefix} · {scene_id}"
+            if title:
+                text += f" — {title}"
+            if preview:
+                text += f" :: {str(preview)[:80]}"
+            self._scene_list.addItem(text)
+
+        thumb_urls: list[str] = []
+        for thumb in snapshot.get("thumbnails") or []:
+            if not isinstance(thumb, dict):
+                continue
+            url = thumb.get("url")
+            if not isinstance(url, str) or not url:
+                continue
+            absolute = urljoin(base_url.rstrip("/") + "/", url.lstrip("/"))
+            thumb_urls.append(absolute)
+
+        if thumb_urls:
+            catalog = "\n".join(thumb_urls[:3])
+            extra = "" if len(thumb_urls) <= 3 else "\n…"
+            self._details.setText(
+                f"Timeline thumbnails cached ({len(thumb_urls)}):\n{catalog}{extra}"
+            )
+        else:
+            self._details.setText("Timeline thumbnails pending…")
 
 
 class VNViewer(QWidget):
@@ -43,6 +122,9 @@ class VNViewer(QWidget):
         self._embedded_window: Optional[QWindow] = None
         self._window_container: Optional[QWidget] = None
         self._current_window_id: Optional[int] = None
+        self._fallback_widget: Optional[QWidget] = None
+        self._web_view: Optional[QWidget] = None
+        self._mini_view: Optional[MiniVNFallbackWidget] = None
         self._build_ui()
 
         self._status_timer = QTimer(self)
@@ -119,6 +201,61 @@ class VNViewer(QWidget):
         layout.addStretch(0)
 
     # ---------------------------------------------------------- Public API --
+    def _show_fallback_widget(self, widget: Optional[QWidget]) -> None:
+        if self._fallback_widget and self._fallback_widget is not widget:
+            self._fallback_widget.hide()
+        if widget:
+            if widget.parent() is not self._embed_frame:
+                widget.setParent(self._embed_frame)
+            if self._embed_layout.indexOf(widget) == -1:
+                self._embed_layout.addWidget(widget, 1)
+            widget.show()
+            self._placeholder.hide()
+            self._fallback_widget = widget
+        else:
+            if self._fallback_widget:
+                self._fallback_widget.hide()
+            self._fallback_widget = None
+            if self._current_window_id is None:
+                self._placeholder.show()
+        self._sync_overlays_geometry()
+
+    def _show_webview(self, data: Optional[dict[str, Any]]) -> None:
+        entry = None
+        if isinstance(data, dict):
+            entry = data.get("entry") or data.get("url")
+        if QWebEngineView is None:
+            if entry:
+                url = urljoin(self.api.base_url.rstrip("/") + "/", entry.lstrip("/"))
+                self._placeholder.setText(
+                    "Ren'Py web fallback active.\nOpen in browser:\n" + url
+                )
+            else:
+                self._placeholder.setText(
+                    "Ren'Py web fallback active, but Qt WebEngine is unavailable."
+                )
+            self._show_fallback_widget(None)
+            return
+
+        if self._web_view is None:
+            self._web_view = QWebEngineView(self._embed_frame)
+            self._web_view.setObjectName("RenPyWebFallbackView")
+        if entry:
+            url = urljoin(self.api.base_url.rstrip("/") + "/", entry.lstrip("/"))
+            if self._web_view.url().toString() != url:
+                self._web_view.setUrl(QUrl(url))
+        self._show_fallback_widget(self._web_view)
+
+    def _show_minivn(self, snapshot: Optional[dict[str, Any]]) -> None:
+        if snapshot is None:
+            self._placeholder.setText("Mini-VN fallback preparing…")
+            self._show_fallback_widget(None)
+            return
+        if self._mini_view is None:
+            self._mini_view = MiniVNFallbackWidget(self._embed_frame)
+        self._mini_view.update_snapshot(snapshot, self.api.base_url)
+        self._show_fallback_widget(self._mini_view)
+
     def set_project(
         self, project_path: Optional[Path], project_id: Optional[str] = None
     ) -> None:
@@ -309,6 +446,7 @@ class VNViewer(QWidget):
     # -------------------------------------------------------------- Status --
     def _update_from_status(self, data: dict[str, Any]) -> None:
         running = bool(data.get("running"))
+        runtime_mode = str(data.get("runtime_mode") or "").lower()
         mode = str(data.get("mode") or "unknown")
         project_id = data.get("project_id") or self._project_id
         if project_id:
@@ -318,7 +456,12 @@ class VNViewer(QWidget):
         if project_id:
             lines.append(f"Project: {project_id}")
         if running:
-            lines.append(f"Status: running ({mode})")
+            if runtime_mode == "webview":
+                lines.append("Status: running (webview fallback)")
+            elif runtime_mode == "mini-vn":
+                lines.append("Status: running (Mini-VN fallback)")
+            else:
+                lines.append(f"Status: running ({mode})")
         else:
             lines.append("Status: idle")
         stub_reason = data.get("stub_reason")
@@ -329,29 +472,48 @@ class VNViewer(QWidget):
         if log_path:
             lines.append(f"Log file: {log_path}")
 
-        window_id = data.get("window_id")
-        if running and isinstance(window_id, int) and window_id > 0:
-            self._attach_window(window_id)
-            lines.append("Viewer embedded in the workspace.")
-        else:
-            self._detach_window()
-            if running:
-                message = (
-                    f"Embedding not available ({embed_fail})."
-                    if embed_fail
-                    else "Viewer running in external window."
-                )
+        if running:
+            if runtime_mode == "webview":
+                self._detach_window()
+                self._show_webview(data.get("webview"))
+                lines.append("Web fallback active.")
+            elif runtime_mode == "mini-vn":
+                self._detach_window()
+                snapshot = data.get("mini_vn")
+                self._show_minivn(snapshot if isinstance(snapshot, dict) else None)
+                mini_digest = data.get("mini_digest")
+                if isinstance(mini_digest, str) and mini_digest:
+                    lines.append(f"Mini-VN digest: {mini_digest[:12]}")
             else:
-                message = (
-                    "Waiting to embed Ren'Py output.\n"
-                    "Start the viewer to preview scenes."
-                )
-            self._placeholder.setText(message)
+                window_id = data.get("window_id")
+                if isinstance(window_id, int) and window_id > 0:
+                    self._attach_window(window_id)
+                    lines.append("Viewer embedded in the workspace.")
+                else:
+                    self._detach_window()
+                    message = (
+                        f"Embedding not available ({embed_fail})."
+                        if embed_fail
+                        else "Viewer running in external window."
+                    )
+                    self._placeholder.setText(message)
+                    self._show_fallback_widget(None)
+        else:
+            self._show_fallback_widget(None)
+            self._detach_window()
+            self._placeholder.setText(
+                "Waiting to embed Ren'Py output.\nStart the viewer to preview scenes."
+            )
 
         self._details_label.setText("\n".join(lines))
 
         if running:
-            self._status_label.setText("visual novel running")
+            status_text = "visual novel running"
+            if runtime_mode == "webview":
+                status_text += " — webview fallback"
+            elif runtime_mode == "mini-vn":
+                status_text += " — Mini-VN fallback"
+            self._status_label.setText(status_text)
             self._start_button.setEnabled(False)
             self._stop_button.setEnabled(True)
         else:
@@ -369,6 +531,7 @@ class VNViewer(QWidget):
         if self._current_window_id == window_id:
             return
         self._detach_window()
+        self._show_fallback_widget(None)
         try:
             window = QWindow.fromWinId(window_id)
         except Exception as exc:  # pragma: no cover - defensive
@@ -396,7 +559,8 @@ class VNViewer(QWidget):
         if self._embedded_window:
             self._embedded_window = None
         self._current_window_id = None
-        self._placeholder.show()
+        if not self._fallback_widget:
+            self._placeholder.show()
         self._sync_overlays_geometry()
 
     # -------------------------------------------------------------- Events --

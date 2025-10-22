@@ -323,6 +323,34 @@ def _build_light_rig(
     return rig
 
 
+def _build_lut(
+    state: Mapping[str, str],
+    time_cfg: Mapping[str, Any],
+    weather_cfg: Mapping[str, Any],
+    ambience_cfg: Mapping[str, Any],
+) -> Dict[str, Any]:
+    intensity = (
+        weather_cfg.get("overlay_intensity", 0.5) * 0.6
+        + ambience_cfg.get("overlay_gain", 0.0) * 0.3
+    )
+    intensity = _clamp(intensity, 0.0, 1.0)
+    tint = (
+        _combine_tints(
+            ambience_cfg.get("tint"),
+            weather_cfg.get("tint"),
+            time_cfg.get("sky_tint"),
+        )
+        or "#ffffff"
+    )
+    lut_id = f"{state['time_of_day']}_{state['weather']}"
+    return {
+        "id": f"lut_{lut_id}",
+        "path": f"luts/{lut_id}.cube",
+        "tint": tint,
+        "intensity": round(intensity, 3),
+    }
+
+
 def _build_overlays(
     state: Mapping[str, str],
     time_cfg: Mapping[str, Any],
@@ -420,11 +448,14 @@ def _build_sfx(
     gain = (
         weather_cfg.get("sfx_gain", -6.0) + ambience_cfg.get("overlay_gain", 0.0) * -4
     )
+    fade_value = round(_clamp(ambience_cfg.get("sfx_fade", 1.5), 0.3, 3.0), 3)
     payload = {
         "loop": weather_cfg.get("sfx"),
         "gain_db": round(_clamp(gain, -18.0, 6.0), 3),
         "tags": [state["weather"], state["ambience"], state["time_of_day"]],
-        "fade": ambience_cfg.get("sfx_fade", 1.5),
+        "fade": fade_value,
+        "fade_in": fade_value,
+        "fade_out": round(_clamp(fade_value * 1.1, 0.4, 3.5), 3),
     }
     if weather_cfg.get("one_shots"):
         payload["one_shots"] = list(weather_cfg["one_shots"])
@@ -460,15 +491,19 @@ def compile_plan(state: Mapping[str, Any] | None) -> Dict[str, Any]:
 
     overlays = _build_overlays(canonical, time_cfg, weather_cfg, ambience_cfg)
     light_rig = _build_light_rig(time_cfg, weather_cfg, ambience_cfg)
+    lut = _build_lut(canonical, time_cfg, weather_cfg, ambience_cfg)
     transition = _build_transition(weather_cfg, ambience_cfg)
     particles = _build_particles(weather_cfg, ambience_cfg, canonical)
     sfx = _build_sfx(weather_cfg, ambience_cfg, canonical)
+    overlays["summary"]["lut"] = lut["path"]
 
     plan = {
         "state": canonical,
         "scene": {
             "background_layers": overlays["layers"],
             "light_rig": light_rig,
+            "lut": lut,
+            "bake_ready": True,
             "summary": overlays["summary"],
         },
         "transition": transition,
@@ -477,6 +512,7 @@ def compile_plan(state: Mapping[str, Any] | None) -> Dict[str, Any]:
         "meta": {
             "hash": _plan_hash(canonical),
             "warnings": warnings,
+            "flags": {"bake_background": True},
         },
     }
     return plan

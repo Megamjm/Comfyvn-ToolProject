@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 from typing import Any, Dict, Iterable, List, Optional
 
 from PySide6.QtCore import Qt, QTimer
@@ -70,6 +71,8 @@ class VNChatPanel(QWidget):
         self._scene_title: Dict[str, str] = {}
         self._scene_dialogue: List[DialogueLine] = []
         self._current_scene_id: Optional[str] = None
+        self._current_node_id: Optional[str] = None
+        self._current_pov: Optional[str] = None
         self._history: List[Dict[str, str]] = []
         self._pending = False
 
@@ -87,11 +90,31 @@ class VNChatPanel(QWidget):
         self.narrator_toggle = QCheckBox("Narrator Mode", self)
         self.narrator_toggle.stateChanged.connect(self._toggle_narrator)
 
+        self.role_selector = QComboBox(self)
+        for role_name in ("Narrator", "MC", "Antagonist", "Extras"):
+            self.role_selector.addItem(role_name)
+
         header = QHBoxLayout()
         header.addWidget(QLabel("Scene:", self))
         header.addWidget(self.scene_selector, 1)
         header.addWidget(self.refresh_button)
         header.addWidget(self.narrator_toggle)
+        header.addWidget(QLabel("Role:", self))
+        header.addWidget(self.role_selector)
+
+        context_header = QHBoxLayout()
+        context_header.addWidget(QLabel("Scene Context", self))
+        context_header.addStretch()
+        self.pov_label = QLabel("POV: —", self)
+        context_header.addWidget(self.pov_label)
+
+        self.context_output = QTextBrowser(self)
+        self.context_output.setObjectName("VNChatContext")
+        self.context_output.setOpenExternalLinks(False)
+        self.context_output.setLineWrapMode(QTextBrowser.WidgetWidth)
+        self.context_output.setPlaceholderText("Recent scene dialogue appears here.")
+        self.context_output.setMaximumHeight(140)
+        self.context_output.setReadOnly(True)
 
         self.output = QTextBrowser(self)
         self.output.setObjectName("VNChatOutput")
@@ -121,10 +144,13 @@ class VNChatPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
         layout.addLayout(header)
+        layout.addLayout(context_header)
+        layout.addWidget(self.context_output)
         layout.addWidget(self.output, 1)
         layout.addLayout(entry_row)
         layout.addWidget(self.status_label)
 
+        self._update_context_preview()
         self._reload_scenes()
 
     # ------------------------------------------------------------------ #
@@ -161,11 +187,16 @@ class VNChatPanel(QWidget):
             self._set_status(f"Loaded {len(scenes)} scene(s) from SceneStore.")
         else:
             self._current_scene_id = None
+            self._current_node_id = None
+            self._current_pov = None
             self._scene_dialogue = []
             self.output.clear()
+            if hasattr(self, "pov_label"):
+                self.pov_label.setText("POV: —")
             self._set_status(
                 "No scenes available. Import from SillyTavern or create a scene."
             )
+            self._update_context_preview()
 
     def _on_scene_selected(self, index: int) -> None:
         if index < 0:
@@ -190,6 +221,12 @@ class VNChatPanel(QWidget):
         title = str(payload.get("title") or scene_id)
         dialogue_raw = payload.get("dialogue") or payload.get("lines") or []
         dialogue = _coerce_dialogue(dialogue_raw)
+        node_id_raw = payload.get("node_id") or payload.get("active_node")
+        self._current_node_id = str(node_id_raw or f"{scene_id}:root")
+        pov_value = str(payload.get("pov") or payload.get("active_pov") or "").strip()
+        self._current_pov = pov_value or None
+        if hasattr(self, "pov_label"):
+            self.pov_label.setText(f"POV: {self._current_pov or '—'}")
 
         self._scene_title[scene_id] = title
         idx = self.scene_selector.findData(scene_id)
@@ -232,12 +269,15 @@ class VNChatPanel(QWidget):
         payload = {
             "message": message,
             "scene_id": self._current_scene_id,
+            "node_id": self._current_node_id or (self._current_scene_id or "node"),
             "history": list(self._history),
             "context": context,
+            "role": self.role_selector.currentText(),
+            "pov": self._current_pov,
         }
 
         self.api.post_json(
-            "/api/llm/chat",
+            "/api/narrator/chat",
             payload,
             timeout=30.0,
             cb=lambda result: QTimer.singleShot(
@@ -256,25 +296,47 @@ class VNChatPanel(QWidget):
             self._set_status("Assistant request failed.")
             return
 
-        payload = result.get("data") or {}
-        reply = str(payload.get("reply") or "").strip()
-        provider = payload.get("provider")
-        model = payload.get("model")
-        meta_bits = []
-        if provider:
-            meta_bits.append(str(provider))
+        state = result.get("state") or result.get("data") or {}
+        if not isinstance(state, dict):
+            self._append_system("[error] Invalid chat payload.")
+            self._set_status("Assistant reply missing.")
+            return
+
+        last_chat = state.get("last_chat") or {}
+        reply = str(last_chat.get("reply") or "").strip()
+        adapter = last_chat.get("adapter")
+        model = last_chat.get("model")
+        tokens = last_chat.get("tokens")
+
+        node_id = state.get("node_id")
+        if isinstance(node_id, str):
+            self._current_node_id = node_id
+        pov_value = state.get("pov")
+        if isinstance(pov_value, str):
+            self._current_pov = pov_value or None
+            if hasattr(self, "pov_label"):
+                self.pov_label.setText(f"POV: {self._current_pov or '—'}")
+
+        meta_bits: List[str] = []
+        if adapter:
+            meta_bits.append(str(adapter))
         if model:
             meta_bits.append(str(model))
+        if tokens is not None:
+            meta_bits.append(f"{tokens} tok")
+
         if reply:
-            label = "Assistant"
+            label = self.role_selector.currentText() or "Narrator"
             if meta_bits:
                 label += f" ({', '.join(meta_bits)})"
             self._append_chat_turn(label, reply)
             self._history.append({"role": "assistant", "content": reply})
-            self._set_status("Assistant reply received.")
+            status_meta = " • ".join(meta_bits) if meta_bits else "offline"
+            self._set_status(f"Narrator reply received ({status_meta}).")
         else:
-            self._append_system("[notice] No reply from provider.")
+            self._append_system("[notice] No reply from narrator adapter.")
             self._set_status("No response content received.")
+        self._update_context_preview()
 
     # ------------------------------------------------------------------ #
     # Narrator mode                                                      #
@@ -309,6 +371,7 @@ class VNChatPanel(QWidget):
         line = self._scene_dialogue[self._narrator_index]
         self._narrator_index += 1
         self._append_scene_line(line, prefix="[live]")
+        self._update_context_preview()
 
     def _reset_narrator(self) -> None:
         self._narrator_timer.stop()
@@ -316,22 +379,40 @@ class VNChatPanel(QWidget):
         self.narrator_toggle.blockSignals(True)
         self.narrator_toggle.setChecked(False)
         self.narrator_toggle.blockSignals(False)
+        self._update_context_preview()
+
+    def _update_context_preview(self) -> None:
+        if not hasattr(self, "context_output"):
+            return
+        if not self._scene_dialogue:
+            self.context_output.setHtml("<i>No scene context loaded.</i>")
+            return
+        sample = self._scene_dialogue[-6:]
+        rows = [
+            f"<b>{escape(line.speaker)}:</b> {escape(line.text)}" for line in sample
+        ]
+        self.context_output.setHtml("<br/>".join(rows))
 
     # ------------------------------------------------------------------ #
     # Formatting helpers                                                 #
     # ------------------------------------------------------------------ #
     def _append_scene_line(self, line: DialogueLine, prefix: str | None = None) -> None:
         tag = f"{prefix} " if prefix else ""
-        self.output.append(f"{tag}<b>{line.speaker}:</b> {line.text}")
+        text_html = escape(line.text).replace("\n", "<br/>")
+        speaker_html = escape(line.speaker)
+        self.output.append(f"{tag}<b>{speaker_html}:</b> {text_html}")
 
     def _append_chat_turn(self, speaker: str, text: str) -> None:
         safe_speaker = speaker or "Assistant"
+        speaker_html = escape(safe_speaker)
+        text_html = escape(text).replace("\n", "<br/>")
         self.output.append(
-            f"<span style='color:#3b82f6'><b>{safe_speaker}:</b></span> {text}"
+            f"<span style='color:#3b82f6'><b>{speaker_html}:</b></span> {text_html}"
         )
 
     def _append_system(self, text: str) -> None:
-        self.output.append(f"<span style='color:#6b7280'><i>{text}</i></span>")
+        text_html = escape(text).replace("\n", "<br/>")
+        self.output.append(f"<span style='color:#6b7280'><i>{text_html}</i></span>")
 
     def _set_pending(self, pending: bool) -> None:
         self._pending = pending

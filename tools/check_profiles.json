@@ -1,0 +1,280 @@
+{
+  "p1_worldlines": {
+    "flags": [
+      {"key": "enable_worldlines", "expect": false, "required": true},
+      {"key": "enable_timeline_overlay", "expect": false, "required": true},
+      {"key": "enable_depth2d", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/pov/worlds", "method": "GET", "required": true},
+      {"path": "/api/pov/confirm_switch", "method": "POST", "required": false},
+      {"path": "/api/pov/auto_bio_suggest", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/pov/worldlines.py", "required": true},
+      {"path": "comfyvn/gui/overlay/timeline_overlay.py", "required": true},
+      {"path": "comfyvn/visual/depth2d.py", "required": true},
+      {"path": "docs/POV_DESIGN.md", "required": true},
+      {"path": "docs/TIMELINE_OVERLAY.md", "required": true}
+    ]
+  },
+  "p1_extractors": {
+    "flags": [
+      {"key": "enable_extractors", "expect": false, "required": false}
+    ],
+    "routes": [],
+    "files": [
+      {"path": "tools/install_third_party.py", "required": true},
+      {"path": "tools/vn_extract.py", "required": true},
+      {"path": "docs/EXTRACTORS.md", "required": true},
+      {"path": "third_party", "required": false}
+    ]
+  },
+  "p1_flat2layers": {
+    "flags": [
+      {"key": "enable_flat2layers", "expect": false, "required": false}
+    ],
+    "routes": [],
+    "files": [
+      {"path": "comfyvn/pipelines/flat2layers.py", "required": true},
+      {"path": "tools/depth_planes.py", "required": true},
+      {"path": "docs/FLAT_TO_LAYERS.md", "required": true}
+    ]
+  },
+  "p1_props": {
+    "flags": [
+      {"key": "enable_props", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/props/ensure", "method": "POST", "required": true},
+      {"path": "/api/props/apply", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/props/manager.py", "required": true},
+      {"path": "comfyvn/server/routes/props.py", "required": true},
+      {"path": "docs/PROPS_SPEC.md", "required": true}
+    ]
+  },
+  "p1_theme_swap": {
+    "flags": [
+      {"key": "enable_themes", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/themes/preview", "method": "POST", "required": true},
+      {"path": "/api/themes/apply", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/themes/templates.py", "required": true},
+      {"path": "comfyvn/server/routes/themes.py", "required": true},
+      {"path": "docs/THEME_KITS.md", "required": true},
+      {"path": "docs/THEME_SWAP_WIZARD.md", "required": true},
+      {"path": "docs/STYLE_TAGS_REGISTRY.md", "required": true}
+    ]
+  },
+  "p2_narrator": {
+    "flags": [
+      {"key": "enable_narrator", "expect": false, "required": true},
+      {"key": "enable_llm_role_mapping", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/narrator/mode", "method": "GET", "required": true},
+      {"path": "/api/narrator/propose", "method": "POST", "required": true},
+      {"path": "/api/narrator/stop", "method": "POST", "required": true},
+      {"path": "/api/narrator/rollback?n=1", "method": "POST", "required": false},
+      {"path": "/api/llm/roles", "method": "GET", "required": false},
+      {"path": "/api/llm/assign", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/server/routes/narrator.py", "required": true},
+      {"path": "comfyvn/llm/orchestrator.py", "required": true},
+      {"path": "comfyvn/gui/central/chat_panel.py", "required": true},
+      {"path": "docs/NARRATOR_SPEC.md", "required": true},
+      {"path": "docs/LLM_ORCHESTRATION.md", "required": true},
+      {"path": "docs/PROMPT_PACKS/NARRATOR_MODE.md", "required": true},
+      {"path": "docs/PROMPT_PACKS/POV_REWRITE.md", "required": true}
+    ]
+  },
+
+  "p2_battle": {
+    "flags": [
+      {"key": "enable_battle_sim", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/battle/resolve", "method": "POST", "required": true},
+      {"path": "/api/battle/sim", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/battle/engine.py", "required": true},
+      {"path": "comfyvn/server/routes/battle.py", "required": true},
+      {"path": "docs/BATTLE_DESIGN.md", "required": true},
+      {"path": "docs/PROMPT_PACKS/BATTLE_NARRATION.md", "required": true}
+    ]
+  },
+
+  "p2_stage3d": {
+    "flags": [
+      {"key": "enable_playground", "expect": false, "required": true},
+      {"key": "enable_stage3d", "expect": false, "required": true}
+    ],
+    "routes": [],
+    "files": [
+      {"path": "comfyvn/playground/parallax.py", "required": true},
+      {"path": "comfyvn/playground/stage3d/viewport.html", "required": true},
+      {"path": "comfyvn/playground/stage3d/bridge.py", "required": true},
+      {"path": "comfyvn/gui/central/playground_view.py", "required": true},
+      {"path": "docs/PLAYGROUND.md", "required": true},
+      {"path": "docs/3D_ASSETS.md", "required": true}
+    ]
+  },
+
+  "p2_viewer_export": {
+    "flags": [
+      {"key": "enable_viewer_webmode", "expect": false, "required": false},
+      {"key": "enable_mini_vn", "expect": true, "required": false},
+      {"key": "enable_export_bake", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/viewer/start", "method": "POST", "required": true},
+      {"path": "/api/viewer/status", "method": "GET", "required": true},
+      {"path": "/api/viewer/stop", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/gui/central/vn_viewer.py", "required": true},
+      {"path": "comfyvn/viewer/minivn/player.py", "required": true},
+      {"path": "comfyvn/viewer/minivn/thumbnailer.py", "required": true},
+      {"path": "comfyvn/server/routes/viewer.py", "required": true},
+      {"path": "scripts/export_renpy.py", "required": true},
+      {"path": "docs/EXPORT_RENPY.md", "required": true}
+    ]
+  },
+
+  "p2_golden": {
+    "flags": [],
+    "routes": [
+      {"path": "/api/playtest/run", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/qa/playtest/headless_runner.py", "required": true},
+      {"path": "comfyvn/qa/playtest/golden_diff.py", "required": true},
+      {"path": "docs/GOLDEN_TESTS.md", "required": true}
+    ]
+  }
+}
+{
+  "p3_dungeon": {
+    "flags": [
+      {"key": "enable_dungeon_api", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/dungeon/enter", "method": "POST", "required": true},
+      {"path": "/api/dungeon/step", "method": "POST", "required": true},
+      {"path": "/api/dungeon/encounter_start", "method": "POST", "required": false},
+      {"path": "/api/dungeon/resolve", "method": "POST", "required": true},
+      {"path": "/api/dungeon/leave", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/dungeon/api.py", "required": true},
+      {"path": "comfyvn/dungeon/backends/grid.py", "required": true},
+      {"path": "comfyvn/dungeon/backends/doomlite.py", "required": true},
+      {"path": "comfyvn/server/routes/dungeon.py", "required": true},
+      {"path": "docs/DUNGEON_API.md", "required": true}
+    ]
+  },
+
+  "p3_providers_gpu_image_video": {
+    "flags": [
+      {"key": "enable_public_gpu", "expect": false, "required": true},
+      {"key": "enable_public_image_video", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/providers/gpu/health", "method": "GET", "required": true},
+      {"path": "/api/providers/gpu/submit", "method": "POST", "required": false},
+      {"path": "/api/providers/image/health", "method": "GET", "required": true},
+      {"path": "/api/providers/video/health", "method": "GET", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/public_providers/gpu_runpod.py", "required": true},
+      {"path": "comfyvn/public_providers/gpu_hf_endpoints.py", "required": true},
+      {"path": "comfyvn/public_providers/gpu_replicate.py", "required": true},
+      {"path": "comfyvn/public_providers/gpu_modal.py", "required": true},
+      {"path": "comfyvn/public_providers/image_stability.py", "required": true},
+      {"path": "comfyvn/public_providers/image_fal.py", "required": true},
+      {"path": "comfyvn/public_providers/video_runway.py", "required": true},
+      {"path": "comfyvn/public_providers/video_pika.py", "required": true},
+      {"path": "comfyvn/public_providers/video_luma.py", "required": true},
+      {"path": "comfyvn/server/routes/providers_gpu.py", "required": true},
+      {"path": "comfyvn/server/routes/providers_image_video.py", "required": true},
+      {"path": "docs/PROVIDERS_GPU_IMAGE_VIDEO.md", "required": true}
+    ]
+  },
+
+  "p3_providers_lang_speech_llm": {
+    "flags": [
+      {"key": "enable_public_translate", "expect": false, "required": true},
+      {"key": "enable_public_llm", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/providers/translate/health", "method": "GET", "required": true},
+      {"path": "/api/providers/ocr/health", "method": "GET", "required": false},
+      {"path": "/api/providers/speech/health", "method": "GET", "required": false},
+      {"path": "/api/providers/llm/registry", "method": "GET", "required": true},
+      {"path": "/api/providers/llm/chat", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/public_providers/translate_google.py", "required": true},
+      {"path": "comfyvn/public_providers/translate_deepl.py", "required": true},
+      {"path": "comfyvn/public_providers/translate_aws.py", "required": true},
+      {"path": "comfyvn/public_providers/ocr_google_vision.py", "required": true},
+      {"path": "comfyvn/public_providers/ocr_aws_rekognition.py", "required": true},
+      {"path": "comfyvn/public_providers/speech_deepgram.py", "required": true},
+      {"path": "comfyvn/public_providers/speech_assemblyai.py", "required": true},
+      {"path": "comfyvn/public_providers/llm_openai.py", "required": true},
+      {"path": "comfyvn/public_providers/llm_anthropic.py", "required": true},
+      {"path": "comfyvn/public_providers/llm_gemini.py", "required": true},
+      {"path": "comfyvn/public_providers/llm_openrouter.py", "required": true},
+      {"path": "comfyvn/server/routes/providers_translate_ocr_speech.py", "required": true},
+      {"path": "comfyvn/server/routes/providers_llm.py", "required": true},
+      {"path": "docs/PROVIDERS_LANG_SPEECH_LLM.md", "required": true},
+      {"path": "docs/LLM_RECOMMENDATIONS.md", "required": true}
+    ]
+  },
+
+  "p3_remote_installer": {
+    "flags": [
+      {"key": "enable_remote_installer", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/remote/install", "method": "POST", "required": true},
+      {"path": "/api/remote/status", "method": "GET", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/remote/installer.py", "required": true},
+      {"path": "comfyvn/server/routes/remote_orchestrator.py", "required": true},
+      {"path": "comfyvn/security/secrets_store.py", "required": true},
+      {"path": "docs/REMOTE_INSTALLER.md", "required": true},
+      {"path": "docs/SECURITY_SECRETS.md", "required": true}
+    ]
+  },
+
+  "p3_ops_obs_perf": {
+    "flags": [
+      {"key": "enable_observability", "expect": false, "required": true},
+      {"key": "enable_perf", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/telemetry/opt_in", "method": "POST", "required": false},
+      {"path": "/api/telemetry/health", "method": "GET", "required": true},
+      {"path": "/api/perf/budgets", "method": "GET", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/obs/telemetry.py", "required": true},
+      {"path": "comfyvn/obs/anonymize.py", "required": true},
+      {"path": "comfyvn/perf/budgets.py", "required": true},
+      {"path": "comfyvn/perf/profiler.py", "required": true},
+      {"path": "comfyvn/server/routes/telemetry.py", "required": true},
+      {"path": "comfyvn/server/routes/perf.py", "required": true},
+      {"path": "docs/OBS_TELEMETRY.md", "required": true},
+      {"path": "docs/PERF_BUDGETS.md", "required": true}
+    ]
+  }
+}

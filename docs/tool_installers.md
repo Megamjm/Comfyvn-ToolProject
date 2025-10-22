@@ -1,5 +1,9 @@
 # External Import Tool Installers
 
+> **Note:** The legacy REST/GUI installer flow described below has been
+> superseded by the CLI utilities documented in `docs/EXTRACTORS.md`.
+> Keep this file for historical context until the GUI wiring is refreshed.
+
 _ComfyVN does not ship third-party extraction tools.  Use this checklist to install
 optional helpers when you own the content you are importing._
 

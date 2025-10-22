@@ -50,13 +50,9 @@ def _ensure_mapping(value: Any, *, field: str) -> MutableMapping[str, Any]:
 
 
 def _ensure_enabled() -> None:
-    if feature_flags.is_enabled("enable_weather", default=True):
+    if feature_flags.is_enabled("enable_weather_overlays", default=False):
         return
-    if feature_flags.is_enabled(
-        "enable_weather_planner", default=True
-    ):  # legacy flag name
-        return
-    raise HTTPException(status_code=403, detail="enable_weather disabled")
+    raise HTTPException(status_code=403, detail="enable_weather_overlays disabled")
 
 
 @router.get("/state", response_model=WeatherPlanResponse)
@@ -97,10 +93,11 @@ async def update_weather_state(payload: WeatherStateRequest) -> WeatherPlanRespo
                 "exposure_shift": response.transition.get("exposure_shift"),
             },
             "weather_particles": (response.particles or {}).get("type"),
+            "weather_lut": (response.scene.get("lut") or {}).get("path"),
         },
     )
     modder_hooks.emit(
-        "on_weather_plan",
+        "on_weather_changed",
         {
             "state": response.state,
             "summary": response.scene.get("summary", {}),
@@ -110,7 +107,12 @@ async def update_weather_state(payload: WeatherStateRequest) -> WeatherPlanRespo
                 "loop": response.sfx.get("loop"),
                 "gain_db": response.sfx.get("gain_db"),
                 "tags": response.sfx.get("tags"),
+                "fade_in": response.sfx.get("fade_in"),
+                "fade_out": response.sfx.get("fade_out"),
             },
+            "lut": response.scene.get("lut"),
+            "bake_ready": response.scene.get("bake_ready", False),
+            "flags": response.meta.get("flags", {}),
             "meta": response.meta,
             "trigger": (
                 "api.weather.state.post" if merged_payload else "api.weather.state.get"

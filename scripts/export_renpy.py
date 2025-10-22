@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import logging
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -15,15 +18,68 @@ if str(REPO_ROOT) not in sys.path:
 
 from fastapi import HTTPException
 
+from comfyvn.config import feature_flags
+from comfyvn.core import modder_hooks
+from comfyvn.core.modder_hooks import HookSpec
 from comfyvn.exporters.renpy_orchestrator import (
     DiffEntry,
     ExportOptions,
     PublishOptions,
     RenPyOrchestrator,
 )
+from comfyvn.server.modules import export_api
 
 DEFAULT_PUBLISH_PATH = Path("build/renpy_publish.zip")
 DEFAULT_PLATFORMS = ("windows", "linux", "mac")
+
+LOGGER = logging.getLogger("comfyvn.scripts.export_renpy")
+
+EXPORT_HOOK_SPECS = {
+    "on_export_started": HookSpec(
+        name="on_export_started",
+        description="Emitted immediately before the Ren'Py export orchestrator runs.",
+        payload_fields={
+            "project": "Project identifier supplied to the export CLI.",
+            "timeline": "Timeline override supplied on the CLI (if any).",
+            "world": "World/worldline override supplied on the CLI (if any).",
+            "options": "Dictionary of export options about to be applied (pov_mode, weather_bake, dry_run).",
+            "timestamp": "Event emission timestamp (UTC seconds).",
+        },
+        ws_topic="export.renpy.started",
+        rest_event="on_export_started",
+    ),
+    "on_export_completed": HookSpec(
+        name="on_export_completed",
+        description="Published when the Ren'Py export orchestrator finishes (success or error).",
+        payload_fields={
+            "project": "Resolved project identifier for the export run.",
+            "timeline": "Resolved timeline identifier or override used for export.",
+            "ok": "Boolean flag indicating whether the export completed successfully.",
+            "output_dir": "Output directory path for generated files (if available).",
+            "weather_bake": "Boolean flag noting whether weather/lighting baking was requested.",
+            "label_manifest": "Path to the generated label manifest or inline payload during dry runs.",
+            "provenance_bundle": "Path to the zipped provenance bundle (None during dry runs or failures).",
+            "provenance_json": "Path to the flattened provenance.json written alongside the export (if created).",
+            "provenance_findings": "Advisory findings payload emitted during provenance generation (if available).",
+            "provenance_error": "Error message when provenance bundle generation fails.",
+            "timestamp": "Event emission timestamp (UTC seconds).",
+            "error": "Error message when ok is false.",
+        },
+        ws_topic="export.renpy.completed",
+        rest_event="on_export_completed",
+    ),
+}
+
+
+def _ensure_export_hooks() -> None:
+    for spec in EXPORT_HOOK_SPECS.values():
+        if spec.name in modder_hooks.HOOK_SPECS:
+            continue
+        modder_hooks.HOOK_SPECS[spec.name] = spec
+        bus = getattr(modder_hooks, "_BUS", None)
+        if bus and getattr(bus, "_listeners", None) is not None:
+            with bus._lock:  # type: ignore[attr-defined]
+                bus._listeners.setdefault(spec.name, [])  # type: ignore[attr-defined]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -127,6 +183,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Confirm the operator acknowledged the rating warning (requires --rating-ack-token).",
     )
+    parser.add_argument(
+        "--bake-weather",
+        action="store_true",
+        help="Bake deterministic weather and lighting tracks into the exported label manifest.",
+    )
     return parser.parse_args()
 
 
@@ -154,6 +215,115 @@ def _publish_path(args: argparse.Namespace, project: str, timeline: str) -> Path
     return candidate
 
 
+def _is_battle_scene(scene_id: str, label: str) -> bool:
+    token = f"{scene_id} {label}".lower()
+    return "battle" in token
+
+
+def _build_label_manifest(export_result: Any, *, weather_bake: bool) -> Dict[str, Any]:
+    manifest: Dict[str, Any] = {
+        "project": export_result.project_id,
+        "timeline": export_result.timeline_id,
+        "generated_at": export_result.generated_at,
+        "weather_bake": weather_bake,
+        "pov_labels": [],
+        "battle_labels": [],
+    }
+    for entry in export_result.label_map or []:
+        if not isinstance(entry, dict):
+            continue
+        scene_id = entry.get("scene_id")
+        label = entry.get("label")
+        if not scene_id or not label:
+            continue
+        manifest["pov_labels"].append(
+            {
+                "scene_id": scene_id,
+                "label": label,
+                "pov_ids": list(entry.get("pov_ids") or []),
+                "pov_names": entry.get("povs") or {},
+            }
+        )
+        if _is_battle_scene(str(scene_id), str(label)):
+            digest = hashlib.sha1(f"{scene_id}:{label}".encode("utf-8")).hexdigest()
+            manifest["battle_labels"].append(
+                {
+                    "scene_id": scene_id,
+                    "label": label,
+                    "hash": digest[:12],
+                }
+            )
+    return manifest
+
+
+def _write_label_manifest(output_dir: Path, manifest: Dict[str, Any]) -> Path:
+    path = output_dir / "label_manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _collect_scene_payloads(
+    project_id: str, scene_ids: Iterable[str]
+) -> Tuple[Dict[str, Any], Dict[str, Path]]:
+    scenes: Dict[str, Any] = {}
+    scene_sources: Dict[str, Path] = {}
+    for scene_id in scene_ids:
+        if not scene_id:
+            continue
+        try:
+            scene, scene_path = export_api._load_scene(scene_id, project_id)
+        except HTTPException:
+            LOGGER.debug(
+                "Skipping missing scene during provenance build: %s",
+                scene_id,
+                exc_info=True,
+            )
+            continue
+        if scene:
+            scenes[scene_id] = scene
+        if scene_path:
+            scene_sources[scene_id] = scene_path
+    return scenes, scene_sources
+
+
+def _generate_provenance_bundle(
+    export_result: Any,
+    timeline_id: str,
+    project_data: dict,
+    timeline_data: dict,
+    timeline_path: Path,
+) -> Tuple[Path, Path, Dict[str, Any]]:
+    scene_ids = export_api._scene_ids_from_timeline(timeline_data, project_data)
+    scenes, scene_sources = _collect_scene_payloads(export_result.project_id, scene_ids)
+    renpy_info = {
+        "generated_at": export_result.generated_at,
+        "renpy_root": export_result.output_dir,
+        "script_path": export_result.script_path,
+        "labels": export_result.label_map,
+        "scenes": scenes,
+        "scene_sources": scene_sources,
+    }
+    bundle_target = export_result.output_dir / "provenance_bundle.zip"
+    bundle_path, provenance, enforcement = export_api._build_bundle_archive(
+        project_id=export_result.project_id,
+        project_data=project_data,
+        timeline_id=timeline_id,
+        timeline_data=timeline_data,
+        timeline_path=timeline_path,
+        renpy_info=renpy_info,
+        bundle_path=bundle_target,
+    )
+    provenance_path = export_result.output_dir / "provenance.json"
+    provenance_path.write_text(
+        json.dumps(provenance, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    enforcement_payload = (
+        enforcement.to_dict() if hasattr(enforcement, "to_dict") else {}
+    )
+    return bundle_path, provenance_path, enforcement_payload
+
+
 def _error_payload(exc: HTTPException) -> Dict[str, Any]:
     detail = exc.detail
     if isinstance(detail, dict):
@@ -169,6 +339,12 @@ def _error_payload(exc: HTTPException) -> Dict[str, Any]:
 
 def main() -> int:
     args = _parse_args()
+    _ensure_export_hooks()
+    if not args.bake_weather:
+        args.bake_weather = feature_flags.is_enabled(
+            "enable_export_bake", default=False
+        )
+
     orchestrator = RenPyOrchestrator()
     options = ExportOptions(
         project_id=args.project,
@@ -186,12 +362,52 @@ def main() -> int:
         rating_ack_token=args.rating_ack_token,
     )
 
+    start_payload = {
+        "project": args.project,
+        "timeline": args.timeline,
+        "world": args.world,
+        "options": {
+            "pov_mode": args.pov_mode,
+            "dry_run": bool(args.dry_run),
+            "bake_weather": bool(args.bake_weather),
+        },
+        "timestamp": time.time(),
+    }
+    try:
+        modder_hooks.emit("on_export_started", start_payload)
+    except Exception:
+        pass
+
     try:
         export_result = orchestrator.export(options)
     except HTTPException as exc:
         payload = _error_payload(exc)
+        try:
+            modder_hooks.emit(
+                "on_export_completed",
+                {
+                    "project": args.project,
+                    "timeline": args.timeline,
+                    "ok": False,
+                    "error": payload.get("error"),
+                    "output_dir": str(options.output_dir),
+                    "weather_bake": bool(args.bake_weather),
+                    "label_manifest": None,
+                    "provenance_bundle": None,
+                    "provenance_json": None,
+                    "provenance_findings": None,
+                    "provenance_error": payload.get("error"),
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception:
+            pass
         print(json.dumps(payload, indent=2), file=sys.stderr)
         return exc.status_code or 1
+
+    label_manifest = _build_label_manifest(
+        export_result, weather_bake=bool(args.bake_weather)
+    )
 
     if export_result.dry_run:
         payload = {
@@ -206,9 +422,68 @@ def main() -> int:
             "rating_gate": export_result.rating_gate,
             "rating": export_result.manifest_payload.get("rating"),
             "worlds": export_result.world_selection,
+            "label_manifest": label_manifest,
+            "weather_bake": bool(args.bake_weather),
+            "provenance_bundle": None,
+            "provenance_json": None,
+            "provenance_findings": None,
+            "provenance_error": None,
         }
         print(json.dumps(payload, indent=2))
+        try:
+            modder_hooks.emit(
+                "on_export_completed",
+                {
+                    "project": export_result.project_id,
+                    "timeline": export_result.timeline_id,
+                    "ok": True,
+                    "dry_run": True,
+                    "output_dir": export_result.output_dir.as_posix(),
+                    "weather_bake": bool(args.bake_weather),
+                    "label_manifest": label_manifest,
+                    "provenance_bundle": None,
+                    "provenance_json": None,
+                    "provenance_findings": None,
+                    "provenance_error": None,
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception:
+            pass
         return 0
+
+    label_manifest_path = _write_label_manifest(
+        export_result.output_dir, label_manifest
+    )
+
+    provenance_bundle_path: Optional[Path] = None
+    provenance_json_path: Optional[Path] = None
+    provenance_enforcement: Optional[Dict[str, Any]] = None
+    provenance_error: Optional[str] = None
+    try:
+        project_data, _ = export_api._load_project(export_result.project_id)
+        timeline_data, timeline_path, resolved_timeline = (
+            export_api._ensure_timeline_payload(
+                export_result.timeline_id,
+                export_result.project_id,
+                project_data,
+            )
+        )
+        bundle_path, prov_path, enforcement_payload = _generate_provenance_bundle(
+            export_result,
+            resolved_timeline,
+            project_data,
+            timeline_data,
+            timeline_path,
+        )
+        provenance_bundle_path = bundle_path
+        provenance_json_path = prov_path
+        provenance_enforcement = enforcement_payload
+    except HTTPException as exc:
+        provenance_error = _error_payload(exc).get("error")
+    except Exception as exc:  # pragma: no cover - defensive logging
+        provenance_error = str(exc)
+        LOGGER.debug("Provenance bundle generation failed", exc_info=True)
 
     summary: Dict[str, Any] = {
         "ok": True,
@@ -229,6 +504,27 @@ def main() -> int:
         "gate": export_result.gate,
         "rating_gate": export_result.rating_gate,
         "rating": export_result.manifest_payload.get("rating"),
+        "label_manifest": label_manifest_path.as_posix(),
+        "weather_bake": bool(args.bake_weather),
+        "provenance_bundle": (
+            provenance_bundle_path.as_posix() if provenance_bundle_path else None
+        ),
+        "provenance_json": (
+            provenance_json_path.as_posix() if provenance_json_path else None
+        ),
+        "provenance_findings": (
+            provenance_enforcement.get("findings")
+            if isinstance(provenance_enforcement, dict)
+            else None
+        ),
+        "provenance_error": provenance_error,
+    }
+    summary["provenance"] = {
+        "bundle": summary.get("provenance_bundle"),
+        "json": summary.get("provenance_json"),
+        "findings": summary.get("provenance_findings"),
+        "error": summary.get("provenance_error"),
+        "enforcement": provenance_enforcement,
     }
 
     if export_result.pov_routes:
@@ -284,6 +580,26 @@ def main() -> int:
         except HTTPException as exc:
             payload = _error_payload(exc)
             payload["phase"] = "publish"
+            try:
+                modder_hooks.emit(
+                    "on_export_completed",
+                    {
+                        "project": export_result.project_id,
+                        "timeline": export_result.timeline_id,
+                        "ok": False,
+                        "error": payload.get("error"),
+                        "output_dir": export_result.output_dir.as_posix(),
+                        "weather_bake": bool(args.bake_weather),
+                        "label_manifest": label_manifest_path.as_posix(),
+                        "provenance_bundle": summary.get("provenance_bundle"),
+                        "provenance_json": summary.get("provenance_json"),
+                        "provenance_findings": summary.get("provenance_findings"),
+                        "provenance_error": summary.get("provenance_error"),
+                        "timestamp": time.time(),
+                    },
+                )
+            except Exception:
+                pass
             print(json.dumps(payload, indent=2), file=sys.stderr)
             return exc.status_code or 1
         summary["publish"] = {
@@ -312,6 +628,25 @@ def main() -> int:
             ]
 
     print(json.dumps(summary, indent=2))
+    try:
+        modder_hooks.emit(
+            "on_export_completed",
+            {
+                "project": export_result.project_id,
+                "timeline": export_result.timeline_id,
+                "ok": True,
+                "output_dir": export_result.output_dir.as_posix(),
+                "weather_bake": bool(args.bake_weather),
+                "label_manifest": label_manifest_path.as_posix(),
+                "provenance_bundle": summary.get("provenance_bundle"),
+                "provenance_json": summary.get("provenance_json"),
+                "provenance_findings": summary.get("provenance_findings"),
+                "provenance_error": summary.get("provenance_error"),
+                "timestamp": time.time(),
+            },
+        )
+    except Exception:
+        pass
     return 0
 
 

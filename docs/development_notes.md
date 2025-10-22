@@ -8,7 +8,32 @@ Runtime Debugging
 - `COMFYVN_LOG_LEVEL=DEBUG` — elevates backend verbosity (server & CLI) so FastAPI routes and managers emit granular traces.
 - `COMFYVN_RUNTIME_ROOT=/tmp/comfyvn-runtime` — redirects the runtime `data/`, `config/`, `cache/`, and `logs/` folders for sandboxing.
 - Asset registry emits detailed provenance and sidecar logs when running at DEBUG level; combine with `COMFYVN_LOG_LEVEL=DEBUG` for full traces.
+- Flat → Layers pipeline: enable `features.enable_flat2layers`, then watch hooks from `comfyvn.pipelines.flat2layers.FlatToLayersPipeline` (`on_mask_ready`, `on_plane_exported`, `on_debug`). Pair with `tools/depth_planes.py` for threshold tuning and the Playground SAM channel (`flat2layers.sam`) to record brush edits.
 - Performance budgets & profiler: enable `features.enable_perf_budgets`/`features.enable_perf_profiler_dashboard` for local testing, then call `feature_flags.refresh_cache()` in long-running processes. REST helpers live under `/api/perf/*`; see `docs/development/perf_budgets_profiler.md` for curl examples, lazy asset eviction hooks, and the `on_perf_budget_state`/`on_perf_profiler_snapshot` modder envelopes.
+- Integration guardrail: run `python tools/doctor_phase8.py --pretty` after touching router wiring, feature defaults, or modder hook specs. The doctor instantiates `create_app()` headless, asserts key debug surfaces (`/api/weather/state`, `/api/props/*`, `/api/battle/*`, `/api/modder/hooks`, `/api/viewer/mini/*`, `/api/narrator/status`, `/api/pov/confirm_switch`), checks for duplicate routes, validates the hook catalogue, and confirms feature defaults (Mini-VN/web viewer ON, external providers OFF, compute ON). CI should fail fast if the script reports `"pass": false`.
+
+Narrator Outliner & Role Mapping
+--------------------------------
+- Feature flags: `features.enable_narrator` and `features.enable_llm_role_mapping` default to `false` in both `comfyvn/config/feature_flags.py` and `config/comfyvn.json`. Pass `"force": true` when issuing local curl drills, but keep production tooling flag-aware.
+- REST rails (`comfyvn/server/routes/narrator.py`): `/api/narrator/{status,mode,propose,apply,stop,rollback,chat}` implement Observe → Propose → Apply with a deterministic proposal queue, three-turn per-node cap, and rollback ring buffer. Only `/api/narrator/apply` mutates variables; proposals queue `{vars_patch, rationale, choice_id}` for approval. Hook specs `on_narrator_proposal` and `on_narrator_apply` live in `comfyvn/core/modder_hooks.py`.
+- Role orchestrator (`comfyvn/llm/orchestrator.py`): `/api/llm/{roles,assign,health}` expose offline-first role→adapter planning with sticky sessions, token budgets, and dry-run previews for Narrator/MC/Antagonist/Extras. When no adapter is armed the offline adapter (`offline.local`, model `codex/offline-narrator`) handles replies so tests remain network-free.
+- VN Chat binding: `comfyvn/gui/central/chat_panel.py` sends prompts through `/api/narrator/chat`, surfaces adapter/model/tokens metadata per turn, and honours the role drawer. Offline replies reuse the planning digest so dashboards can correlate queue entries with chat previews.
+- CI/automation: `python tools/check_current_system.py --profile p2_narrator --base http://127.0.0.1:8001` verifies flags, routes, and doc presence. Failures flip `"pass": false` to stop regressions early.
+```bash
+curl -s -X POST http://127.0.0.1:8001/api/narrator/propose \
+  -H 'Content-Type: application/json' \
+  -d '{"scene_id":"demo","node_id":"demo.root","message":"Check-in on the player.","force":true}' | jq '.state.queue'
+
+curl -s http://127.0.0.1:8001/api/narrator/status?scene_id=demo | jq '.state.turn_counts'
+```
+
+Viewer & Export Updates
+-----------------------
+- Fallback order: native embed → web (`/api/viewer/web/{token}/{path}`) → Mini-VN (`/api/viewer/mini/{snapshot,refresh,thumbnail}`). Feature flags `enable_viewer_webmode` and `enable_mini_vn` gate the behaviour.
+- Mini-VN snapshot payloads surface `mini_digest` and thumbnail URLs; automation can call `/api/viewer/mini/refresh` with a deterministic seed to rebuild caches.
+- Modder hook `on_thumbnail_captured` fires when thumbnails refresh.
+- `scripts/export_renpy.py` / `/api/export/renpy/*` now raise `on_export_started` / `on_export_completed` and honour `--bake-weather` (`enable_export_bake` default). Successful exports write `<out>/label_manifest.json` summarising POV and battle labels; dry runs embed the manifest inline.
+- Golden harness (`HeadlessPlaytestRunner`) now produces deterministic timestamps and offers `run_per_pov_suite(plan)` to capture the linear / choice-heavy / battle trio per POV. Reference `docs/GOLDEN_TESTS.md` for suite planning.
 
 Security & Sandbox Audit
 ------------------------
@@ -28,8 +53,15 @@ Observability & Privacy Telemetry
   - `POST /api/telemetry/events` accepts arbitrary payloads; keys containing `id|uuid|path|token|email|user` are hashed automatically.
   - `GET /api/telemetry/hooks` lists hook counters plus the last five anonymised samples per event.
   - `GET /api/telemetry/diagnostics` returns a scrubbed zip (`manifest.json`, `telemetry.json`, `crashes.json`) once diagnostics opt-in is enabled.
-- Modder hooks: `comfyvn/core/modder_hooks.emit` now forwards events into the telemetry store. Expect counters for `on_scene_enter`, `on_choice_render`, `on_asset_registered`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`, `on_weather_plan`, `on_battle_simulated`, and more. Use `/api/telemetry/hooks` or the diagnostics bundle when auditing automation coverage.
+- Modder hooks: `comfyvn/core/modder_hooks.emit` now forwards events into the telemetry store. Expect counters for `on_scene_enter`, `on_choice_render`, `on_asset_registered`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`, `on_prop_applied`, `on_weather_changed`, `on_battle_simulated`, and more. Use `/api/telemetry/hooks` or the diagnostics bundle when auditing automation coverage.
 - Logs & crash digests: telemetry counters live in `logs/telemetry/usage.json`; crash digests remain under `logs/crash/` and are registered with telemetry when crash uploads are enabled. Exported bundle filenames follow `comfyvn-diagnostics-<timestamp>-<anon>.zip`.
+
+Playground Tiers
+----------------
+- Feature flags: `features.enable_playground` gates the new Playground tab in the Studio center router; `features.enable_stage3d` enables the Tier-1 WebGL stage inside that tab. Toggle both via **Settings → Debug & Feature Flags** and the UI will hot-load/unload the tab without restarting.
+- Tier-0 (2.5D parallax) lives in `comfyvn/playground/parallax.py`; Tier-1 (`comfyvn/playground/stage3d/viewport.html`) embeds Three.js/VRM modules that we vendor under `comfyvn/playground/stage3d/vendor/` to stay offline. When bumping versions, refresh the vendor folder and keep the directory structure intact.
+- `PlaygroundView` (Qt) exposes `register_hook("on_stage_snapshot" | "on_stage_load" | "on_stage_log", callback)` so tooling can react to user captures. Snapshots persist to `exports/playground/render_config.json` and include deterministic camera/layer/light data for Codex A automation.
+- Runtime logs: center router logs snapshot paths via `_handle_playground_snapshot` and forwards stage warnings/errors through `_handle_playground_log`. Enable `COMFYVN_LOG_LEVEL=DEBUG` to watch Stage 3D loader callbacks, actor placement, and light edits in real time.
 - CURL quickstart:
   ```bash
   # enable counters locally
@@ -84,7 +116,7 @@ Debug & Verification Checklist
 - [ ] **Docs updated** — README, architecture.md, CHANGELOG.md, docs/development_notes.md capture telemetry/anonymiser changes, curl samples, and debug hooks.
 - [ ] **Feature flags** — `config/comfyvn.json → features` contains `enable_privacy_telemetry` and `enable_crash_uploader` (both default `false`); toggles surface in the Settings panel.
 - [ ] **API surfaces** — `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics}` documented with sample requests/responses; dry-run keeps external calls disabled.
-- [ ] **Modder hooks** — hook bus publishes `on_scene_enter`, `on_asset_saved`, `on_asset_registered`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`, `on_weather_plan`, `on_battle_simulated`, etc.; telemetry captures counts/samples.
+- [ ] **Modder hooks** — hook bus publishes `on_scene_enter`, `on_asset_saved`, `on_asset_registered`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`, `on_prop_applied`, `on_weather_changed`, `on_battle_simulated`, etc.; telemetry captures counts/samples.
 - [ ] **Logs** — structured events in `logs/telemetry/usage.json`; crash reports under `logs/crash/`; diagnostics bundle path returned by `/api/telemetry/diagnostics`.
 - [ ] **Provenance** — telemetry bundle includes hashed crash summaries (event id, timestamp, exception type) and feature counters for reproducibility.
 - [ ] **Determinism** — anonymiser uses per-installation keys so identical seeds/vars/pov yield identical hashes; bundle content is stable between runs when inputs match.
@@ -165,8 +197,8 @@ Scenario Runner & POV Hooks
 - Debugging: set `LOG_LEVEL=DEBUG` (or scope `comfyvn.pov.render`) to trace cache hits/misses and sidecar copies. The pipeline mirrors the original ComfyUI sidecar as `<pose>.png.bridge.json` next to the registered asset for provenance tooling.
 - Prompt pack: `docs/PROMPT_PACKS/POV_REWRITE.md` documents the strict narration/monologue/observations schema so LLM tooling can restyle node text while staying aligned with `on_scene_enter` / `on_choice_render` hook payloads.
 - Hardened ComfyUI adapter: toggle from Studio via **Settings → Debug & Feature Flags** (`enable_comfy_bridge_hardening`). The checkbox persists to `config/comfyvn.json`, so CLI tooling and backend workers honour the same flag.
-- Battle layer: use `POST /api/battle/simulate` to fetch weighted outcomes + narration (`{outcome, seed, log[], weights}`) and `POST /api/battle/resolve` to stamp `vars.battle_outcome`. Supply `seed` for replays or set `COMFYVN_BATTLE_SEED` to enforce deterministic defaults; `COMFYVN_LOG_LEVEL=DEBUG` logs weight normalisation and RNG draws under the `comfyvn.battle.engine` logger.
-- Battle narration prompt pack: `docs/PROMPT_PACKS/BATTLE_NARRATION.md` pairs with `/api/battle/{resolve,simulate}` responses (choice + sim modes) and codifies the 4–8 beat JSON contract (`outcome`, `beats[]`, `vars_patch`) for deterministic automation.
+- Battle layer: `POST /api/battle/resolve` always returns `editor_prompt: "Pick winner"` plus deterministic breakdowns, weights, RNG state, provenance, and a predicted outcome; narration is optional via `"narrate": true`. `POST /api/battle/sim` (requires `enable_battle_sim`; `/simulate` aliases remain) returns `{outcome, seed, rng, weights, breakdown[], formula, provenance}` and only emits narration when requested. Set `COMFYVN_BATTLE_SEED` for deterministic defaults; `COMFYVN_LOG_LEVEL=DEBUG` logs roll breakdowns and RNG draws under the `comfyvn.battle.engine` logger.
+- Battle narration prompt pack: `docs/PROMPT_PACKS/BATTLE_NARRATION.md` pairs with `/api/battle/{resolve,sim}` responses (choice + sim modes) and codifies the 4–8 beat JSON contract (`outcome`, `beats[]`, `vars_patch`) for deterministic automation; skip it by sending `"narrate": false`.
 - Reference: `docs/POV_DESIGN.md` and `docs/VIEWER_README.md` expand on the contracts, fallback behaviour, and save-slot naming helpers.
 
 Scheduler & Worker Hooks

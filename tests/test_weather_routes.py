@@ -53,7 +53,7 @@ def _enable_weather_flag(monkeypatch):
     original_is_enabled = feature_flags.is_enabled
 
     def _patched(name: str, *, default=None, refresh: bool = False):
-        if name == "enable_weather_planner":
+        if name in {"enable_weather_planner", "enable_weather_overlays"}:
             return True
         return original_is_enabled(name, default=default, refresh=refresh)
 
@@ -70,11 +70,11 @@ def _capture_weather_events():
     def _listener(event: str, payload: dict):
         events.append((event, payload))
 
-    modder_hooks.register_listener(_listener, events=("on_weather_plan",))
+    modder_hooks.register_listener(_listener, events=("on_weather_changed",))
     try:
         yield events
     finally:
-        modder_hooks.unregister_listener(_listener, events=("on_weather_plan",))
+        modder_hooks.unregister_listener(_listener, events=("on_weather_changed",))
 
 
 def test_weather_state_route_updates_plan(_capture_weather_events):
@@ -85,6 +85,8 @@ def test_weather_state_route_updates_plan(_capture_weather_events):
         baseline = resp.json()
         assert baseline["state"]["weather"] == "clear"
         assert baseline["meta"]["version"] == 0
+        assert baseline["scene"]["bake_ready"] is True
+        assert "lut" in baseline["scene"]
 
         resp_rain = client.post("/api/weather/state", json={"weather": "rain"})
         assert resp_rain.status_code == 200
@@ -92,6 +94,9 @@ def test_weather_state_route_updates_plan(_capture_weather_events):
         assert rain["state"]["weather"] == "rain"
         assert rain["particles"]["type"] == "rain"
         assert rain["meta"]["version"] == 1
+        assert rain["scene"]["lut"]["path"].endswith("rain.cube")
+        assert rain["sfx"]["fade_in"]
+        assert "flags" in rain["meta"]
 
         resp_alias = client.post(
             "/api/weather/state",
@@ -106,7 +111,7 @@ def test_weather_state_route_updates_plan(_capture_weather_events):
     events = _capture_weather_events
     assert events, "Expected at least one modder hook event"
     assert any(
-        evt == "on_weather_plan" and payload["state"]["weather"] == "rain"
+        evt == "on_weather_changed" and payload["state"]["weather"] == "rain"
         for evt, payload in events
     )
     triggers = [payload.get("trigger") for _, payload in events]

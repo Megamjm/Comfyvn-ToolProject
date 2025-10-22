@@ -25,6 +25,7 @@ if (
     sys.modules["comfyvn.battle.engine"] = _stub
 
 from comfyvn.app import create_app
+from comfyvn.config import feature_flags
 from comfyvn.pov.manager import POVManager
 from comfyvn.pov.timeline_worlds import diff_worlds as diff_worlds_fn
 from comfyvn.pov.timeline_worlds import merge_worlds as merge_worlds_fn
@@ -36,6 +37,21 @@ def reset_worldlines() -> None:
     WORLDLINES.reset()
     yield
     WORLDLINES.reset()
+
+
+@pytest.fixture(autouse=True)
+def enable_worldline_flags(monkeypatch) -> None:
+    original = feature_flags.is_enabled
+
+    def _patched(name: str, **kwargs: object) -> bool:
+        if name in {"enable_worldlines", "enable_timeline_overlay"}:
+            return True
+        return original(name, **kwargs)
+
+    monkeypatch.setattr(feature_flags, "is_enabled", _patched)
+    feature_flags.refresh_cache()
+    yield
+    feature_flags.refresh_cache()
 
 
 def test_worldline_registry_roundtrip() -> None:

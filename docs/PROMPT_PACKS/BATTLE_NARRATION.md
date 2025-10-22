@@ -2,6 +2,8 @@
 
 **Purpose:** Produce a short, cinematic log for a battle. The runner decides the outcome; the LLM only narrates.
 
+> Note: The battle engine now exposes a `narrate` flag on both `/api/battle/resolve` and `/api/battle/sim`. When clients pass `false` the prompt pack is skipped and responses omit `log[]` / `narration`, while the deterministic breakdown + provenance still return.
+
 ## Modes
 - **choice**: user/author chose a winner → narrate consistent beats.
 - **sim**: engine determines outcome using odds; you narrate to match.
