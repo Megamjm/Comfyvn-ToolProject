@@ -11,7 +11,7 @@ import sys
 import time
 from urllib import error, request
 
-from comfyvn.config import ports as ports_config
+from comfyvn.config.baseurl_authority import discover_base
 
 DEF_CONF = "tools/check_profiles.json"
 DEF_FLAGS = "config/comfyvn.json"
@@ -47,93 +47,6 @@ def load_json(path):
         return {}
 
 
-def _compose_base(host: str, port: str) -> str:
-    host = (host or "").strip()
-    port = str(port).strip()
-    if not host:
-        host = "127.0.0.1"
-    if "://" in host:
-        host = host.rstrip("/")
-        # Only append the port if host does not already end with one.
-        tail = host.rsplit(":", 1)[-1]
-        if tail.isdigit():
-            return host
-        return f"{host}:{port}" if port else host
-    scheme = "http://"
-    return f"{scheme}{host}:{port}" if port else f"{scheme}{host}"
-
-
-def _probe_base(base: str):
-    if not base:
-        return False
-    base = base.rstrip("/")
-    code, _ = _http_get(f"{base}/health")
-    return code is not None and 200 <= code < 500
-
-
-def _discover_base(cli_base: str, flags_file: str):
-    tried, warnings = [], []
-    seen = set()
-
-    def _try_candidate(candidate: str, label: str):
-        if not candidate:
-            return None
-        base = candidate.rstrip("/")
-        if not base or base in seen:
-            return None
-        seen.add(base)
-        tried.append(base)
-        if _probe_base(base):
-            return base
-        if label:
-            warnings.append(f"{label} not responding: {base}")
-        return None
-
-    # Explicit CLI override: do not fall back further.
-    if cli_base:
-        base = _try_candidate(cli_base, "--base")
-        return (base or ""), tried, warnings
-
-    env_base = (os.getenv("COMFYVN_BASE") or "").strip()
-    base = _try_candidate(env_base, "COMFYVN_BASE")
-    if base:
-        return base, tried, warnings
-
-    cfg = ports_config.get_config()
-    public_base = (cfg.get("public_base") or "").strip()
-    base = _try_candidate(public_base, "server.public_base")
-    if base:
-        return base, tried, warnings
-
-    host = str(cfg.get("host") or "127.0.0.1")
-    raw_ports = cfg.get("ports") or []
-    ports_source = "config.ports"
-
-    norm_ports = []
-    for item in raw_ports:
-        try:
-            norm_ports.append(str(int(item)))
-        except (TypeError, ValueError):
-            text = str(item).strip()
-            if text:
-                norm_ports.append(text)
-
-    for p in norm_ports:
-        label = f"{ports_source}[{p}]"
-        base = _try_candidate(_compose_base(host, p), label)
-        if base:
-            return base, tried, warnings
-
-    for fallback_port in ("8001", "8000"):
-        base = _try_candidate(
-            _compose_base("127.0.0.1", fallback_port), f"fallback[{fallback_port}]"
-        )
-        if base:
-            return base, tried, warnings
-
-    return "", tried, warnings
-
-
 def main():
     ap = argparse.ArgumentParser(
         description="Check how current systems work (flags, routes, files)."
@@ -148,7 +61,7 @@ def main():
 
     profiles = load_json(args.conf)
     profile = profiles.get(args.profile, {})
-    base, tried, warnings = _discover_base(args.base, args.flags_file)
+    base, tried, warnings = discover_base(args.base)
     out = {
         "ts": time.time(),
         "profile": args.profile,

@@ -1,3 +1,11 @@
+### 2025-10-22 — Live Fixes: Server Boot, Liability Gate, Tools Panels
+- `comfyvn/gui/server_boot.py` now launches detached servers via `python -m uvicorn comfyvn.app:app`, extends the environment with the repository root, and honours the shared runtime authority so Windows launches stop failing with `ModuleNotFoundError: comfyvn`.
+- Liability acknowledgements persist to `config/policy_ack.json`, and `/api/policy/ack` returns a lightweight `{ack,status}` payload. CLI/GUI callers can raise `PermissionError` via the new `require_ack_or_raise` helper.
+- Tools → Import Assets / Ren'Py Exporter / External Tool Installer ship interactive panels powered by a reusable JSON endpoint tester (`comfyvn/gui/panels/json_endpoint_panel.py`). Presets cover SillyTavern chat/persona/lore imports, FurAffinity drops, roleplay archives, and remote installer dry-runs.
+- Added a modal `SettingsWindow` wrapper so Settings can pop as a dialog while keeping the legacy dock for power users. Tools menu gained shortcuts for SillyTavern chat, persona, lore, FurAffinity, and roleplay ingestion.
+- Shared `discover_base()` lived in `comfyvn/config/baseurl_authority.py`; both `tools/check_current_system.py` and `tools/doctor_phase_all.py` consume it so automation follows the same CLI/env/config/fallback order.
+- Docs: README live-fix highlights, architecture updates entry, and CHANGELOG note. Help menu now opens local docs (`README.md`, `docs/THEME_KITS.md`, etc.) via `QDesktopServices`.
+
 ### 2025-10-21 — Ports Source of Truth & REST Controls
 - Added `comfyvn/config/ports.py` to manage the canonical `{host, ports[], public_base}` block, apply `COMFYVN_HOST/COMFYVN_PORTS/COMFYVN_BASE` overrides, and stamp configs while persisting `.runtime/last_server.json`.
 - Introduced FastAPI router `comfyvn/server/routes/settings_ports.py` exposing `/api/settings/ports/{get,set,probe}` with structured probe attempts so modders and automation can inspect bindings without touching disk.
