@@ -12,6 +12,19 @@ def gate_status() -> PolicyStatus:
     return policy_gate.status()
 
 
+def evaluate_action(action: str, *, override: bool = False) -> dict:
+    """
+    Evaluate ``action`` against the liability gate and return a copy of the payload.
+
+    The extra copy avoids leaking internal state to callers that may mutate the
+    dictionary for logging or response shaping.
+    """
+
+    gate = dict(policy_gate.evaluate_action(action, override=override))
+    gate.setdefault("action", action)
+    return gate
+
+
 def get_ack() -> bool:
     """Return ``True`` when the legal acknowledgement has been recorded."""
     return gate_status().ack_legal_v1
@@ -43,7 +56,7 @@ def require_ack(
     Raises ``RuntimeError`` when the action is blocked due to a missing
     acknowledgement. The gate evaluation payload is returned otherwise.
     """
-    gate = policy_gate.evaluate_action(action, override=override)
+    gate = evaluate_action(action, override=override)
     if gate.get("requires_ack") and not gate.get("allow", False):
         raise RuntimeError(
             message

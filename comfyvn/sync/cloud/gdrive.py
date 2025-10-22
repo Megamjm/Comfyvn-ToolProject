@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
-from .manifest import Manifest, SyncPlan
+from .manifest import Manifest, SyncApplyError, SyncPlan
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +137,18 @@ class GoogleDriveSyncClient:
         summary: Dict[str, Any] = {
             "service": "gdrive",
             "snapshot": plan.snapshot,
+            "root": manifest.root,
             "uploads": [],
             "deletes": [],
             "skipped": [],
+            "status": "dry_run" if dry_run else "pending",
         }
         if dry_run:
             summary["uploads"] = [change.to_dict() for change in plan.uploads]
             summary["deletes"] = [change.to_dict() for change in plan.deletes]
             summary["skipped"] = [change.to_dict() for change in plan.unchanged]
+            summary["errors"] = []
+            summary["bytes_uploaded"] = 0
             logger.info(
                 "Drive dry-run computed",
                 extra={
@@ -159,23 +163,57 @@ class GoogleDriveSyncClient:
         root = Path(manifest.root)
         uploaded: list[str] = []
         deleted: list[str] = []
+        errors: list[Dict[str, Any]] = []
+        bytes_uploaded = 0
 
         for change in plan.uploads:
             local_path = root / change.path
-            media = MediaFileUpload(str(local_path), resumable=True)
             metadata = {
                 "name": change.path.split("/")[-1],
                 "parents": [self.config.parent_id],
                 "appProperties": {self.PATH_PROPERTY: change.path},
             }
-            existing = self._find_file_by_path(change.path)
-            if existing:
-                self.service.files().update(
-                    fileId=existing["id"], media_body=media
-                ).execute()
-            else:
-                self.service.files().create(body=metadata, media_body=media).execute()
-            uploaded.append(change.path)
+            try:
+                if not local_path.exists():
+                    raise FileNotFoundError(f"local file missing: {local_path}")
+                media = MediaFileUpload(str(local_path), resumable=True)
+                existing = self._find_file_by_path(change.path)
+                if existing:
+                    self.service.files().update(
+                        fileId=existing["id"],
+                        body={"appProperties": metadata["appProperties"]},
+                        media_body=media,
+                    ).execute()
+                else:
+                    self.service.files().create(
+                        body=metadata, media_body=media
+                    ).execute()
+                uploaded.append(change.path)
+                bytes_uploaded += local_path.stat().st_size
+            except HttpError as exc:  # pragma: no cover - API failure path
+                logger.warning(
+                    "Drive upload failed",
+                    extra={
+                        "path": change.path,
+                        "snapshot": plan.snapshot,
+                        "error": str(exc),
+                    },
+                )
+                errors.append(
+                    {"action": "upload", "path": change.path, "error": str(exc)}
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Drive upload failed",
+                    extra={
+                        "path": change.path,
+                        "snapshot": plan.snapshot,
+                        "error": str(exc),
+                    },
+                )
+                errors.append(
+                    {"action": "upload", "path": change.path, "error": str(exc)}
+                )
 
         for change in plan.deletes:
             existing = self._find_file_by_path(change.path)
@@ -187,10 +225,23 @@ class GoogleDriveSyncClient:
                     logger.warning(
                         "Failed to delete %s from Drive: %s", change.path, exc
                     )
+                    errors.append(
+                        {"action": "delete", "path": change.path, "error": str(exc)}
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to delete %s from Drive: %s", change.path, exc
+                    )
+                    errors.append(
+                        {"action": "delete", "path": change.path, "error": str(exc)}
+                    )
 
         summary["uploads"] = uploaded
         summary["deletes"] = deleted
         summary["skipped"] = [change.path for change in plan.unchanged]
+        summary["errors"] = errors
+        summary["bytes_uploaded"] = bytes_uploaded
+        summary["status"] = "ok" if not errors else "partial"
 
         logger.info(
             "Drive sync applied",
@@ -198,9 +249,17 @@ class GoogleDriveSyncClient:
                 "uploads": len(uploaded),
                 "deletes": len(deleted),
                 "snapshot": plan.snapshot,
+                "errors": len(errors),
             },
         )
+        if errors:
+            raise SyncApplyError(
+                f"Drive sync failed for {len(errors)} operations",
+                summary=summary,
+                errors=errors,
+            )
         self.upload_manifest(plan.snapshot, manifest)
+        summary["status"] = "ok"
         return summary
 
     # -- Helpers -------------------------------------------------------------------

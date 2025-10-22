@@ -610,13 +610,16 @@ def run_bundle_plugins(context: "BundleContext") -> List[Dict[str, Any]]:
 
 def _dedupe_findings(entries: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     dedup: Dict[str, Dict[str, Any]] = {}
+    fallback_index = 0
     for entry in entries:
-        issue_id = str(entry.get("issue_id") or "")
-        if issue_id:
-            dedup[issue_id] = dict(entry)
+        issue_id_raw = entry.get("issue_id")
+        if issue_id_raw:
+            key = str(issue_id_raw)
         else:
-            dedup[str(len(dedup))] = dict(entry)
-    return list(dedup.values())
+            key = f"_anon_{fallback_index:06d}"
+            fallback_index += 1
+        dedup[key] = dict(entry)
+    return [dedup[key] for key in sorted(dedup)]
 
 
 def _normalise_entry(entry: Mapping[str, Any]) -> Dict[str, Any]:

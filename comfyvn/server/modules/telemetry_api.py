@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from comfyvn.config import feature_flags
 from comfyvn.obs.telemetry import TelemetrySettings, get_telemetry
 
 router = APIRouter(prefix="/api/telemetry", tags=["Telemetry"])
@@ -19,6 +20,12 @@ def _telemetry(request: Request):
         )
         request.app.state.telemetry = telemetry
     return telemetry
+
+
+def _feature_flag_enabled() -> bool:
+    if feature_flags.is_enabled("enable_observability", default=False):
+        return True
+    return feature_flags.is_enabled("enable_privacy_telemetry", default=False)
 
 
 class FeatureEvent(BaseModel):
@@ -54,10 +61,32 @@ class ConsentPayload(BaseModel):
     )
 
 
+class OptInPayload(BaseModel):
+    crash: bool = Field(
+        default=False, description="Also enable crash uploads when opting in."
+    )
+    diagnostics: bool = Field(
+        default=False, description="Also enable diagnostics bundle exports."
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="Retain dry-run mode (true keeps events local only).",
+    )
+
+
 @router.get("/summary")
 def telemetry_summary(request: Request):
     telemetry = _telemetry(request)
-    return telemetry.summary(include_events=False)
+    summary = telemetry.summary(include_events=False)
+    summary["feature_flag"] = _feature_flag_enabled()
+    return summary
+
+
+@router.get("/health")
+def telemetry_health(request: Request):
+    telemetry = _telemetry(request)
+    health = telemetry.health()
+    return {"ok": True, **health, "feature_flag": _feature_flag_enabled()}
 
 
 @router.get("/settings")
@@ -68,7 +97,10 @@ def telemetry_settings(request: Request):
         "settings": settings,
         "telemetry_active": telemetry.telemetry_allowed(),
         "crash_uploads_active": telemetry.crash_uploads_allowed(),
-        "diagnostics_opt_in": telemetry.diagnostics_allowed(),
+        "diagnostics_opt_in": bool(settings.get("diagnostics_opt_in", False)),
+        "diagnostics_active": telemetry.diagnostics_allowed(),
+        "health": telemetry.health(),
+        "feature_flag": _feature_flag_enabled(),
     }
 
 
@@ -85,7 +117,31 @@ def update_settings(request: Request, payload: ConsentPayload):
         "settings": updated.to_dict(),
         "telemetry_active": telemetry.telemetry_allowed(),
         "crash_uploads_active": telemetry.crash_uploads_allowed(),
-        "diagnostics_opt_in": telemetry.diagnostics_allowed(),
+        "diagnostics_opt_in": bool(updated.diagnostics_opt_in),
+        "diagnostics_active": telemetry.diagnostics_allowed(),
+        "health": telemetry.health(),
+        "feature_flag": _feature_flag_enabled(),
+    }
+
+
+@router.post("/opt_in")
+def telemetry_opt_in(request: Request, payload: OptInPayload | None = None):
+    telemetry = _telemetry(request)
+    data = payload or OptInPayload()
+    updated = telemetry.update_settings(
+        telemetry_opt_in=True,
+        crash_opt_in=data.crash,
+        diagnostics_opt_in=data.diagnostics,
+        dry_run=data.dry_run,
+    )
+    return {
+        "ok": True,
+        "settings": updated.to_dict(),
+        "telemetry_active": telemetry.telemetry_allowed(),
+        "crash_uploads_active": telemetry.crash_uploads_allowed(),
+        "diagnostics_active": telemetry.diagnostics_allowed(),
+        "health": telemetry.health(),
+        "feature_flag": _feature_flag_enabled(),
     }
 
 
@@ -97,6 +153,7 @@ def record_feature(request: Request, payload: FeatureEvent):
         "ok": True,
         "recorded": recorded,
         "telemetry_active": telemetry.telemetry_allowed(),
+        "feature_flag": _feature_flag_enabled(),
     }
 
 
@@ -112,6 +169,7 @@ def record_event(request: Request, payload: TelemetryEvent):
         "ok": True,
         "recorded": recorded,
         "telemetry_active": telemetry.telemetry_allowed(),
+        "feature_flag": _feature_flag_enabled(),
     }
 
 
@@ -120,20 +178,26 @@ def list_events(request: Request, limit: int = Query(20, ge=1, le=200)):
     telemetry = _telemetry(request)
     summary = telemetry.summary(include_events=True)
     events = summary.get("events", [])
-    return {"events": events[-limit:]}
+    return {"events": events[-limit:], "feature_flag": _feature_flag_enabled()}
 
 
 @router.get("/hooks")
 def list_hook_counts(request: Request):
     telemetry = _telemetry(request)
-    return {"hooks": telemetry.summary().get("hooks", {})}
+    return {
+        "hooks": telemetry.summary().get("hooks", {}),
+        "feature_flag": _feature_flag_enabled(),
+    }
 
 
 @router.get("/crashes")
 def list_crashes(request: Request):
     telemetry = _telemetry(request)
     snapshot = telemetry.summary()
-    return {"crashes": snapshot.get("crashes", [])}
+    return {
+        "crashes": snapshot.get("crashes", []),
+        "feature_flag": _feature_flag_enabled(),
+    }
 
 
 @router.get("/diagnostics")

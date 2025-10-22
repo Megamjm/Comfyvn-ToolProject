@@ -4,9 +4,9 @@ import logging
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from logging.handlers import RotatingFileHandler
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Mapping, Optional
 
 try:  # GUI dependencies are optional when running headless.
     from PySide6.QtGui import QColor, QFont, QPalette  # type: ignore
@@ -28,6 +28,15 @@ except Exception:  # pragma: no cover - defensive
     modder_hooks = None  # type: ignore
 
 from . import filters  # noqa: E402  (local import after optional deps)
+from .ui_scale import (
+    clamp_scale as _clamp_ui_scale,
+)
+from .ui_scale import (
+    normalize_overrides as _normalize_overrides,
+)
+from .ui_scale import (
+    ui_scale_manager,
+)
 
 LOGGER = logging.getLogger("comfyvn.accessibility")
 
@@ -40,6 +49,8 @@ class AccessibilityState:
     color_filter: str = "none"
     high_contrast: bool = False
     subtitles_enabled: bool = True
+    ui_scale: float = 1.0
+    view_overrides: Dict[str, float] = field(default_factory=dict)
     subtitle_text: str = ""
     subtitle_origin: Optional[str] = None
     subtitle_expires_at: Optional[float] = None
@@ -51,6 +62,11 @@ class AccessibilityState:
             "color_filter": str(self.color_filter or "none"),
             "high_contrast": bool(self.high_contrast),
             "subtitles_enabled": bool(self.subtitles_enabled),
+            "ui_scale": float(self.ui_scale),
+            "view_overrides": {
+                str(key): float(value)
+                for key, value in (self.view_overrides or {}).items()
+            },
         }
 
     @classmethod
@@ -65,6 +81,10 @@ class AccessibilityState:
         state.high_contrast = bool(payload.get("high_contrast", state.high_contrast))
         state.subtitles_enabled = bool(
             payload.get("subtitles_enabled", state.subtitles_enabled)
+        )
+        state.ui_scale = _clamp_ui_scale(payload.get("ui_scale", state.ui_scale))
+        state.view_overrides = _normalize_overrides(
+            payload.get("view_overrides", state.view_overrides)
         )
         return state
 
@@ -99,6 +119,15 @@ class AccessibilityManager:
 
     def snapshot(self) -> AccessibilityState:
         return self.state
+
+    def export_profile(self) -> Dict[str, Any]:
+        return self._state.to_persisted_dict()
+
+    def import_profile(self, payload: Mapping[str, Any]) -> AccessibilityState:
+        if not payload:
+            return self.snapshot()
+        normalized = AccessibilityState.from_mapping(dict(payload))
+        return self.update(**normalized.to_persisted_dict())
 
     # ---------------------------------------------------------------- subscribers
     def subscribe(self, callback: Callable[[AccessibilityState], None]) -> str:
@@ -141,6 +170,12 @@ class AccessibilityManager:
             new_payload["high_contrast"] = bool(fields["high_contrast"])
         if "subtitles_enabled" in fields:
             new_payload["subtitles_enabled"] = bool(fields["subtitles_enabled"])
+        if "ui_scale" in fields:
+            new_payload["ui_scale"] = _clamp_ui_scale(fields["ui_scale"])
+        if "view_overrides" in fields:
+            new_payload["view_overrides"] = _normalize_overrides(
+                fields["view_overrides"]
+            )
 
         updated = AccessibilityState.from_mapping(new_payload)
         # preserve ephemeral subtitle fields
@@ -167,6 +202,8 @@ class AccessibilityManager:
             color_filter=defaults.color_filter,
             high_contrast=defaults.high_contrast,
             subtitles_enabled=defaults.subtitles_enabled,
+            ui_scale=defaults.ui_scale,
+            view_overrides=defaults.view_overrides,
         )
 
     # ----------------------------------------------------------- subtitles
@@ -222,8 +259,15 @@ class AccessibilityManager:
         self._apply_appearance()
 
     def _apply_appearance(self) -> None:
+        self._apply_ui_scale()
         self._apply_font_scale()
         self._apply_contrast_palette()
+
+    def _apply_ui_scale(self) -> None:
+        ui_scale_manager.configure(
+            global_scale=self._state.ui_scale,
+            overrides=self._state.view_overrides,
+        )
 
     def _apply_font_scale(self) -> None:
         if QApplication is None or QFont is None:
@@ -309,6 +353,10 @@ class AccessibilityManager:
             meta={
                 "accessibility": payload,
                 "feature_flags": {"high_contrast": payload["high_contrast"]},
+                "ui_scale": {
+                    "global": payload.get("ui_scale", 1.0),
+                    "overrides": dict(payload.get("view_overrides") or {}),
+                },
             },
         )
         if modder_hooks:

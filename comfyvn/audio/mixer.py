@@ -8,11 +8,13 @@ preview mixes without pulling in heavyweight audio dependencies.
 """
 
 import audioop
+import hashlib
 import json
 import math
 import wave
 from array import array
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
@@ -207,18 +209,44 @@ def _apply_tracks(
     return buffer
 
 
-def _write_wav(path: Path, sample_rate: int, samples: Sequence[float]) -> None:
+def _write_wav(
+    path: Path, sample_rate: int, samples: Sequence[float]
+) -> Dict[str, float | int | None]:
     clipped = array("h")
+    peak = 0.0
+    sum_squares = 0.0
+    count = 0
+
     for sample in samples:
         value = max(-1.0, min(1.0, sample))
+        abs_value = abs(value)
+        if abs_value > peak:
+            peak = abs_value
+        sum_squares += value * value
         clipped.append(int(round(value * 32767)))
+        count += 1
+
+    pcm_bytes = clipped.tobytes()
+    checksum = hashlib.sha1(pcm_bytes).hexdigest() if pcm_bytes else None
+    rms = math.sqrt(sum_squares / count) if count else 0.0
+    rms_db = 20 * math.log10(rms) if rms > 0 else None
+    peak_db = 20 * math.log10(peak) if peak > 0 else None
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
-        wav_file.writeframes(clipped.tobytes())
+        wav_file.writeframes(pcm_bytes)
+
+    return {
+        "bytes": len(pcm_bytes),
+        "checksum_sha1": checksum,
+        "peak_amplitude": peak,
+        "peak_db": peak_db,
+        "rms": rms,
+        "rms_db": rms_db,
+    }
 
 
 def mix_tracks(
@@ -248,7 +276,8 @@ def mix_tracks(
         ducking=ducking,
     )
 
-    _write_wav(output_path, mix_rate, buffer)
+    wav_stats = _write_wav(output_path, mix_rate, buffer)
+    rendered_at = datetime.now(timezone.utc).isoformat()
 
     duration = mix_length / mix_rate
     metadata = {
@@ -264,7 +293,11 @@ def mix_tracks(
             }
             for track in normalized_tracks
         ],
+        "rendered_at": rendered_at,
+        "cached": False,
     }
+    if wav_stats:
+        metadata.update(wav_stats)
 
     if ducking:
         metadata["ducking"] = {
@@ -280,5 +313,7 @@ def mix_tracks(
         sidecar_path.parent.mkdir(parents=True, exist_ok=True)
         sidecar_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         metadata["sidecar"] = str(sidecar_path)
+    elif metadata.get("checksum_sha1") is not None:
+        metadata["sidecar"] = None
 
     return metadata

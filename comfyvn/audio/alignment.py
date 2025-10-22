@@ -9,6 +9,7 @@ libraries.  The generated alignment is a best-effort approximation intended for
 stubbed audio pipelines.
 """
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ __all__ = [
     "align_text",
     "alignment_to_lipsync_payload",
     "write_alignment",
+    "alignment_checksum",
 ]
 
 DEFAULT_BASE_DURATION = 0.065  # seconds per phoneme
@@ -267,3 +269,33 @@ def write_alignment(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
+
+
+def alignment_checksum(
+    alignment: Sequence[dict[str, float | str] | AlignmentEntry],
+    *,
+    text: str | None = None,
+) -> str:
+    """
+    Produce a deterministic checksum for the provided alignment payload.
+
+    The checksum incorporates a normalized alignment representation plus the
+    optional source text hint so downstream caches can quickly compare runs.
+    """
+    normalized: List[dict[str, float | str]] = []
+    for item in alignment:
+        if isinstance(item, AlignmentEntry):
+            normalized.append(item.as_dict())
+            continue
+        normalized.append(
+            {
+                "phoneme": str(item["phoneme"]),
+                "t_start": round(float(item["t_start"]), 4),
+                "t_end": round(float(item["t_end"]), 4),
+            }
+        )
+    payload = {"alignment": normalized}
+    if text is not None:
+        payload["text_sha1"] = hashlib.sha1(text.encode("utf-8")).hexdigest()
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return blake2s(serialized.encode("utf-8"), digest_size=10).hexdigest()

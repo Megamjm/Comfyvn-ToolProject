@@ -398,6 +398,29 @@ class BudgetManager:
         }
         return snapshot
 
+    def health(self) -> Dict[str, Any]:
+        """Return a lightweight health summary without the full job payload."""
+        with self._lock:
+            metrics = self._metrics_provider()
+            health = {
+                "limits": self._limits.__dict__,
+                "queue": {
+                    "queued": len(self._queued),
+                    "delayed": len(self._delayed),
+                    "running": len(self._running),
+                    "seen_jobs": len(self._jobs),
+                },
+                "assets": {
+                    "registered": len(self._assets),
+                    "loaded": sum(
+                        1 for handle in self._assets.values() if handle.loaded
+                    ),
+                },
+                "last_evaluation": self._last_eval,
+                "metrics": metrics,
+            }
+        return health
+
     # ------------------------------------------------------------------ Asset Hooks
     def register_asset(
         self,

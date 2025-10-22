@@ -93,3 +93,72 @@ def test_collab_presence_snapshot_history(api_client: TestClient, tmp_path) -> N
     assert flush.json()["ok"] is True
 
     HUB.discard_empty()
+
+
+def test_collab_room_rest_lifecycle(api_client: TestClient, tmp_path) -> None:
+    _set_scene_root(tmp_path)
+
+    create = api_client.post("/api/collab/room/create", json={"scene_id": "rest_scene"})
+    assert create.status_code == 200, create.json()
+    payload = create.json()
+    assert payload["ok"] is True
+    assert payload["scene_id"] == "rest_scene"
+    assert payload["presence"]["participants"] == []
+
+    join = api_client.post(
+        "/api/collab/room/join",
+        json={
+            "scene_id": "rest_scene",
+            "client_id": "tester",
+            "user_name": "Rest Client",
+            "presence": {
+                "cursor": {"x": 10, "y": 20},
+                "selection": {"ids": ["n1"]},
+                "capabilities": ["headless"],
+            },
+            "control": {"request": True, "ttl": 5},
+            "include_snapshot": True,
+        },
+    )
+    assert join.status_code == 200
+    join_payload = join.json()
+    assert join_payload["ok"] is True
+    assert join_payload["client_id"] == "tester"
+    assert join_payload["presence"]["participants"][0]["cursor"]["x"] == 10
+
+    apply_res = api_client.post(
+        "/api/collab/room/apply",
+        json={
+            "scene_id": "rest_scene",
+            "client_id": "tester",
+            "operations": [
+                {
+                    "op_id": "tester:1",
+                    "actor": "tester",
+                    "clock": 1,
+                    "kind": "scene.field.set",
+                    "payload": {"field": "title", "value": "REST Demo"},
+                }
+            ],
+            "include_snapshot": True,
+            "history_since": 0,
+        },
+    )
+    assert apply_res.status_code == 200
+    apply_payload = apply_res.json()
+    assert apply_payload["ok"] is True
+    result = apply_payload["result"]
+    assert result["operations"][0]["applied"] is True
+    assert result["snapshot"]["title"] == "REST Demo"
+    assert result["history"], "history should be populated for since=0"
+
+    leave = api_client.post(
+        "/api/collab/room/leave",
+        json={"scene_id": "rest_scene", "client_id": "tester"},
+    )
+    assert leave.status_code == 200
+    leave_payload = leave.json()
+    assert leave_payload["was_present"] is True
+    assert leave_payload["presence"]["participants"] == []
+
+    HUB.discard_empty()

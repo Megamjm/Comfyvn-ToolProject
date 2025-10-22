@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
-from .manifest import Manifest, SyncPlan
+from .manifest import Manifest, SyncApplyError, SyncPlan
 
 logger = logging.getLogger(__name__)
 
@@ -144,15 +144,19 @@ class S3SyncClient:
         summary: Dict[str, Any] = {
             "service": "s3",
             "snapshot": plan.snapshot,
+            "root": manifest.root,
             "uploads": [],
             "deletes": [],
             "skipped": [],
+            "status": "dry_run" if dry_run else "pending",
         }
 
         if dry_run:
             summary["uploads"] = [change.to_dict() for change in plan.uploads]
             summary["deletes"] = [change.to_dict() for change in plan.deletes]
             summary["skipped"] = [change.to_dict() for change in plan.unchanged]
+            summary["errors"] = []
+            summary["bytes_uploaded"] = 0
             logger.info(
                 "S3 dry-run computed",
                 extra={
@@ -167,21 +171,78 @@ class S3SyncClient:
         root = Path(manifest.root)
         uploaded: list[str] = []
         deleted: list[str] = []
+        errors: list[Dict[str, Any]] = []
+        bytes_uploaded = 0
 
         for change in plan.uploads:
             local_path = root / change.path
             key = self.config.object_key(plan.snapshot, change.path)
-            self._client.upload_file(str(local_path), self.config.bucket, key)
-            uploaded.append(change.path)
+            try:
+                if not local_path.exists():
+                    raise FileNotFoundError(f"local file missing: {local_path}")
+                self._client.upload_file(str(local_path), self.config.bucket, key)
+                uploaded.append(change.path)
+                bytes_uploaded += local_path.stat().st_size
+            except Exception as exc:
+                logger.warning(
+                    "S3 upload failed",
+                    extra={
+                        "path": change.path,
+                        "snapshot": plan.snapshot,
+                        "error": str(exc),
+                    },
+                )
+                errors.append(
+                    {"action": "upload", "path": change.path, "error": str(exc)}
+                )
 
         for change in plan.deletes:
             key = self.config.object_key(plan.snapshot, change.path)
-            self._client.delete_object(Bucket=self.config.bucket, Key=key)
-            deleted.append(change.path)
+            try:
+                self._client.delete_object(Bucket=self.config.bucket, Key=key)
+                deleted.append(change.path)
+            except ClientError as exc:  # pragma: no cover - depends on botocore
+                error_code = exc.response.get("Error", {}).get("Code")
+                if error_code in {"NoSuchKey", "404"}:
+                    logger.info(
+                        "S3 object already absent during delete",
+                        extra={
+                            "path": change.path,
+                            "snapshot": plan.snapshot,
+                            "bucket": self.config.bucket,
+                        },
+                    )
+                    continue
+                logger.warning(
+                    "S3 delete failed",
+                    extra={
+                        "path": change.path,
+                        "snapshot": plan.snapshot,
+                        "error": str(exc),
+                    },
+                )
+                errors.append(
+                    {"action": "delete", "path": change.path, "error": str(exc)}
+                )
+            except Exception as exc:
+                logger.warning(
+                    "S3 delete failed",
+                    extra={
+                        "path": change.path,
+                        "snapshot": plan.snapshot,
+                        "error": str(exc),
+                    },
+                )
+                errors.append(
+                    {"action": "delete", "path": change.path, "error": str(exc)}
+                )
 
         summary["uploads"] = uploaded
         summary["deletes"] = deleted
         summary["skipped"] = [change.path for change in plan.unchanged]
+        summary["errors"] = errors
+        summary["bytes_uploaded"] = bytes_uploaded
+        summary["status"] = "ok" if not errors else "partial"
 
         logger.info(
             "S3 sync applied",
@@ -189,10 +250,19 @@ class S3SyncClient:
                 "uploads": len(uploaded),
                 "deletes": len(deleted),
                 "snapshot": plan.snapshot,
+                "errors": len(errors),
             },
         )
 
+        if errors:
+            raise SyncApplyError(
+                f"S3 sync failed for {len(errors)} operations",
+                summary=summary,
+                errors=errors,
+            )
+
         self.upload_manifest(plan.snapshot, manifest)
+        summary["status"] = "ok"
         return summary
 
 

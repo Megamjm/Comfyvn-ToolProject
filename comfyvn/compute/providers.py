@@ -79,6 +79,21 @@ class ProviderRegistry:
         with self._lock:
             return [asdict(item) for item in self._items.values()]
 
+    def stats(self) -> Dict[str, Any]:
+        """Return a summary of provider counts and storage metadata."""
+
+        with self._lock:
+            by_kind: Dict[str, int] = {}
+            for item in self._items.values():
+                key = (item.kind or "custom").lower()
+                by_kind[key] = by_kind.get(key, 0) + 1
+            return {
+                "total": len(self._items),
+                "by_kind": by_kind,
+                "storage_path": str(self._storage_path) if self._storage_path else None,
+                "persisted": bool(self._storage_path and self._storage_path.exists()),
+            }
+
     # ------------------------------------------------------------------
     # Persistence helpers
     # ------------------------------------------------------------------

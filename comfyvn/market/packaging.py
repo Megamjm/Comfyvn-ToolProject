@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import fnmatch
 import hashlib
 import json
@@ -8,7 +9,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from .manifest import (
     DEFAULT_GLOBAL_ROUTE_ALLOWLIST,
@@ -40,6 +41,7 @@ class PackageBuildResult:
     file_count: int
     bytes_written: int
     sha256: str
+    manifest_sha256: str | None = None
 
 
 def _should_ignore(rel_path: str, ignore_patterns: Iterable[str]) -> bool:
@@ -74,6 +76,57 @@ def _scan_files(
         yield path
 
 
+_ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+_ZIP_FILE_MODE = 0o644 << 16
+
+
+def _write_zip_bytes(zf: ZipFile, arcname: str, data: bytes) -> None:
+    info = ZipInfo(arcname)
+    info.date_time = _ZIP_EPOCH
+    info.compress_type = ZIP_DEFLATED
+    info.external_attr = _ZIP_FILE_MODE
+    info.create_system = 3  # unix permissions
+    zf.writestr(info, data)
+
+
+def _compute_manifest_digest(manifest: ExtensionManifest, canonical_json: str) -> str:
+    digest = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+    signature = manifest.trust.signature
+    if not signature:
+        return digest
+    algo = manifest.trust.signature_type or ""
+    signature_value = signature.strip()
+    if signature_value.lower().startswith("sha256:"):
+        algo = "sha256"
+        signature_value = signature_value.split(":", 1)[1]
+    if not algo:
+        # Detect algorithm from payload.
+        if len(signature_value) == 64 and all(
+            c in "0123456789abcdefABCDEF" for c in signature_value
+        ):
+            algo = "sha256"
+        else:
+            try:
+                decoded = base64.b64decode(signature_value, validate=True)
+            except Exception as exc:  # pragma: no cover - defensive
+                raise ManifestError(
+                    "manifest trust.signature must be a SHA-256 hex or base64 digest"
+                ) from exc
+            signature_value = decoded.hex()
+            algo = "sha256"
+    algo = algo.lower()
+    if algo != "sha256":
+        raise ManifestError(
+            f"unsupported manifest signature algorithm '{algo}' (expected sha256)"
+        )
+    if signature_value.lower() != digest:
+        raise ManifestError(
+            "manifest trust.signature does not match the canonical manifest payload"
+        )
+    manifest.trust.signature_type = "sha256"
+    return digest
+
+
 def build_extension_package(
     source: str | Path,
     output: str | Path | None = None,
@@ -102,6 +155,7 @@ def build_extension_package(
     )
     manifest_payload = manifest.to_loader_payload()
     manifest_json = json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n"
+    manifest_digest = _compute_manifest_digest(manifest, manifest.canonical_json())
 
     package_name = f"{manifest.id}-{manifest.version}{DEFAULT_PACKAGE_SUFFIX}"
     if output is None:
@@ -123,7 +177,7 @@ def build_extension_package(
     bytes_written = len(manifest_json.encode("utf-8"))
 
     with ZipFile(dest, "w", compression=ZIP_DEFLATED) as zf:
-        zf.writestr(manifest_path.name, manifest_json)
+        _write_zip_bytes(zf, manifest_path.name, manifest_json.encode("utf-8"))
         for file_path in _scan_files(
             root,
             include_hidden=include_hidden,
@@ -131,12 +185,13 @@ def build_extension_package(
             manifest_name=manifest_path.name,
         ):
             rel = file_path.relative_to(root).as_posix()
-            zf.write(file_path, rel)
-            file_count += 1
             try:
-                bytes_written += file_path.stat().st_size
-            except OSError:  # pragma: no cover - filesystem race
-                pass
+                data = file_path.read_bytes()
+            except OSError as exc:  # pragma: no cover - filesystem guard
+                raise ManifestError(f"failed to read '{file_path}': {exc}") from exc
+            _write_zip_bytes(zf, rel, data)
+            file_count += 1
+            bytes_written += len(data)
 
     sha256 = _compute_sha256(dest)
     return PackageBuildResult(
@@ -145,6 +200,7 @@ def build_extension_package(
         file_count=file_count,
         bytes_written=bytes_written,
         sha256=sha256,
+        manifest_sha256=manifest_digest,
     )
 
 
@@ -239,6 +295,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(f"      manifest id={result.manifest.id} version={result.manifest.version}")
     print(f"      trust={result.manifest.trust.level}")
+    print(f"      manifest_sha256={result.manifest_sha256}")
     return os.EX_OK
 
 

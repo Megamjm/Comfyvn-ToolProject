@@ -16,25 +16,26 @@ Owner: Project Integration • Audience: Contributors, Modders, CI
 ## 1.5 Telemetry & Diagnostics
 
 - Modules: `comfyvn/obs/anonymize.py` (hash helpers) and `comfyvn/obs/telemetry.py` (opt-in `TelemetryStore`).
-- Feature flags: set `features.enable_privacy_telemetry` / `features.enable_crash_uploader` to `true` in `config/comfyvn.json` (or via Settings → Debug & Feature Flags). Consent lives in the adjacent `telemetry` block (`telemetry_opt_in`, `crash_opt_in`, `diagnostics_opt_in`, `dry_run`).
+- Feature flags: set `features.enable_observability` (legacy `enable_privacy_telemetry`) / `features.enable_crash_uploader` to `true` in `config/comfyvn.json` (or via Settings → Debug & Feature Flags). Consent lives in the adjacent `telemetry` block (`telemetry_opt_in`, `crash_opt_in`, `diagnostics_opt_in`, `dry_run`).
 - Opt-in via REST:
   ```bash
-  curl -X POST http://127.0.0.1:8001/api/telemetry/settings \
+  curl -X POST http://127.0.0.1:8001/api/telemetry/opt_in \
        -H "Content-Type: application/json" \
-       -d '{"telemetry_opt_in": true, "dry_run": true}'
+       -d '{"diagnostics": true, "dry_run": true}'
   ```
-- Inspect counters:
+- Inspect counters & health:
   ```bash
+  curl http://127.0.0.1:8001/api/telemetry/health | jq '{flag_enabled, telemetry_active, diagnostics_active}'
   curl http://127.0.0.1:8001/api/telemetry/summary | jq '{id: .anonymous_id, telemetry: .telemetry_active, features: .features}'
   curl http://127.0.0.1:8001/api/telemetry/hooks | jq '.hooks["on_asset_registered"]'
   ```
-- Record a custom event (payload keys containing `id|uuid|path|token|email|user` are auto-hashed):
+- Record a custom event (payload keys containing `id|uuid|path|token|email|user|key|secret|serial|license|address|fingerprint` are auto-hashed):
   ```bash
   curl -X POST http://127.0.0.1:8001/api/telemetry/events \
        -H "Content-Type: application/json" \
        -d '{"event":"modder.asset.packaged","payload":{"uid":"abc123","path":"mods/hero.png"}}'
   ```
-- Diagnostics bundle (`GET /api/telemetry/diagnostics`) returns a zip with `manifest.json` (anonymous id, version, opt-in flags), `telemetry.json` (feature counters, hook samples, recent events), and `crashes.json` (hashed crash summaries). Files are emitted under `logs/diagnostics/comfyvn-diagnostics-*.zip`.
+- Diagnostics bundle (`GET /api/telemetry/diagnostics`) returns a zip with `manifest.json` (anonymous id, version, feature flag, consent, health snapshot), `telemetry.json` (feature counters, hook samples, recent events), and `crashes.json` (hashed crash summaries). Files are emitted under `logs/diagnostics/comfyvn-diagnostics-*.zip`.
 - Programmatic access: `from comfyvn.obs import get_telemetry, anonymize_payload`; call `get_telemetry().record_feature("toolkit.launch")` to increment counters from local scripts once telemetry is enabled.
 
 ## 2. Structured Logging Adapter
@@ -107,7 +108,7 @@ Owner: Project Integration • Audience: Contributors, Modders, CI
 - Crash dumps: `logs/crash/*.json`
 - Telemetry counters: `logs/telemetry/usage.json`
 - Diagnostics bundles: `logs/diagnostics/comfyvn-diagnostics-*.zip`
-- Telemetry API: `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics}`
+- Telemetry API: `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics,health,opt_in}`
 - Structured log output: `logs/run-*/run.log` (JSON lines)
 - Doctor script: `tools/doctor_phase4.py`
 - Asset registry hooks: `comfyvn/studio/core/asset_registry.py`

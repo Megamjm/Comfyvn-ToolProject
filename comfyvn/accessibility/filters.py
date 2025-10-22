@@ -63,6 +63,48 @@ AVAILABLE_FILTERS: Tuple[FilterSpec, ...] = (
         passes=(),
     ),
     FilterSpec(
+        key="high_contrast",
+        label="High Contrast Overlay",
+        description="Raises contrast with darkened backgrounds and bright highlights.",
+        passes=(
+            FilterPass(color=(12, 16, 24, 180), composition="multiply", opacity=0.65),
+            FilterPass(color=(255, 225, 120, 140), composition="screen", opacity=0.35),
+        ),
+    ),
+    FilterSpec(
+        key="protan",
+        label="Protan Simulation",
+        description="Simulates red-weak vision; boosts blues/cyans and mutes reds.",
+        passes=(
+            FilterPass(color=(70, 120, 255, 150), composition="screen", opacity=0.55),
+            FilterPass(
+                color=(210, 140, 90, 200), composition="soft_light", opacity=0.45
+            ),
+        ),
+    ),
+    FilterSpec(
+        key="deutan",
+        label="Deutan Simulation",
+        description="Simulates green-weak vision; increases magenta/yellow separation.",
+        passes=(
+            FilterPass(color=(255, 210, 130, 200), composition="overlay", opacity=0.50),
+            FilterPass(
+                color=(70, 140, 255, 180), composition="soft_light", opacity=0.40
+            ),
+        ),
+    ),
+    FilterSpec(
+        key="tritan",
+        label="Tritan Simulation",
+        description="Simulates blue-weak vision; shifts blues and yellows apart softly.",
+        passes=(
+            FilterPass(color=(245, 220, 120, 210), composition="color", opacity=0.40),
+            FilterPass(
+                color=(90, 170, 255, 180), composition="soft_light", opacity=0.45
+            ),
+        ),
+    ),
+    FilterSpec(
         key="grayscale",
         label="Grayscale Boost",
         description="Desaturates the viewer for high readability previews.",
@@ -71,39 +113,6 @@ AVAILABLE_FILTERS: Tuple[FilterSpec, ...] = (
                 color=(127, 127, 127, 255), composition="saturation", opacity=1.0
             ),
             FilterPass(color=(0, 0, 0, 120), composition="luminosity", opacity=0.35),
-        ),
-    ),
-    FilterSpec(
-        key="deuteranopia",
-        label="Deuteranopia Friendly",
-        description="Balances red/green contrast using overlay and soft-light cues.",
-        passes=(
-            FilterPass(
-                color=(60, 120, 240, 180), composition="soft_light", opacity=0.65
-            ),
-            FilterPass(color=(255, 200, 140, 200), composition="color", opacity=0.40),
-        ),
-    ),
-    FilterSpec(
-        key="protanopia",
-        label="Protanopia Friendly",
-        description="Adds warm highlights and cool shadows to strengthen reds.",
-        passes=(
-            FilterPass(
-                color=(255, 180, 120, 200), composition="soft_light", opacity=0.55
-            ),
-            FilterPass(color=(70, 110, 255, 160), composition="overlay", opacity=0.45),
-        ),
-    ),
-    FilterSpec(
-        key="tritanopia",
-        label="Tritanopia Friendly",
-        description="Shifts blues and yellows with a soft overlay tuned for UI.",
-        passes=(
-            FilterPass(color=(250, 220, 120, 210), composition="color", opacity=0.45),
-            FilterPass(
-                color=(70, 160, 255, 180), composition="soft_light", opacity=0.45
-            ),
         ),
     ),
     FilterSpec(
@@ -120,12 +129,25 @@ AVAILABLE_FILTERS: Tuple[FilterSpec, ...] = (
 )
 
 FILTER_INDEX: Dict[str, FilterSpec] = {spec.key: spec for spec in AVAILABLE_FILTERS}
+FILTER_ALIASES: Dict[str, str] = {
+    "protanopia": "protan",
+    "protanopia_friendly": "protan",
+    "deuteranopia": "deutan",
+    "deuteranopia_friendly": "deutan",
+    "tritanopia": "tritan",
+    "tritanopia_friendly": "tritan",
+    "highcontrast": "high_contrast",
+    "contrast": "high_contrast",
+}
 
 
 def canonical_filter_key(raw: str) -> str:
     key = (raw or "none").strip().lower()
     if key in FILTER_INDEX:
         return key
+    alias = FILTER_ALIASES.get(key)
+    if alias:
+        return alias
     for spec in AVAILABLE_FILTERS:
         if spec.label.lower() == key:
             return spec.key

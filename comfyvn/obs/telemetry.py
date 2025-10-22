@@ -27,7 +27,8 @@ from comfyvn.obs.anonymize import (
     hash_identifier,
 )
 
-TELEMETRY_FEATURE_FLAG = "enable_privacy_telemetry"
+TELEMETRY_FEATURE_FLAG = "enable_observability"
+LEGACY_TELEMETRY_FLAGS: tuple[str, ...] = ("enable_privacy_telemetry",)
 CRASH_UPLOADS_FEATURE_FLAG = "enable_crash_uploader"
 
 _CONFIG_CANDIDATES: tuple[Path, ...] = (
@@ -111,6 +112,16 @@ class TelemetryStore:
             self._state.setdefault("app_version", app_version)
         self._persist_state()
 
+    # ----------------------------------------------------------------- flag helpers
+    @staticmethod
+    def _observability_flag_enabled() -> bool:
+        if feature_flags.is_enabled(TELEMETRY_FEATURE_FLAG, default=False):
+            return True
+        for legacy_flag in LEGACY_TELEMETRY_FLAGS:
+            if feature_flags.is_enabled(legacy_flag, default=False):
+                return True
+        return False
+
     # ------------------------------------------------------------------ helpers
     def _load_state(self) -> dict[str, Any]:
         path = _state_path()
@@ -189,17 +200,45 @@ class TelemetryStore:
         return str(self._state.get("anonymous_id") or anonymous_installation_id())
 
     def telemetry_allowed(self) -> bool:
-        if not feature_flags.is_enabled(TELEMETRY_FEATURE_FLAG):
+        if not self._observability_flag_enabled():
             return False
         return bool(self._settings.telemetry_opt_in)
 
     def crash_uploads_allowed(self) -> bool:
-        if not feature_flags.is_enabled(CRASH_UPLOADS_FEATURE_FLAG):
+        if not self._observability_flag_enabled():
+            return False
+        if not feature_flags.is_enabled(CRASH_UPLOADS_FEATURE_FLAG, default=False):
+            return False
+        if not self._settings.telemetry_opt_in:
             return False
         return bool(self._settings.crash_opt_in)
 
     def diagnostics_allowed(self) -> bool:
+        if not self._observability_flag_enabled():
+            return False
+        if not self._settings.telemetry_opt_in:
+            return False
         return bool(self._settings.diagnostics_opt_in)
+
+    def health(self) -> dict[str, Any]:
+        """Lightweight status snapshot for health endpoints."""
+        with self._lock:
+            settings = self._settings.to_dict()
+            last_settings_update = self._state.get("meta", {}).get(
+                "settings_updated_at"
+            )
+        return {
+            "flag_enabled": self._observability_flag_enabled(),
+            "telemetry_opt_in": settings["telemetry_opt_in"],
+            "telemetry_active": self.telemetry_allowed(),
+            "crash_opt_in": settings["crash_opt_in"],
+            "crash_active": self.crash_uploads_allowed(),
+            "diagnostics_opt_in": settings["diagnostics_opt_in"],
+            "diagnostics_active": self.diagnostics_allowed(),
+            "dry_run": settings["dry_run"],
+            "last_settings_update": last_settings_update,
+            "anonymous_preview": self.anonymous_id[:8],
+        }
 
     # ------------------------------------------------------------------ recorders
     def record_feature(self, name: str, *, variant: str | None = None) -> bool:
@@ -302,13 +341,17 @@ class TelemetryStore:
             app_version = self._state.get("app_version") or os.getenv(
                 "COMFYVN_VERSION", "unknown"
             )
+            consent = self._settings.to_dict()
         return {
             "anonymous_id": self.anonymous_id,
             "app_version": app_version,
+            "flag_enabled": self._observability_flag_enabled(),
             "telemetry_active": self.telemetry_allowed(),
             "crash_uploads_active": self.crash_uploads_allowed(),
-            "diagnostics_opt_in": self.diagnostics_allowed(),
-            "dry_run": bool(self._settings.dry_run),
+            "diagnostics_opt_in": bool(consent["diagnostics_opt_in"]),
+            "diagnostics_active": self.diagnostics_allowed(),
+            "dry_run": bool(consent["dry_run"]),
+            "consent": consent,
             "features": features,
             "hooks": hooks,
             "crashes": crashes,
@@ -327,9 +370,14 @@ class TelemetryStore:
             "anonymous_id": self.anonymous_id,
             "app_version": self._state.get("app_version")
             or os.getenv("COMFYVN_VERSION", "unknown"),
+            "flag_enabled": self._observability_flag_enabled(),
             "telemetry_active": self.telemetry_allowed(),
             "crash_uploads_active": self.crash_uploads_allowed(),
-            "diagnostics_opt_in": self.diagnostics_allowed(),
+            "diagnostics_opt_in": bool(self._settings.diagnostics_opt_in),
+            "diagnostics_active": self.diagnostics_allowed(),
+            "dry_run": bool(self._settings.dry_run),
+            "consent": self._settings.to_dict(),
+            "health": self.health(),
         }
 
         snapshot = self.summary(include_events=True)

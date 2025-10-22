@@ -27,6 +27,7 @@ Docs channel overview
 The `docs/` tree is split by delivery lane so every chat knows where to drop status notes and modder guidance:
 
 - `docs/development/` — contributor-facing “how to extend” references (`plugins_and_assets.md`, `advisory_modding.md`, the new `observability_debug.md`).
+- `docs/ADVISORY_EXPORT.md` — P5 advisory/export workflow (feature flags, policy gate API, CLI JSON contract) with a companion dev log in `docs/dev_notes_advisory_export.md`.
 - `docs/production_workflows_v0.7.md` — release/operator runbooks maintained by Project Integration.
 - `docs/CODEX_STUBS/` — work orders mirrored from the tooling chat; treat these as immutable.
 - `docs/CHANGEME.md` — rolling log of shipped items with pointers back to owning chats and related docs.
@@ -35,26 +36,51 @@ The `docs/` tree is split by delivery lane so every chat knows where to drop sta
 - `docs/development/pov_worldlines.md` — worldline registry API (`/api/pov/worlds`, diff/merge helpers) plus export hooks for canonical vs multi-world builds.
 - `docs/VIEWER_README.md` — viewer launch checklist with `/api/viewer/{start,stop,status}` payloads and environment overrides.
 - `docs/development/emulation_and_llm.md` — SillyCompatOffload feature flag, emulation engine payloads, LLM proxy usage, and prompt pack locations.
+- `docs/EDITOR_UX_ADVANCED.md` — blocking assistant + snapshot sheet API contracts, feature flags, hook payloads, and verification checklist (`p6_editor_ux`).
+- `docs/development/dev_notes_editor_blocking.md` — CLI drills, determinism notes, and hook payload reference for the editor blocking assistant and snapshot sheet compositor.
 - `docs/development/dev_notes_cloud_sync.md` — S3/GDrive sync API, secrets vault rotation, manifest layout, provider SDK setup, and modder hook payloads.
 - `docs/dev_notes_playtest_harness.md` — deterministic playtest harness guide (feature flag, API payloads, golden diffs, modder hooks, and debug checklist).
+- `docs/AUDIO_LAB.md` — feature-flagged Audio Lab contracts (voice catalog, TTS cache, alignment JSON, mixer metadata) with hook payloads and filesystem layout.
+- `docs/ASSET_INGEST.md` — staged asset ingest pipeline (queue API, dedup cache, provenance, rate limits) with companion debug log `docs/dev_notes_asset_ingest.md`.
+- `docs/DUNGEON_API.md` — dungeon runtime contract (`/api/dungeon/*`), snapshot payloads, determinism checklist, and modder hook catalogue; see companion dev note `docs/dev_notes_dungeon_api.md` for REPL helpers and curl drills.
+- `docs/ANIM_25D.md` — auto-rig + motion graph architecture, REST payloads, determinism/performance guidelines, preset storage, and hook catalogue for the 2.5D animation pipeline.
+- `docs/dev_notes_anim_25d.md` — debugging cookbook covering anchor tagging, preview sequencing, preset management, and hook emission verification.
 - `docs/PROMPT_PACKS/` — reusable prompt templates (POV rewrite, battle narration) with strict JSON schemas for narrative tooling.
 - `docs/development/theme_world_changer.md` — Theme & World Changer REST contracts, checksum guarantees, debug flows, and modder automation tips.
+
+Community connectors (F-List & FurAffinity)
+-------------------------------------------
+
+- `comfyvn/connectors/flist.py` parses F-List markdown/BBCode exports into persona payloads, mapping kink taxonomies into NSFW tags (trimmed unless the global flag + consent allow them) and recording debug metrics (`sections`, `kink_counts`) for modder automation.
+- `comfyvn/connectors/furaffinity.py` stores user-supplied image uploads only (strict base64 decode, no scraping), hashes files under `data/persona/imports/<persona_id>/`, writes provenance sidecars with optional credits, and records trimmed NSFW tag lists when gating removes them.
+- `comfyvn/server/routes/connectors_persona.py` exposes `/api/connect/flist/consent|import_text`, `/api/connect/furaffinity/upload`, and `/api/connect/persona/map`. All routes require `features.enable_persona_importers`, reuse the shared consent JSON, apply `build_persona_record`, and persist persona/provenance JSON before firing `on_connector_persona_mapped` + `on_persona_imported`.
+- Consent JSON (`data/persona/consent.json`) now gains `connectors.flist` metadata, storing per-connector NSFW allowances, profile URLs, agents, and notes. The checker profile `p7_connectors_flist_fa` validates the routes, flags, and required docs.
+- Modder hooks `on_flist_profile_parsed` and `on_furaffinity_asset_uploaded` broadcast parsed persona payloads and stored asset metadata (hash/path/sidecar) so dashboards or plugins can react without polling REST endpoints.
 
 Cloud sync & secrets vault summary
 ---------------------------------
 
-- `comfyvn/sync/cloud/manifest.py` owns the canonical manifest model (`ManifestEntry.digest/size/modified`) plus helpers for scanning selective folders and writing deterministic tarball snapshots.
-- Provider adapters live beside it: `s3.py` uploads to buckets/prefixes via `boto3`, while `gdrive.py` targets Drive folders with service-account auth. Both implement `plan()` (dry-run) and `sync()` (idempotent run) so higher layers can stay provider-agnostic.
-- Secrets are resolved through `comfyvn/security/secrets_store.py`, which keeps `config/comfyvn.secrets.json` encrypted with Fernet (`COMFYVN_SECRETS_KEY` env or `config/comfyvn.secrets.key`) and records every read/write/rotation to `logs/security.log` (or `${COMFYVN_SECURITY_LOG_FILE}`). Environment overrides in the shape `COMFYVN_SECRET_<PROVIDER>_<FIELD>` merge at runtime without touching disk.
-- Security FastAPI routes live under `/api/security/*` (gated by feature flag `enable_security_api`). They expose provider summaries, key rotation, audit tailing, and sandbox allowlist checks; audit payloads stay value-free so dashboards can monitor usage safely.
-- Plugin sandbox runs now enforce deny-by-default networking: `comfyvn/sandbox/runner.py` injects `comfyvn/security/sandbox.py` guards, honours `network_allow` + `SANDBOX_NETWORK_ALLOW`, and surfaces `security.sandbox_blocked` modder events. Feature flag `enable_security_sandbox_guard` (default true) controls guard activation for backwards compatibility.
-- FastAPI routes `/api/sync/dry-run` and `/api/sync/run` (see `comfyvn/server/routes/sync.py`) build manifests with defaults from `config/comfyvn.json → sync`, merge vault credentials, and emit structured logs (`sync.dry_run`, `sync.run`). Feature flags: `enable_cloud_sync`, `enable_cloud_sync_s3`, `enable_cloud_sync_gdrive`.
-- Automation/debug flows rely on modder hooks `on_cloud_sync_plan` and `on_cloud_sync_complete`. Both include plan counts, optional snapshot IDs, metadata echoes, and timestamps so dashboards/webhooks remain in sync with operator runs.
+- `comfyvn/sync/cloud/manifest.py` owns the canonical manifest model (`ManifestEntry.path/size/mtime/sha256`), default include/exclude sets, checksum helpers, and deterministic scanning routines that skip cache/log/tmp directories.
+- Provider adapters live beside it: `s3.py` (Amazon S3 via `boto3`) and `gdrive.py` (Drive v3 service account). Both implement dry-run summaries, resumable plan application, and aggregate per-file failures so reruns can pick up where they left off. Manifests are uploaded to the provider only when all operations succeed.
+- Secrets are loaded through `comfyvn/sync/cloud/secrets.py`. `SecretsVault` keeps `config/comfyvn.secrets.json` encrypted with AES-GCM (PBKDF2-HMAC-SHA256); inline backups retain the last five ciphertext envelopes. Unlock via `COMFYVN_SECRETS_KEY` or an explicit passphrase argument.
+- Cloud sync FastAPI routes live in `comfyvn/server/routes/sync_cloud.py` and expose `/api/sync/manifest`, `/api/sync/dry_run`, `/api/sync/run`, plus `/api/backup/{create,restore}` for local ZIP archives under `backups/cloud/`. Feature flags: `enable_cloud_sync`, `enable_cloud_sync_s3`, `enable_cloud_sync_gdrive`.
+- Automation/debug flows rely on modder hooks `on_cloud_sync_plan` (dry-run telemetry) and `on_cloud_sync_complete` (run summaries with status + counts). Structured logs (`sync.dry_run`, `sync.run`, `backup.create`, `backup.restore`) land in `logs/server.log`; secrets never appear in log payloads.
+- Reference material: `docs/CLOUD_SYNC.md`, `docs/BACKUPS.md`, and the refreshed dev note `docs/development/dev_notes_cloud_sync.md` cover IAM scopes, curl drills, hook payloads, and recovery checklists. The checker profile `p4_cloud_sync` validates flag defaults, routes, and documentation presence.
 - `docs/development/public_translation_ocr_speech.md` — public MT/OCR/Speech adapter contracts, feature flag wiring, dry-run diagnostics, and modder integration notes.
+- `comfyvn/public_providers/{translate_*,ocr_*,speech_*}.py` and `comfyvn/server/routes/providers_translate_ocr_speech.py` expose dry-run translation/OCR/speech metadata behind `enable_public_translate`. `/api/providers/translate/health` fuses pricing links, credential diagnostics, and docs references for the Studio debug panels.
+- `comfyvn/public_providers/llm_{openai,anthropic,gemini,openrouter}.py` and `comfyvn/server/routes/providers_llm.py` implement the public LLM router. `/api/providers/llm/registry` surfaces model tags + pricing anchors, while `POST /api/providers/llm/chat` returns HTTP dispatch plans so routing logic can be inspected without hitting upstream APIs.
+- `docs/PROVIDERS_LANG_SPEECH_LLM.md` covers environment keys, pricing links, curl snippets, and dry-run behaviour. `docs/LLM_RECOMMENDATIONS.md` tracks module presets (Translate, VN Chat, Narrator, Worldbuild, Battle narration) so UI dropdowns stay aligned with backend defaults.
 - `docs/development/battle_layer_hooks.md` — battle choice vs sim APIs, seeding helpers, narration payload schemas, and SFX/VFX hand-off tips for modders.
 - `docs/development/observability_debug.md` — crash triage, log tooling, Debug Integrations panel usage, and `/api/modder/hooks/*` history/WebSocket examples for automation scripts.
 - `docs/development/perf_budgets_profiler.md` — CPU/VRAM budgets, lazy asset eviction flows, profiler mark/dashboard endpoints, feature flags, modder hook payloads, and curl recipes for contributors.
 - `docs/dev_notes_asset_registry_hooks.md` — asset registry filter matrix, curl/WebSocket snippets, dry-run guidance, and tips for wiring automation into the expanded modder hook bus.
+- `docs/IMAGE2PERSONA.md` — P6 Image→Persona analyzer pipeline (appearance tags, palette, pose anchors, expression prototypes, style/LoRA suggestions) plus deterministic/hash guidance.
+- `docs/dev_notes_image2persona.md` — hook catalog for palette/appearance overrides, anchor/expressions injections, style registry extensions, and QA playbooks.
+- `docs/PERSONA_IMPORTERS.md` — consent-driven persona importer flow covering `/api/persona/{consent,import,preview,map}`, provenance layout, curl recipes, and modder hook payloads.
+- `docs/NSFW_GATING.md` — NSFW gate matrix (feature flag + consent) describing how persona fields are trimmed or persisted and how QA should validate the toggle.
+- `docs/dev_notes_persona_importers.md` — debug checklist for consent recording, importer flows, NSFW verification, hook subscriptions, and storage layout audits.
+- `docs/COMMUNITY_CONNECTORS.md` — consent, provenance, and route contracts for `/api/connect/flist/*`, `/api/connect/furaffinity/upload`, and `/api/connect/persona/map`, including curl drills and checker references.
+- `docs/dev_notes_community_connectors.md` — deep dive on parser heuristics, NSFW trimming, hook verification, consent JSON layout, and troubleshooting tips for contributors.
 - `docs/THEME_TEMPLATES.md` — canonical presets, override semantics, and REST payloads for theme application plus GUI hook annotations.
 - `docs/WEATHER_PROFILES.md` — weather planner inputs/outputs, transition presets, and modder debug flows for `/api/weather/state`.
 - `docs/BATTLE_DESIGN.md` — battle UX & simulation v0 guide (formula, resolve/simulate payloads, prompt pack alignment, roadmap).
@@ -177,7 +203,7 @@ Blockers (release-critical):
 - Audio remix + TTS ComfyUI hand-off must write asset registry sidecars and telemetry before we can call audio automation done. Stub endpoints/cache are live under `comfyvn/server/routes/audio.py`; next iteration needs real synthesis plumbing. Owner: Audio & Policy Chat.
 - Manga importer parity (panel segmentation → VN timeline) is still flagged 🚧; release requires at least the preview flow and asset registration parity. Owner: Importer Chat.
 - Extension loader + Studio slots: Plugin manifests under `extensions/*/manifest.json` now flow through `comfyvn/plugins/loader.py`, exposing safe REST hooks, UI panels, and event subscriptions. `/api/extensions/*` surfaces enable/disable controls, panel descriptors, and static asset delivery. Studio renders enabled panels inside the new Extensions card (see `comfyvn/studio/app.js`). Owner: Plugin Runtime Chat; sample shipped as `extensions/sample_hello`. Reference: `docs/development/plugins_and_assets.md`.
-- Marketplace & packaging service: `comfyvn/market/{manifest,packaging,service}.py` defines a shared manifest schema (metadata, permissions, trust envelopes), builds deterministic `.cvnext` archives, and manages install/uninstall flows guarded by trust-level allowlists (unverified bundles are sandboxed under `/api/extensions/{id}`, verified bundles may expose allowlisted `/api/modder/*` routes). FastAPI mounts `/api/market/{catalog,installed,install,uninstall}` behind feature flags `enable_extension_market`/`enable_extension_market_uploads` (config/comfyvn.json defaults to `false`). Installations land under `/extensions/<id>` with `.market.json` sidecars capturing package digests, trust, and timestamps; structured logs write `event=market.install|market.uninstall` to `logs/server.log`. CLI entrypoint: `bin/comfyvn_market_package.py`.
+- Marketplace & packaging service: `comfyvn/market/{manifest,packaging,service}.py` defines the shared manifest schema (metadata, permissions, diagnostics, trust envelopes, optional signature digests), builds deterministic `.cvnext` archives, and manages install/uninstall flows guarded by trust-level allowlists (unverified bundles are sandboxed under `/api/extensions/<id>`, verified bundles may expose allowlisted `/api/modder/*` routes). FastAPI mounts `/api/market/{list,install,uninstall,health}` behind feature flags `enable_marketplace` (primary) and `enable_extension_market_uploads` (uploads opt-in). Installations land under `/extensions/<id>` with `.market.json` sidecars capturing package + manifest SHA-256 digests, trust metadata, and timestamps; structured logs write `event=market.install|market.uninstall` to `logs/server.log`. CLI entrypoint: `bin/comfyvn_market_package.py`.
 
 Cross-chat dependencies:
 - Asset inspector relies on registry consistency and provenance stamping from Asset Registry + Advisory teams; GUI needs API contract finalised before implementation.
@@ -188,9 +214,9 @@ Observability & diagnostics
 ---------------------------
 
 - Crash Reporter: `comfyvn/obs/crash_reporter.py` exposes `capture_exception` for tool scripts and installs a repo-wide `sys.excepthook` via `install_sys_hook()`. FastAPI calls it on startup so unexpected exceptions create JSON crash dumps under `logs/crash/` with stack traces, PID, working directory, and optional context payloads. Helpers return the written path so CLI/GUI surfaces can link users directly to the dump.
-- Collaboration service: `comfyvn/collab/{crdt,room}.py` implements a Lamport-clock CRDT covering scene fields, nodes, and script lines while maintaining request-control locks and presence (cursor, selection, typing). `comfyvn/server/core/collab.py` boots the hub with async persistence through `scene_save`, gated by `features.enable_collaboration` (default `true`). FastAPI exposes `/api/collab/ws` plus REST helpers (`health`, `presence/<scene>`, `snapshot/<scene>`, `history/<scene>?since=n`, `flush`), emits structured log lines (`collab.op applied ...`), and publishes `on_collab_operation` on the modder bus. Studio wires the overlay via `comfyvn/gui/services/collab_client.py`/`SceneCollabAdapter`, diffing node-editor edits into CRDT ops and replaying remote snapshots with <200 ms LAN latency.
+- Collaboration service: `comfyvn/collab/{crdt,room}.py` implements a Lamport-clock CRDT covering scene fields, nodes, and script lines while maintaining request-control locks and presence (cursor, selection, typing, capability sets). `CollabRoom.register_headless_client()` lets HTTP tooling join without a WebSocket, marking those entries as `headless` for overlays. `comfyvn/server/core/collab.py` boots the hub with async persistence through `scene_save`, gated by `features.enable_collaboration` (alias `enable_collab`, default `true`). FastAPI exposes `/api/collab/ws` plus REST helpers in `server/routes/collab.py` (`room/{create,join,leave,apply}`, `room/cache`, `health`, `presence/<scene>`, `snapshot/<scene>`, `history/<scene>?since=n`, `flush`), emits structured log lines (`collab.op applied ...`), and publishes `on_collab_operation` on the modder bus. Studio wires the overlay via `comfyvn/gui/services/collab_client.py`/`SceneCollabAdapter`, diffing node-editor edits into CRDT ops and replaying remote snapshots with <200 ms LAN latency.
 - Telemetry & anonymisation: `comfyvn/obs/telemetry.py` hosts the `TelemetryStore` singleton that records opt-in feature counters, anonymised custom events, and hashed crash digests in `logs/telemetry/usage.json`. Hashing and payload scrubbing flow through `comfyvn/obs/anonymize.py`, which uses a per-installation BLAKE2s key so identifiers stay consistent locally without leaking raw IDs.
-- Consent + routing: Feature flags `enable_privacy_telemetry` and `enable_crash_uploader` default to `false` under `config/comfyvn.json → features`. User intent persists in the adjacent `telemetry` section (`telemetry_opt_in`, `crash_opt_in`, `diagnostics_opt_in`, `dry_run`). FastAPI mounts `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics}`; callers receive hashed `anonymous_id` values, per-feature counters, recent hook samples, and zipped diagnostics bundles (manifest + telemetry snapshot + crash summaries) once diagnostics opt-in is granted.
+- Consent + routing: Feature flags `enable_observability` (legacy alias `enable_privacy_telemetry`) and `enable_crash_uploader` default to `false` under `config/comfyvn.json → features`. User intent persists in the adjacent `telemetry` section (`telemetry_opt_in`, `crash_opt_in`, `diagnostics_opt_in`, `dry_run`). FastAPI mounts `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics,health,opt_in}`; callers receive hashed `anonymous_id` values, per-feature counters, recent hook samples, health snapshots, and zipped diagnostics bundles (manifest + telemetry snapshot + crash summaries + consent metadata) once diagnostics opt-in is granted.
 - Modder hook sampling: `comfyvn/core/modder_hooks.py` taps `TelemetryStore.record_hook_event`, storing the last five anonymised payload samples for each hook alongside counters. Observability dashboards and custom tooling can now introspect hook activity without ingesting raw asset IDs or file paths.
 - Structured Logging: `comfyvn/obs/structlog_adapter.py` implements `get_logger(name, **context)` and a `LoggerAdapter`-style `bind`/`unbind` API that emits deterministically sorted JSON lines, keeping log ingestion simple without depending on `structlog`.
 - Health doctor: `tools/doctor_phase4.py` probes `/health`, simulates a crash, and verifies structured logging. The script prints a JSON report and exits non-zero when any probe fails, making it safe for desktop troubleshooters and CI smoke jobs.
@@ -515,6 +541,7 @@ Outputs:
 Acceptance: ~~Register at least one provider; successful health check; advisor produces rationale.~~ ✅ Verified 2025-10-20 (health status persisted with timestamp; advisor returns rationale string).
 
 Next wave (Importer alignment):
+- ✅ 2025-12-18 — Advisor debug telemetry, `/api/compute/costs` cost previews, and provider registry stats landed. Docs refreshed (`docs/COMPUTE_ADVISOR.md`, `docs/dev_notes_compute_advisor.md`), and the compute feature flag defaults to false so remote offload stays opt-in.
 - Populate curated provider profiles (RunPod, Vast.ai, Lambda Labs, AWS EC2, Azure NV, Paperspace, unRAID, on-prem SSH/NFS) including authentication fields, cost/V RAM metadata, and policy hints for importer workloads (e.g., voice synthesis vs. large CG batch).
 - Extend `/compute/advise` to consider importer asset sizes, translation pipeline demands, and cached ComfyUI workflow requirements. Surface recommended provider + cost estimate back into importer job summary.
 - Document remote GPU onboarding flows in `docs/remote_gpu_services.md`, including legal caveats around content processing and data residency.
@@ -608,6 +635,22 @@ Acceptance: Repeated synth of identical inputs hits cache.
 Debugging: Compare successive `/api/tts/synthesize` calls; verify `cached=true` and cache entry appears in `cache/audio_cache.json`.
 Notes: Cache manager lives in `comfyvn/core/audio_cache.py` with key format `{voice|text_hash|lang|character|style|model_hash}`.
 
+Phase 6 — Animation 2.5D
+
+Owner: Animation Systems & Playground Bridge Chats
+
+Outputs:
+- `comfyvn/anim/rig/autorig.py` converts layered anchors into a bone hierarchy, infers roles, applies deterministic constraints, and seeds viseme targets (`A/I/U/E/O`) plus idle cycles (breath, blink, micro-mouth motion).
+- `comfyvn/anim/rig/mograph.py` composes idle→turn→emote→idle preview loops with guard rails so transitions only run when constraints allow it. Idle cycles fall back when the rig lacks the necessary bones.
+- FastAPI routes `comfyvn/server/routes/anim.py` expose `/api/anim/{rig,preview,save}`, register modder hooks (`on_anim_rig_generated`, `on_anim_preview_generated`, `on_anim_preset_saved`), and persist presets to `cache/anim_25d_presets.json`. Feature flag: `features.enable_anim_25d` (default false).
+
+Acceptance:
+- `POST /api/anim/rig` returns the rig payload (`bones`, `constraints`, `mouth_shapes`, `idle_cycle`, checksum) with deterministic stats; rejects duplicate anchor IDs.
+- `POST /api/anim/preview` emits an idle loop + motion graph preview (≤5 s, ≤24 fps) with state ordering, falling back to idle when guards fail; modder hook includes checksum, frame count, duration, states.
+- `POST /api/anim/save` persists named presets, supports overwrite mode, and writes to the preset catalog; hook payload lists preset name, checksum, and filesystem path.
+
+Docs: `docs/ANIM_25D.md`, `docs/dev_notes_anim_25d.md`. Checker profile `p6_anim_25d` enforces feature flag defaults, route presence, and documentation coverage.
+
 Status:
 - ✅ 2025-10-21 — `AudioCacheManager` loads/persists JSON entries, keyed by the documented tuple and shared via `audio_cache` singleton for the TTS API.
 - ✅ 2025-10-21 — Cache path now resolved through `comfyvn/config/runtime_paths.audio_cache_file`, aligning with the runtime storage overhaul.
@@ -628,7 +671,8 @@ Notes: Cache manager lives in `comfyvn/cache/cache_manager.py`; JSON index defau
 Status:
 - ✅ 2025-10-22 — `CacheManager` stores content hashes, refcounts, and pin state with LRU eviction safeguards for non-pinned blobs.
 - ✅ 2025-10-22 — `scripts/rebuild_dedup_cache.py` rebuilds the index from disk while preserving pinned entries and reporting duplicates.
-- ⚠ TODO: hook asset registry import flows so new registrations automatically register/release paths against the dedup cache.
+- ✅ 2025-12-22 — Asset ingest queue (`comfyvn/ingest/queue.py`) stages assets through `CacheManager`, pins queued blobs, normalises provider metadata, and releases entries after registry apply. API + modder hook contracts captured in `docs/ASSET_INGEST.md`.
+- ⚠ TODO: extend cache integration to legacy import paths that still bypass the queue.
 
 Phase 7 — Advisory, policy, SFW/NSFW
 
@@ -647,6 +691,7 @@ Notes: Gate state persisted via `comfyvn/core/policy_gate.py`; the system advise
 Status:
 - ✅ 2025-10-21 — `PolicyGate` persists acknowledgements via `SettingsManager`, tracks `ack_timestamp`, and surfaces overrides for audit.
 - ✅ 2025-10-21 — FastAPI router (`comfyvn/server/modules/policy_api.py`) implements `/api/policy/{status,ack,evaluate}` with logging + error paths.
+- ✅ 2025-12-22 — License snapshot gate stores normalised hub EULAs via `comfyvn/advisory/license_snapshot.py`, persists per-user acknowledgements, emits `on_asset_meta_updated`, and exposes `/api/advisory/license/{snapshot,ack,require}` so connectors block downloads until the current hash is acknowledged.
 - ⚠ Outstanding: studio UX for multi-user acknowledgement history and automated reminder surfaces.
 
 Part B — Advisory scans
@@ -708,7 +753,7 @@ Notes: Routes depend on feature flags (`enable_public_gpu`, `enable_public_image
 Status:
 - ✅ 2025-11-08 — Added `comfyvn/public_providers/{catalog,gpu_runpod,video_runway,translate_google}.py` plus `/api/providers/*/public` FastAPI routers with feature flag guards and deterministic dry-run helpers.
 - ✅ 2025-11-10 — Split image/video feature flags (`enable_public_image_providers`, `enable_public_video_providers`), wired new adapters `comfyvn/public_providers/{image_stability,image_fal,video_pika,video_luma}.py`, mounted `/api/providers/{image,video}/{catalog,generate}` in `comfyvn/server/routes/providers_image_video.py`, and surfaced toggles in the Settings panel. Dry-run calls now register jobs with cost estimates for modder debugging, and docs (`README.md`, `architecture_updates.md`, `docs/dev_notes_public_media_providers.md`) cover payloads, pricing anchors, and secrets guidance.
-- ✅ 2025-11-29 — Landed the accessibility stack: `comfyvn/accessibility/{__init__,filters,subtitles,input_map}.py` persists font scaling, color filters/high-contrast, subtitle overlays, and controller-aware input bindings. Feature flags `enable_accessibility_controls`, `enable_accessibility_api`, and `enable_controller_profiles` gate the Settings drawers and REST surfaces. `/api/accessibility/{state,filters,subtitle,input-map,input/event}` now complements viewer control routes, while VN Viewer and Settings UI subscribe for live updates. Structured logs stream to `logs/accessibility.log`, and new modder hooks (`on_accessibility_settings`, `on_accessibility_subtitle`, `on_accessibility_input_map`, `on_accessibility_input`) keep automation aligned. Docs updated (`README.md`, `architecture.md`, `architecture_updates.md`, `CHANGELOG.md`, `docs/dev_notes_modder_hooks.md`, `docs/development/accessibility_input_profiles.md`).
+- ✅ 2025-12-14 — Accessibility stack v2: introduced `comfyvn/accessibility/ui_scale.py` and extended `accessibility_manager` to persist global UI scale (100–200 %) plus per-view overrides. VN Viewer registers with the scale manager while the Settings panel exposes presets, viewer-only overrides, filters, high-contrast toggle, and subtitles. Input defaults now cover numeric choices, narrator/overlay toggles, and editor pick-winner bindings; `InputMapManager` gained export/import helpers with `reason` metadata for modder hooks. Feature flag `enable_accessibility` joins the existing controls/api/controller toggles. FastAPI now serves `/api/accessibility/{state,set,filters,subtitle,export,import,input-map,input/event}` and `/api/input/{map,reset}`; structured logs stream to `logs/accessibility.log`. Docs refreshed (`README.md`, `architecture.md`, `architecture_updates.md`, `CHANGELOG.md`, `docs/ACCESSIBILITY.md`, `docs/INPUT_SCHEMES.md`, `docs/development/accessibility_input_profiles.md`).
 - ✅ 2025-12-01 — `/api/pov/worlds` exposes list/create/update/activate endpoints for worldline management; `/api/battle/{resolve,sim}` surface the v0 formula, editor prompt, roll breakdowns, provenance, and optional narration (simulation gated by `enable_battle_sim`).
 - ✅ 2025-11-08 — README, architecture, CHANGELOG, `docs/POV_DESIGN.md`, `docs/THEME_TEMPLATES.md`, `docs/WEATHER_PROFILES.md`, `docs/BATTLE_DESIGN.md`, and `docs/LLM_RECOMMENDATIONS.md` now include pricing anchors, provider review notes, debug hooks, and secrets/feature flag guidance.
 - ⚠ TODO: expand battle formula (DEF/LCK/traits), add WebSocket streaming for roll breakdowns, and wire provider-backed SFX/VFX triggers once asset pipelines are approved.
@@ -935,6 +980,9 @@ Roleplay/World Lore: roleplay import, world indexing, persona linking
 Importer: VN/manga importers, file ingestion pipeline
 
 Remote Compute & GPU Access: gpu_manager, providers registry, compute advisor
+- Advisor now emits optional debug payloads (pixels, VRAM demand, queue thresholds) so Studio can explain why jobs stayed local.
+- `JobScheduler.preview_cost()` powers `/api/compute/costs`, returning numeric breakdowns plus human readable hints without touching providers.
+- Provider registry exposes `stats()` for dashboards (`/api/providers?debug=1`) and compute REST responses always echo the `enable_compute` feature flag so remote offload stays explicitly opt-in.
 
 Audio & Effects: TTS, remix, audio cache
 
@@ -952,6 +1000,7 @@ Steam/itch publish pipeline:
 - `comfyvn/exporters/publish_common.py` provides deterministic ZIP builders, license manifest extraction, slug helpers, and provenance log appenders shared by the platform-specific packagers.
 - `comfyvn/exporters/steam_packager.py` and `comfyvn/exporters/itch_packager.py` wrap Ren'Py exports into reproducible archives with `publish_manifest.json`, `license_manifest.json`, provenance sidecars, optional debug hook listings, and per-platform build folders.
 - Feature flags `enable_export_publish`, `enable_export_publish_steam`, and `enable_export_publish_itch` (all default `false`) gate `POST /api/export/publish`. When enabled, the route rebuilds the Ren'Py project, writes Steam/itch packages, and records structured entries to `logs/export/publish.log`.
+- `comfyvn/exporters/web_packager.py` emits deterministic Mini-VN web bundles containing hashed assets, `index.html`, `content_map.json`, `preview/health.json`, and optional modder hook catalogues. Feature flag `enable_publish_web` gates `/api/publish/web/{build,redact,preview}`. Redaction options (`strip_nsfw`, `remove_provenance`, `watermark_text`, `exclude_paths`) only affect the redacted assets, keeping safe artefacts byte-identical for diffability. Preview responses surface health status plus pointers to the generated manifest/redaction sidecars.
 - Dry-run callers receive diff payloads without touching disk, while completed runs emit modder hooks `on_export_publish_preview` / `on_export_publish_complete` so automation can mirror release notes and checksums. See `docs/development/export_publish_pipeline.md` for curl samples and expected JSON contracts.
 
 Rule: Don’t modify modules outside your ownership without coordinating via Code Updates and Project Integration.

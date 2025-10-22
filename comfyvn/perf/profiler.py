@@ -241,6 +241,19 @@ class PerfProfiler:
         snapshot["categories"] = grouped
         return snapshot
 
+    def health(self, *, limit: int = 5) -> Dict[str, Any]:
+        """Return a lightweight health view highlighting top offenders."""
+        with self._lock:
+            spans_count = len(self._history)
+            marks_count = len(self._marks)
+        return {
+            "spans_recorded": spans_count,
+            "marks_recorded": marks_count,
+            "top_time": self.top_offenders(limit=limit, by="time"),
+            "top_memory": self.top_offenders(limit=limit, by="memory"),
+            "timestamp": time.time(),
+        }
+
     def reset(self) -> None:
         with self._lock:
             self._history.clear()

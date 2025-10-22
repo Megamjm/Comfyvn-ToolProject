@@ -104,6 +104,8 @@ class AssetGalleryPanel(QDockWidget):
         filters_row = QHBoxLayout()
         filters_row.setSpacing(6)
 
+        self._search_input = QLineEdit(container)
+        self._search_input.setPlaceholderText("Search path, tags, metadata…")
         self._type_filter = QComboBox(container)
         self._type_filter.setMinimumWidth(120)
         self._tag_filter = QComboBox(container)
@@ -111,6 +113,8 @@ class AssetGalleryPanel(QDockWidget):
         self._license_filter = QComboBox(container)
         self._license_filter.setMinimumWidth(140)
 
+        filters_row.addWidget(QLabel("Search:", container))
+        filters_row.addWidget(self._search_input, 1)
         filters_row.addWidget(QLabel("Type:", container))
         filters_row.addWidget(self._type_filter)
         filters_row.addWidget(QLabel("Tag:", container))
@@ -170,6 +174,7 @@ class AssetGalleryPanel(QDockWidget):
 
         self.setWidget(container)
 
+        self._search_input.textChanged.connect(self._apply_filters)
         self._type_filter.currentIndexChanged.connect(self._apply_filters)
         self._tag_filter.currentIndexChanged.connect(self._apply_filters)
         self._license_filter.currentIndexChanged.connect(self._apply_filters)
@@ -241,7 +246,29 @@ class AssetGalleryPanel(QDockWidget):
                 combo.setCurrentIndex(index)
         combo.blockSignals(False)
 
+    @staticmethod
+    def _asset_matches_search(asset: Dict[str, Any], needle: str) -> bool:
+        """Return True when the asset metadata matches ``needle``."""
+
+        uid = str(asset.get("uid") or asset.get("id") or "")
+        if needle in uid.lower():
+            return True
+        path_value = str(asset.get("path") or "")
+        if needle in path_value.lower():
+            return True
+        meta_payload = asset.get("meta") or {}
+        if isinstance(meta_payload, dict):
+            for value in meta_payload.values():
+                if isinstance(value, str) and needle in value.lower():
+                    return True
+                if isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str) and needle in item.lower():
+                            return True
+        return False
+
     def _apply_filters(self) -> None:
+        search_text = self._search_input.text().strip().lower()
         selected_type = self._type_filter.currentData()
         selected_tag = self._tag_filter.currentData()
         selected_license = self._license_filter.currentData()
@@ -262,6 +289,8 @@ class AssetGalleryPanel(QDockWidget):
                     license_tag.strip().lower() != selected_license.lower()
                 ):
                     continue
+            if search_text and not self._asset_matches_search(asset, search_text):
+                continue
             filtered.append(asset)
 
         self._render_assets(filtered)

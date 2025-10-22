@@ -377,18 +377,19 @@ class SettingsPanel(QDockWidget):
         layout.addWidget(video_hint)
 
         self.telemetry_checkbox = QCheckBox("Enable privacy-aware telemetry counters")
-        self.telemetry_checkbox.setChecked(
-            bool(features.get("enable_privacy_telemetry", False))
-        )
-        self.telemetry_checkbox.stateChanged.connect(
-            lambda state: self._on_feature_flag_checkbox(
-                "enable_privacy_telemetry", state
+        telemetry_flag_default = bool(
+            features.get(
+                "enable_observability",
+                features.get("enable_privacy_telemetry", False),
             )
         )
+        self.telemetry_checkbox.setChecked(telemetry_flag_default)
+        self.telemetry_checkbox.stateChanged.connect(self._on_observability_flag)
         layout.addWidget(self.telemetry_checkbox)
 
         telemetry_hint = QLabel(
-            "Requires consent via Settings → Debug & Feature Flags or POST /api/telemetry/settings; "
+            "Requires the enable_observability flag plus consent via Settings → Debug & Feature Flags "
+            "or POST /api/telemetry/opt_in; "
             "counters stay local while telemetry dry-run remains true."
         )
         telemetry_hint.setWordWrap(True)
@@ -554,6 +555,15 @@ class SettingsPanel(QDockWidget):
     def _on_feature_flag_checkbox(self, key: str, state: int) -> None:
         self._update_feature_flag(key, state == Qt.Checked)
 
+    def _on_observability_flag(self, state: int) -> None:
+        enabled = state == Qt.Checked
+        self._update_feature_flags(
+            {
+                "enable_observability": enabled,
+                "enable_privacy_telemetry": enabled,
+            }
+        )
+
     def _on_public_media_flag(self, kind: str, state: int) -> None:
         enabled = state == Qt.Checked
         if kind == "image":
@@ -604,6 +614,29 @@ class SettingsPanel(QDockWidget):
             self._on_accessibility_widgets_changed
         )
         form.addRow("Font scale multiplier", self.access_font_scale_spin)
+
+        ui_scale_presets = [1.0, 1.25, 1.5, 1.75, 2.0]
+        self.access_ui_scale_combo = QComboBox()
+        for scale in ui_scale_presets:
+            percent = int(scale * 100)
+            self.access_ui_scale_combo.addItem(f"{percent}%", scale)
+        self._select_scale_combo(self.access_ui_scale_combo, state.ui_scale)
+        self.access_ui_scale_combo.currentIndexChanged.connect(
+            self._on_accessibility_widgets_changed
+        )
+        form.addRow("UI scale", self.access_ui_scale_combo)
+
+        self.access_viewer_scale_combo = QComboBox()
+        self.access_viewer_scale_combo.addItem("Follow global", None)
+        for scale in ui_scale_presets:
+            percent = int(scale * 100)
+            self.access_viewer_scale_combo.addItem(f"{percent}% (Viewer)", scale)
+        viewer_override = (state.view_overrides or {}).get("viewer")
+        self._select_scale_combo(self.access_viewer_scale_combo, viewer_override)
+        self.access_viewer_scale_combo.currentIndexChanged.connect(
+            self._on_accessibility_widgets_changed
+        )
+        form.addRow("Viewer override", self.access_viewer_scale_combo)
 
         self.access_color_filter_combo = QComboBox()
         for spec in accessibility_filters.AVAILABLE_FILTERS:
@@ -656,6 +689,17 @@ class SettingsPanel(QDockWidget):
         if font_widget is None:
             return
         font_scale = float(font_widget.value())
+        ui_scale_widget = getattr(self, "access_ui_scale_combo", None)
+        ui_scale = (
+            float(ui_scale_widget.currentData() or 1.0) if ui_scale_widget else 1.0
+        )
+        viewer_scale_widget = getattr(self, "access_viewer_scale_combo", None)
+        viewer_override_raw = (
+            viewer_scale_widget.currentData() if viewer_scale_widget else None
+        )
+        overrides = {}
+        if viewer_override_raw is not None:
+            overrides["viewer"] = float(viewer_override_raw)
         color_data = self.access_color_filter_combo.currentData()
         color_filter = str(color_data or "none")
         high_contrast = self.access_high_contrast_check.isChecked()
@@ -665,6 +709,8 @@ class SettingsPanel(QDockWidget):
             color_filter=color_filter,
             high_contrast=high_contrast,
             subtitles_enabled=subtitles_enabled,
+            ui_scale=ui_scale,
+            view_overrides=overrides,
         )
 
     def _on_accessibility_state_changed(self, state: AccessibilityState) -> None:
@@ -673,6 +719,9 @@ class SettingsPanel(QDockWidget):
         self._accessibility_updating = True
         try:
             self.access_font_scale_spin.setValue(state.font_scale)
+            self._select_scale_combo(self.access_ui_scale_combo, state.ui_scale)
+            viewer_override = (state.view_overrides or {}).get("viewer")
+            self._select_scale_combo(self.access_viewer_scale_combo, viewer_override)
             index = self.access_color_filter_combo.findData(state.color_filter)
             if index != -1:
                 self.access_color_filter_combo.setCurrentIndex(index)
@@ -680,6 +729,21 @@ class SettingsPanel(QDockWidget):
             self.access_subtitles_check.setChecked(state.subtitles_enabled)
         finally:
             self._accessibility_updating = False
+
+    def _select_scale_combo(self, combo: QComboBox, value: Optional[float]) -> None:
+        target = None if value is None else round(float(value), 3)
+        for idx in range(combo.count()):
+            data = combo.itemData(idx)
+            if data is None and target is None:
+                combo.setCurrentIndex(idx)
+                return
+            if data is not None and round(float(data), 3) == target:
+                combo.setCurrentIndex(idx)
+                return
+        if target is not None:
+            label = f"{int(target * 100)}%"
+            combo.addItem(label, target)
+            combo.setCurrentIndex(combo.count() - 1)
 
     def _on_accessibility_reset(self) -> None:
         self._accessibility_manager.reset()

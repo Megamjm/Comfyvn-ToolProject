@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Dict, Optional
 from urllib.parse import urljoin
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl
@@ -22,6 +22,7 @@ from comfyvn.accessibility import AccessibilityState, accessibility_manager
 from comfyvn.accessibility.filters import FilterOverlay
 from comfyvn.accessibility.input_map import input_map_manager
 from comfyvn.accessibility.subtitles import SubtitleOverlay
+from comfyvn.accessibility.ui_scale import ui_scale_manager
 from comfyvn.gui.services.server_bridge import ServerBridge
 
 try:  # Qt WebEngine optional
@@ -125,7 +126,14 @@ class VNViewer(QWidget):
         self._fallback_widget: Optional[QWidget] = None
         self._web_view: Optional[QWidget] = None
         self._mini_view: Optional[MiniVNFallbackWidget] = None
+        self._ui_scale_token: Optional[str] = None
         self._build_ui()
+        try:
+            self._ui_scale_token = ui_scale_manager.register_widget(self, view="viewer")
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.debug(
+                "Failed to register viewer with UI scale manager", exc_info=True
+            )
 
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(2500)
@@ -296,6 +304,9 @@ class VNViewer(QWidget):
         if self._accessibility_token:
             accessibility_manager.unsubscribe(self._accessibility_token)
             self._accessibility_token = None
+        if self._ui_scale_token:
+            ui_scale_manager.unregister_widget(self._ui_scale_token)
+            self._ui_scale_token = None
         try:
             input_map_manager.unregister_widget(self)
         except Exception:  # pragma: no cover - defensive
@@ -317,17 +328,25 @@ class VNViewer(QWidget):
 
     def _register_input_bindings(self) -> None:
         try:
-            input_map_manager.register_widget(
-                self,
-                {
-                    "viewer.advance": lambda: self._handle_input_action(
-                        "viewer.advance"
-                    ),
-                    "viewer.back": lambda: self._handle_input_action("viewer.back"),
-                    "viewer.skip": lambda: self._handle_input_action("viewer.skip"),
-                    "viewer.menu": lambda: self._handle_input_action("viewer.menu"),
-                },
-            )
+            actions: Dict[str, Callable[[], None]] = {
+                "viewer.advance": lambda: self._handle_input_action("viewer.advance"),
+                "viewer.back": lambda: self._handle_input_action("viewer.back"),
+                "viewer.skip": lambda: self._handle_input_action("viewer.skip"),
+                "viewer.menu": lambda: self._handle_input_action("viewer.menu"),
+                "viewer.overlays_toggle": lambda: self._handle_input_action(
+                    "viewer.overlays_toggle"
+                ),
+                "viewer.narrator_toggle": lambda: self._handle_input_action(
+                    "viewer.narrator_toggle"
+                ),
+                "editor.pick_winner": lambda: self._handle_input_action(
+                    "editor.pick_winner"
+                ),
+            }
+            for idx in range(1, 10):
+                action = f"viewer.choice_{idx}"
+                actions[action] = lambda act=action: self._handle_input_action(act)
+            input_map_manager.register_widget(self, actions)
         except Exception:  # pragma: no cover - defensive
             LOGGER.debug("Viewer input binding registration failed", exc_info=True)
 
@@ -338,15 +357,36 @@ class VNViewer(QWidget):
             "viewer.back": "Backlog / Previous",
             "viewer.skip": "Toggle Skip",
             "viewer.menu": "Viewer Menu",
+            "viewer.overlays_toggle": "Toggle Overlays",
+            "viewer.narrator_toggle": "Narrator Toggle",
+            "editor.pick_winner": "Pick Winner (Editor)",
         }
-        label = label_map.get(action, action)
+        meta: Dict[str, Any] = {}
+        if action.startswith("viewer.choice_"):
+            try:
+                idx = int(action.rsplit("_", 1)[-1])
+            except ValueError:
+                idx = None
+            if idx:
+                label = f"Choice {idx}"
+                meta["choice"] = idx
+            else:
+                label = action
+        else:
+            label = label_map.get(action, action)
+        if action == "viewer.overlays_toggle":
+            meta["toggle"] = "overlays"
+        elif action == "viewer.narrator_toggle":
+            meta["toggle"] = "narrator"
+        elif action == "editor.pick_winner":
+            meta["action"] = "pick_winner"
         self._details_label.setText(f"Input: {label} ({source})")
         if source != "api":
             try:
-                self.api.post(
-                    "/api/accessibility/input/event",
-                    {"action": action, "source": "viewer"},
-                )
+                payload = {"action": action, "source": "viewer"}
+                if meta:
+                    payload["meta"] = meta
+                self.api.post("/api/accessibility/input/event", payload)
             except Exception:  # pragma: no cover - defensive
                 LOGGER.debug("Failed to publish viewer input event", exc_info=True)
         if action == "viewer.advance":
@@ -355,6 +395,24 @@ class VNViewer(QWidget):
             accessibility_manager.push_subtitle("Backlog", origin="Input", ttl=1.5)
         elif action == "viewer.menu":
             accessibility_manager.push_subtitle("Menu toggle", origin="Input", ttl=2.0)
+        elif action == "viewer.overlays_toggle":
+            accessibility_manager.push_subtitle(
+                "Overlay toggle", origin="Input", ttl=1.5
+            )
+        elif action == "viewer.narrator_toggle":
+            accessibility_manager.push_subtitle(
+                "Narrator toggle", origin="Input", ttl=1.5
+            )
+        elif action == "editor.pick_winner":
+            accessibility_manager.push_subtitle(
+                "Pick winner", origin="Editor Input", ttl=2.0
+            )
+        elif action.startswith("viewer.choice_"):
+            choice_id = meta.get("choice")
+            if choice_id:
+                accessibility_manager.push_subtitle(
+                    f"Choice {choice_id}", origin="Input", ttl=1.5
+                )
 
     def _sync_overlays_geometry(self) -> None:
         frame = getattr(self, "_embed_frame", None)

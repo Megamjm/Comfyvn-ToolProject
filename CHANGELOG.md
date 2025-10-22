@@ -1,3 +1,123 @@
+### 2025-12-23 — Community Connectors: F-List & FurAffinity
+- Added `comfyvn/connectors/{flist,furaffinity}.py` to parse F-List profile exports into persona payloads and to store user-supplied FurAffinity uploads with hashed filenames, provenance sidecars, and NSFW tag trimming when the gate is closed.
+- Introduced FastAPI router `comfyvn/server/routes/connectors_persona.py` (`/api/connect/flist/consent|import_text`, `/api/connect/furaffinity/upload`, `/api/connect/persona/map`) behind `features.enable_persona_importers`. All routes respect the consent gate (`data/persona/consent.json`) and broadcast new modder hooks `on_flist_profile_parsed`, `on_furaffinity_asset_uploaded`, and `on_connector_persona_mapped` (alongside `on_persona_imported`).
+- Extended `comfyvn/persona/schema.py` with `PersonaPreferences` (likes/dislikes/nope) so connector payloads capture roleplay boundaries without custom metadata hacks.
+- Documentation sweep: new `docs/COMMUNITY_CONNECTORS.md`, refreshed `docs/NSFW_GATING.md`, new `docs/dev_notes_community_connectors.md`, plus README/architecture/architecture_updates updates. Checker profile `p7_connectors_flist_fa` validates flag defaults, routes, and required docs.
+
+### 2025-12-22 — Asset Ingest Queue & Dedup
+- Introduced `comfyvn/ingest/{__init__,queue,mappers}.py`, staging community assets under `data/ingest/staging/`, hashing via the shared `CacheManager`, normalising provider metadata (FurAffinity uploads, Civitai/Hugging Face pulls), and persisting queue state with rate-limited remote fetches.
+- Added FastAPI router `comfyvn/server/routes/ingest.py` exposing `/api/ingest/{queue,status,apply}`, feature-gated by `enable_asset_ingest`, broadcasting new modder hooks `on_asset_ingest_enqueued`, `on_asset_ingest_applied`, and `on_asset_ingest_failed`.
+- Documentation sweep: new `docs/ASSET_INGEST.md`, new `docs/dev_notes_asset_ingest.md`, refreshed `README.md`, and updated `architecture.md` (docs index + dedup status). Checker profile `p7_asset_ingest_cache` covers flag defaults, routes, and docs.
+
+### 2025-12-22 — License Snapshot & Ack Gate
+- Added `comfyvn/advisory/license_snapshot.py` to capture/normalise hub licence text, persist `license_snapshot.json` next to assets (fallback `data/license_snapshots/<slug>/`), and retain per-user acknowledgements with provenance in settings.
+- Introduced FastAPI router `comfyvn/server/routes/advisory_license.py` exposing `/api/advisory/license/{snapshot,ack,require}` plus a status reader so connectors can block downloads until the current snapshot hash is acknowledged. Responses echo the normalised text for UI prompts and raise HTTP 423 when ack is missing.
+- Snapshots and acknowledgements emit `on_asset_meta_updated` payloads (`meta.license_snapshot` / `meta.license_ack`) for dashboards and automation. Docs sweep: new `docs/ADVISORY_LICENSE_SNAPSHOT.md`, new `docs/dev_notes_license_snapshot.md`, refreshed `README.md`, `architecture.md`, and `architecture_updates.md`. Checker profile `p7_license_eula_enforcer` covers flag state, routes, and documentation.
+
+### 2025-12-21 — Hugging Face Hub Search & Pull Planner
+- Added `comfyvn/public_providers/hf_hub.py`, providing health/search/metadata helpers, license-aware pull planners, and token resolution for Hugging Face Hub assets (dry-run only).
+- Introduced FastAPI router `comfyvn/server/routes/providers_hf.py` exposing `/api/providers/hf/{health,search,metadata}` and `/api/providers/hf/pull`. Pull plans require an `hf_*` PAT plus explicit license acknowledgement; responses normalize card metadata, tag/license hints, and flag files >= 1 GiB.
+- Documentation sweep: new `docs/PROVIDERS_HF_HUB.md`, refreshed `README.md` with feature-flag + PAT guidance. Checker profile `p7_connectors_huggingface` validates flag state, routes, and docs without enabling live pulls.
+
+### 2025-12-20 — Web Publish Redaction Preview
+- Added `comfyvn/exporters/web_packager.py` producing deterministic Mini-VN web bundles with hashed assets, manifest/content-map/preview/redaction sidecars, and optional modder hook catalogues. Feature flag `enable_publish_web` gates the new FastAPI surface under `comfyvn/server/routes/publish.py`.
+- API endpoints `/api/publish/web/{build,redact,preview}` support NSFW stripping, provenance scrubbing, configurable watermarks, and QA health summaries; responses contain archive paths, diff metadata, and ready-to-serve JSON payloads for dashboards.
+- Documentation sweep introducing `docs/PUBLISH_WEB.md`, `docs/dev_notes_publish_web.md`, and refreshed `README.md`, `architecture.md`, `architecture_updates.md`. Checker profile `p6_publish_web` now validates flag/route/doc coverage.
+
+### 2025-10-22 — Translation Manager TM, Review Queue & Live Switch
+- Overhauled the translation stack with versioned TM persistence (`comfyvn/translation/tm_store.py`), TM-aware language lookups in `comfyvn/translation/manager.py`, and refreshed FastAPI routes in `comfyvn/server/routes/translation.py` (new `/api/translate/review` GET/POST, expanded batch payloads, scoped exports, meta filters, and debug links).
+- `TranslationMemoryStore` now records `{key -> {lang -> text, meta, version}}`, tracks hits/confidence/reviewer fields, and exposes scoped JSON/PO exports with optional metadata.
+- `TranslationManager.t()` resolves TM overrides before falling back to table/keys, while `get_table_value` enables debug tooling without triggering fallback logic.
+- Documentation sweep: new `docs/TRANSLATION_MANAGER.md`, refreshed `README.md`, `docs/LLM_RECOMMENDATIONS.md`, and `docs/dev_notes_translation_tm_review.md`. Architecture notes appended to `architecture_updates.md` (TM flow & live switch wiring).
+- Verification: `pytest tests/test_translation_routes.py` green; checker `python tools/check_current_system.py --profile p5_translation --base http://127.0.0.1:8001` covers flag state, routes, and docs.
+
+### 2025-12-18 — Persona Importers & NSFW Gate
+- Introduced `comfyvn/persona/schema.py` (persona schema helpers, tag/palette defaults, NSFW policy) plus `comfyvn/persona/importers/community.py` to normalise community markdown/JSON payloads into the persona profile shape.
+- Added `comfyvn/server/routes/persona.py` exposing `/api/persona/{consent,import/text,import/images,map,preview}` behind `features.enable_persona_importers` (default **false**) and respecting `features.enable_nsfw_mode` for adult-tag handling. Consent persists to `data/persona/consent.json`, image uploads hash to `data/persona/imports/<id>/` with `.meta.json` sidecars, `/map` writes `data/characters/<id>/persona.json` + `persona.provenance.json`, and the `on_persona_imported` modder hook broadcasts persisted payloads for dashboards/webhooks.
+- Documentation sweep: new `docs/PERSONA_IMPORTERS.md`, new `docs/NSFW_GATING.md`, new `docs/dev_notes_persona_importers.md`, README + architecture/architecture_updates refresh. Checker profile `p6_persona_importers` validates flag defaults, routes, docs, and the consent gate.
+
+### 2025-12-17 — Advisory Gate & Studio Bundle Export
+- Added `comfyvn/server/routes/advisory.py` (`/api/policy/ack`, `/api/advisory/scan`) and `comfyvn/server/routes/export.py::/bundle/status` so Studio surfaces and automation can probe feature flags, gate state, and run advisory scans with deterministic `info|warn|block` findings. Routes are gated behind `features.enable_advisory` / `features.enable_export_bundle` defaults.
+- `comfyvn/advisory/{policy,scanner}.py` gained an `evaluate_action` helper plus deterministic finding dedupe, keeping provenance logs stable while exposing modder hooks through `policy_enforcer`.
+- `scripts/export_bundle.py` now enforces the `enable_export_bundle` feature flag (exit code `3` when disabled), returns the enforcement payload (`log_path`, counts, raw findings), and preserves JSON parity with the server export route.
+- Documentation sweep: new `docs/ADVISORY_EXPORT.md`, new `docs/dev_notes_advisory_export.md`, refreshed `README.md`, and `architecture.md`. Verification: `python tools/check_current_system.py --profile p5_advisory_export --base http://127.0.0.1:8001`.
+
+### 2025-12-17 — Image→Persona Analyzer & Style Registry
+- Added `comfyvn/persona/image2persona.py` for deterministic image→persona hints (appearance tags, 5–8 color swatches, pose anchors, expression prototypes) with provenance digests and conflict reporting. Analyzer exposes hook points for palette/appearance/anchor/expression overrides plus a helper to merge results into persona metadata.
+- Introduced `comfyvn/persona/style_suggestions.py` with a registry-driven style/LoRA suggestion surface (names only) keyed by appearance tags; registry supports contributor overrides via `register_style` and `register_lora`.
+- Documentation sweep: new `docs/IMAGE2PERSONA.md`, new `docs/dev_notes_image2persona.md`, refreshed `README.md`, `architecture.md`, and `architecture_updates.md`. Debug checklist now tracks the `p6_image2persona` checker; feature flag `enable_image2persona` remains **OFF** by default.
+
+### 2025-12-19 — 2.5D Animation Auto-Rig & Motion Graph
+- Introduced `comfyvn/anim/rig/autorig.py` (anchor normalisation, role inference, constraint derivation, idle/breath/blink synthesis, mouth visemes) and `comfyvn/anim/rig/mograph.py` (guarded idle→turn→emote preview sequencing).
+- Added FastAPI router `comfyvn/server/routes/anim.py` exposing `/api/anim/{rig,preview,save}`, gated by `features.enable_anim_25d`, with preset persistence under `cache/anim_25d_presets.json` and new modder hooks `on_anim_rig_generated`, `on_anim_preview_generated`, `on_anim_preset_saved`.
+- Documentation sweep: new `docs/ANIM_25D.md`, new `docs/dev_notes_anim_25d.md`, refreshed `README.md`, `architecture.md`, `architecture_updates.md`, and feature flag defaults in `config/comfyvn.json` / `comfyvn/config/feature_flags.py`.
+- Verification: `python tools/check_current_system.py --profile p6_anim_25d --base http://127.0.0.1:8001` confirms flag state, route availability, and documentation coverage.
+
+### 2025-12-21 — Editor Blocking Assistant & Snapshot Sheets
+- Added `comfyvn/editor/{blocking_assistant,snapshot_sheet}.py` plus FastAPI router `comfyvn/server/routes/editor.py`, introducing `/api/editor/{blocking,snapshot_sheet}` behind new feature flags `enable_blocking_assistant` and `enable_snapshot_sheets` (both default **false**).
+- Blocking assistant returns deterministic shot/beat plans (`schema`, `shots[]`, `beats[]`, `determinism{seed,digest}`, optional `narrator_plan`) and emits the new `on_blocking_suggested` hook for automation dashboards.
+- Snapshot sheet builder composes cached thumbnails or explicit images into PNG/PDF boards under `exports/snapshot_sheets/` and emits `on_snapshot_sheet_rendered` with digest + output metadata for modder tooling.
+- Documentation sweep: new `docs/EDITOR_UX_ADVANCED.md`, new `docs/development/dev_notes_editor_blocking.md`, refreshed `README.md`, `architecture.md`, `architecture_updates.md`, and feature flag defaults in `config/comfyvn.json` / `comfyvn/config/feature_flags.py`.
+- Verification: `python tools/check_current_system.py --profile p6_editor_ux --base http://127.0.0.1:8001` covers flags, routes, and documentation coverage.
+
+### 2025-12-20 — Web Publish Redaction Preview
+- Added `comfyvn/exporters/web_packager.py` producing deterministic Mini-VN web bundles with hashed assets, manifest/content-map/preview/redaction sidecars, and optional modder hook catalogues. Feature flag `enable_publish_web` gates the new FastAPI surface under `comfyvn/server/routes/publish.py`.
+- API endpoints `/api/publish/web/{build,redact,preview}` support NSFW stripping, provenance scrubbing, configurable watermarks, and QA health summaries; responses contain archive paths, diff metadata, and ready-to-serve JSON payloads for dashboards.
+- Documentation sweep introducing `docs/PUBLISH_WEB.md`, `docs/dev_notes_publish_web.md`, and refreshed `README.md`, `architecture.md`, `architecture_updates.md`. Checker profile `p6_publish_web` now validates flag/route/doc coverage.
+
+### 2025-12-16 — Asset Gallery Search & Registry Enforcer
+- Added `comfyvn/server/routes/assets.py` exposing `/api/assets/search` (type/tag/license/text filters plus optional `include_debug` hook snapshots), `/api/assets/enforce` (sidecar audit + repair), and `/api/assets/rebuild` (disk scan + thumbnail refresh) so automation and tooling can maintain the registry without touching private modules.
+- `comfyvn/gui/panels/asset_gallery.py` now includes a metadata/path search field alongside the existing type/tag/licence filters, keeping multi-select bulk edits and clipboard debug exports in sync with registry hooks.
+- New `docs/ASSET_REGISTRY.md` documents feature flags, curl recipes, hook payloads, and the recommended `tools/check_current_system.py --profile p5_assets_gallery` verification pass.
+
+### 2025-12-18 — Compute Advisor Debug Mode & Cost Previews
+- `comfyvn/compute/advisor.py` now supports `return_details` so `/api/compute/advise` can surface pixels, VRAM demand, queue thresholds, and rationale when callers pass `"debug": true`. Remote recommendations automatically fall back to GPU/CPU when `features.enable_compute` stays **false**.
+- `ProviderRegistry.stats()` exposes registry counts and storage metadata; compute routes return these stats whenever query/body `debug` flags are set.
+- `JobScheduler.preview_cost()` powers the new `/api/compute/costs` endpoint, returning base/transfer/VRAM breakdowns and human-friendly hints without hitting providers. Responses always note that estimates are advisory only.
+- API updates: `/api/gpu/list?debug=1`, `/api/providers?debug=1`, `/api/compute/advise` (debug payloads), and `/api/compute/costs` (optional debug). All responses echo the `enable_compute` feature flag, which now defaults to **false** for opt-in remote offload.
+- Documentation sweep: new `docs/COMPUTE_ADVISOR.md`, new `docs/dev_notes_compute_advisor.md`, refreshed `README.md`, `architecture.md`, and `architecture_updates.md`.
+
+### 2025-12-16 — Audio Lab TTS Alignment & Mixer Refresh
+- Added the `enable_audio_lab` feature flag (default **OFF**) and extended the audio routes with a stub voice catalog (`GET /api/tts/voices`), enriched `/api/tts/speak` responses (alignment checksum, text SHA-1, lipsync metadata, provenance), and a dedicated `/api/audio/align` endpoint that can persist phoneme JSON + lipsync frames under `data/audio/alignments/<text_sha1>/`.
+- `comfyvn/bridge/tts_adapter.py` now tracks cache hits, voice hints, waveform checksums, and emits the `on_audio_tts_cached` modder hook; `comfyvn/audio/mixer.py` records waveform stats (`checksum_sha1`, `peak_amplitude`, `rms`, `rendered_at`) so `/api/audio/mix` can surface deterministic metadata alongside cached WAVs.
+- `comfyvn/server/routes/audio.py` gates all Audio Lab routes, emits new modder hooks (`on_audio_alignment_generated`, `on_audio_mix_rendered`), and refreshes responses/sidecars. Documentation sweep: new `docs/AUDIO_LAB.md`, updated `README.md`, `architecture.md`, `architecture_updates.md`, and `docs/dev_notes_audio_alignment_mixer.md`; checker profile `p5_audio_lab` now covers flag defaults, routes, and doc coverage without enabling the feature in production.
+
+### 2025-12-15 — Cloud Sync Manifest & Backup Refresh
+- Manifest helpers (`comfyvn/sync/cloud/manifest.py`) now publish default include/exclude sets, expose `checksum_manifest`, and raise `SyncApplyError` when provider runs encounter per-file failures. Provider clients (`s3.py`, `gdrive.py`) aggregate upload/delete errors, continue processing remaining files, and upload refreshed manifests only when the plan completes cleanly.
+- Added `comfyvn/server/routes/sync_cloud.py`, replacing the legacy routing with `/api/sync/manifest`, `/api/sync/dry_run`, `/api/sync/run`, plus `/api/backup/{create,restore}` for local ZIP archives under `backups/cloud/` with rotation.
+- Documentation sweep: new `docs/CLOUD_SYNC.md`, new `docs/BACKUPS.md`, refreshed `README.md`, `architecture.md`, `architecture_updates.md`, and `docs/development/dev_notes_cloud_sync.md`. Run `python tools/check_current_system.py --profile p4_cloud_sync --base http://127.0.0.1:8001` to verify feature flags, routes, and doc coverage.
+
+### 2025-12-14 — Accessibility UI Scale & Input Presets
+- Introduced `comfyvn/accessibility/ui_scale.py` and extended the accessibility manager to persist global UI scale (100–200 %) plus per-view overrides. VN Viewer now registers with the UI scale manager so viewer-specific presets update layouts/fonts alongside color filters, high-contrast palettes, and subtitles.
+- Expanded input defaults (`SettingsManager.DEFAULTS["input_map"]`) with numeric choice bindings, narrator/overlay toggles, and an editor pick-winner shortcut. `InputMapManager` gained export/import helpers, reset/import events emit `reason` metadata, and new FastAPI routes `/api/accessibility/{set,export,import}` + `/api/input/{map,reset}` mirror the updated surface.
+- Added feature flag `enable_accessibility` (default **OFF**) alongside refreshed docs: new `docs/ACCESSIBILITY.md` & `docs/INPUT_SCHEMES.md`, updated `README.md`, `architecture.md`, `architecture_updates.md`, and `docs/development/accessibility_input_profiles.md`. Run `python tools/check_current_system.py --profile p4_accessibility --base http://127.0.0.1:8001` to verify flag defaults, routes, and documentation files.
+
+### 2025-12-12 — Collaboration REST Headless Flows
+- `comfyvn/collab/room.py` now exposes `register_headless_client()` so scripts and CI harnesses can reserve presence slots without opening a WebSocket. Headless entries inherit the same Lamport clocks/locks, presence payloads expose a `headless` flag, and `leave()` reports whether a client was removed so HTTP tooling can confirm teardown.
+- New FastAPI surface `comfyvn/server/routes/collab.py` adds `/api/collab/room/{create,join,leave,apply}` plus `/api/collab/room/cache`, mirroring WebSocket envelopes, broadcasting CRDT updates, and emitting `on_collab_operation` for modder dashboards. `room/apply` accepts the same op batches as `doc.apply`, supports `history_since`, and can trigger persistence via `flush` to keep offline editors in sync.
+- Documentation sweep: `README.md`, `architecture.md`, `architecture_updates.md`, `docs/COLLAB_EDITING.md`, and `docs/development_notes.md` describe headless flows, REST payloads, and debug hooks; regression coverage extends `tests/test_collab_api.py` to exercise the new lifecycle.
+
+### 2025-12-10 — Public GPU/Image/Video Providers (Dry-Run)
+- Added GPU adapters for RunPod, Hugging Face Inference Endpoints, Replicate, and Modal (`comfyvn/public_providers/gpu_*.py`) plus refreshed media adapters (Stability, fal.ai, Runway, Pika, Luma) with `metadata()`, `health()`, `submit()`, and `poll()` helpers. Each response now includes `pricing_url`, `last_checked`, capability tags, and deterministic mock ids.
+- Unified FastAPI surfaces: `/api/providers/gpu/public/{provider}/{health,submit,poll}` and `/api/providers/{image,video}/{provider}/{health,submit,poll}` share dry-run envelopes, feature-flag context, and task-registry registration. Legacy `/image/generate` and `/video/generate` routes delegate to the new submit path for backwards compatibility.
+- Documentation sweep: `README.md`, `architecture_updates.md`, new `docs/PROVIDERS_GPU_IMAGE_VIDEO.md`, and the refreshed `docs/dev_notes_public_media_providers.md` capture opt-in flows, env/secrets matrices, pricing links, and debug hooks; this changelog logs the update. Checker profile `p3_providers_gpu_image_video` now validates catalog + health responses without touching external APIs.
+
+### 2025-12-11 — Dungeon Runtime & Snapshot Hooks
+- Introduced `comfyvn/dungeon/api.py` with seeded grid and DOOM-lite backends plus `/api/dungeon/{enter,step,encounter_start,resolve,leave}` FastAPI routes (feature flag `enable_dungeon_api`, default **OFF**). Sessions emit deterministic `room_state`, `snapshot`, and `vn_snapshot` payloads so Snapshot→Node/Fork consumers preserve traversal anchors and encounter logs.
+- Registered new modder hooks `on_dungeon_enter`, `on_dungeon_snapshot`, and `on_dungeon_leave` so dashboards, automation, and OBS overlays can react to dungeon events. Hook payloads mirror VN context (`scene`, `node`, `pov`, `worldline`, `vars`) alongside deterministic seeds and anchors.
+- Documentation sweep: new `docs/DUNGEON_API.md`, companion `docs/dev_notes_dungeon_api.md`, and updates to `README.md`, `architecture.md`, and `architecture_updates.md`. Checker profile `p3_dungeon` now asserts flag defaults, route availability, and doc presence via `python tools/check_current_system.py --profile p3_dungeon`.
+
+### 2025-12-10 — Observability & Perf Umbrella Flags
+- `features.enable_observability` now gates the entire telemetry surface (with `enable_privacy_telemetry` kept as a legacy alias). Consent remains opt-in only: `/api/telemetry/opt_in` flips `telemetry_opt_in` without touching crash uploads or diagnostics, `/api/telemetry/health` reports flag + consent state, and every telemetry response mirrors `feature_flag` so dashboards can short-circuit when observability is disabled. Diagnostics bundles add a `health` block and persist consent metadata in `manifest.json`.
+- `features.enable_perf` wraps budget throttling and profiler dashboards (legacy `enable_perf_budgets`/`enable_perf_profiler_dashboard` stay valid). The `/api/perf` surface gains `GET /api/perf/health`, per-response `feature_flag` echoes, and helper summaries from `BudgetManager.health()` + `PerfProfiler.health()` so smoke checks can spot queue pressure or noisy spans without parsing full snapshots.
+- Settings panel toggles now update both legacy + umbrella flags so Studio surfaces stay in sync; anonymiser hashing adds `key/secret/serial/address` keywords to avoid PII leaks in diagnostics.
+- Documentation sweep: brand-new `docs/OBS_TELEMETRY.md`, `docs/PERF_BUDGETS.md`, and `docs/dev_notes_observability_perf.md` capture curl recipes, budgets/profiler hooks, and verification checklists. `README.md`, `architecture.md`, `architecture_updates.md`, `docs/development_notes.md`, and `docs/development/observability_debug.md` reference the new flags and health routes; `docs/development/perf_budgets_profiler.md` mirrors the umbrella flag terminology.
+
+### 2025-12-10 — Public Language Providers & LLM Router (Dry-Run)
+- Landed translation, OCR, speech, and LLM adapters under `comfyvn/public_providers/` with accompanying FastAPI routes (`providers_translate_ocr_speech.py`, `providers_llm.py`). `/api/providers/translate/health` and `/api/providers/llm/registry` return pricing links, last-checked timestamps, and credential diagnostics while honouring `enable_public_translate` / `enable_public_llm`.
+- Added dry-run endpoints: `POST /api/providers/translate/public` emits translation payload echoes for Google, DeepL, and Amazon; `POST /api/providers/llm/chat` emits router dispatch plans for OpenAI, Anthropic, Google Gemini, and OpenRouter without hitting upstream services.
+- Documentation sweep: `README.md`, `architecture.md`, `architecture_updates.md`, `docs/PROVIDERS_LANG_SPEECH_LLM.md`, `docs/LLM_RECOMMENDATIONS.md`, and new dev notes `docs/dev_notes_public_language_providers.md` capture env vars, pricing anchors, module presets, and curl snippets. Checker profile `p3_providers_lang_speech_llm` now validates the routes.
+
 ### 2025-12-09 — Viewer Failover & Ren'Py Provenance Bundle
 - `/api/viewer/status` promotes fallbacks automatically when the native Ren'Py process exits, recording the exit code in `stub_reason` and swapping the GUI into webview or Mini-VN without another start call. Mini-VN snapshots continue to emit deterministic 16:9 thumbnails and now trigger `on_thumbnail_captured` hooks so external caches stay in sync.
 - `scripts/export_renpy.py` writes `<out>/label_manifest.json`, `provenance_bundle.zip`, and a flattened `provenance.json` on every successful run while the summary prints `provenance_bundle`, `provenance_json`, `provenance_findings`, and `provenance_error`. `on_export_completed` mirrors the new fields so CI can archive provenance artefacts or flag advisory findings alongside the weather bake flag.
@@ -522,3 +642,14 @@ Next Phase Goals (Version 0.3):
 
 ────────────────────────────────────────────
 End of Change Log for ComfyVN v0.2
+### 2025-11-14 — Remote Installer SSH Runtime & Vault Hardening
+- Remote installer now runs idempotent SSH commands via `InstallRuntime`, probes sentinel files before execution, and records `installed/skipped/failed` states in `data/remote/install/<host>.json`. Config sync uploads skip existing destinations to avoid clobbering remote tweaks.
+- `/api/remote/install` accepts `secrets` + `ssh` blocks, merging encrypted credentials from `config/comfyvn.secrets.json`; new `/api/remote/status` endpoint streams per-host manifests or an index of known hosts.
+- Added module detection metadata (`detect_steps`) so replays register as `noop` once remote sentinels exist, even if local status was purged.
+- Hardened the secrets vault: key and payload files default to `0600` permissions, audit logging stayed value-free, and documentation now covers bootstrap, overrides, and remote installer payload schemas.
+- Documentation sweep: updated `README.md`, `CHANGELOG.md`, published `docs/REMOTE_INSTALLER.md` and `docs/SECURITY_SECRETS.md` with curl flows, supported OS notes, rollback steps, and secrets layout guidance.
+### 2025-12-11 — Marketplace Manifest & Router Hardening
+- Manifest schema (`comfyvn/market/manifest.py`) now normalises singular `author` fields, enriches contribution summaries (permissions, routes, events, UI panels, hooks, diagnostics), and records optional `trust.signature` digests/algorithms. New permission scopes cover asset events/debug and lifecycle subscriptions so catalog entries accurately declare intent.
+- Packaging (`comfyvn/market/packaging.py`) writes fully deterministic `.cvnext` archives (fixed timestamps/permissions) and verifies manifest SHA-256 digests when `trust.signature` is supplied, surfacing both package + manifest hashes in the build result.
+- FastAPI router `comfyvn/server/routes/market.py` replaces the legacy catalog/installed surfaces with `/api/market/list` (catalog + installed state, permission glossary, modder hook catalogue) and `/api/market/health` (trust breakdown + last error) while keeping install/uninstall flows consistent and feature-gated via `enable_marketplace`.
+- Documentation sweep: fresh `docs/MARKETPLACE.md` walks manifest fields, trust levels, signature policy, sandbox rules, debug hooks, and curl examples; `README.md`, `architecture.md`, and `docs/dev_notes_marketplace.md` reference the new endpoints, flags, and verification checklist.

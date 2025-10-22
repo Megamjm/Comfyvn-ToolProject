@@ -9,8 +9,23 @@ Runtime Debugging
 - `COMFYVN_RUNTIME_ROOT=/tmp/comfyvn-runtime` — redirects the runtime `data/`, `config/`, `cache/`, and `logs/` folders for sandboxing.
 - Asset registry emits detailed provenance and sidecar logs when running at DEBUG level; combine with `COMFYVN_LOG_LEVEL=DEBUG` for full traces.
 - Flat → Layers pipeline: enable `features.enable_flat2layers`, then watch hooks from `comfyvn.pipelines.flat2layers.FlatToLayersPipeline` (`on_mask_ready`, `on_plane_exported`, `on_debug`). Pair with `tools/depth_planes.py` for threshold tuning and the Playground SAM channel (`flat2layers.sam`) to record brush edits.
-- Performance budgets & profiler: enable `features.enable_perf_budgets`/`features.enable_perf_profiler_dashboard` for local testing, then call `feature_flags.refresh_cache()` in long-running processes. REST helpers live under `/api/perf/*`; see `docs/development/perf_budgets_profiler.md` for curl examples, lazy asset eviction hooks, and the `on_perf_budget_state`/`on_perf_profiler_snapshot` modder envelopes.
+- Performance budgets & profiler: enable `features.enable_perf` (legacy `enable_perf_budgets` / `enable_perf_profiler_dashboard`) for local testing, then call `feature_flags.refresh_cache()` in long-running processes. REST helpers live under `/api/perf/*`; see `docs/PERF_BUDGETS.md`, `docs/dev_notes_observability_perf.md`, and `docs/development/perf_budgets_profiler.md` for curl examples, lazy asset eviction hooks, and the `on_perf_budget_state` / `on_perf_profiler_snapshot` modder envelopes.
 - Integration guardrail: run `python tools/doctor_phase8.py --pretty` after touching router wiring, feature defaults, or modder hook specs. The doctor instantiates `create_app()` headless, asserts key debug surfaces (`/api/weather/state`, `/api/props/*`, `/api/battle/*`, `/api/modder/hooks`, `/api/viewer/mini/*`, `/api/narrator/status`, `/api/pov/confirm_switch`), checks for duplicate routes, validates the hook catalogue, and confirms feature defaults (Mini-VN/web viewer ON, external providers OFF, compute ON). CI should fail fast if the script reports `"pass": false`.
+
+Dungeon Runtime & Snapshot Hooks
+--------------------------------
+- Feature flag `features.enable_dungeon_api` defaults **false**. Enable it in `config/comfyvn.json` before calling `/api/dungeon/*`; run `feature_flags.refresh_cache()` in REPLs to pick up edits without restarting.
+- Session flow: `enter → step → (encounter_start → resolve)* → leave`. Responses carry deterministic `room_state`, optional `snapshot`, and `vn_snapshot` payloads with traversal history for Snapshot→Node/Fork.
+- Modder hooks: `on_dungeon_enter`, `on_dungeon_snapshot`, `on_dungeon_leave`. Subscribe via `/api/modder/hooks?events=on_dungeon_snapshot` or the WebSocket mirror to monitor dungeon sessions.
+- REPL helper:
+  ```python
+  from comfyvn.dungeon.api import API
+  sid = API.enter({"backend": "grid", "seed": 1010})["session_id"]
+  API.step({"session_id": sid, "direction": "north", "snapshot": True})
+  API.resolve({"session_id": sid, "outcome": {"result": "victory"}})
+  API.leave({"session_id": sid})
+  ```
+- Docs & verification: `docs/DUNGEON_API.md`, `docs/dev_notes_dungeon_api.md`, and `python tools/check_current_system.py --profile p3_dungeon --base http://127.0.0.1:8001`.
 
 Narrator Outliner & Role Mapping
 --------------------------------
@@ -26,6 +41,14 @@ curl -s -X POST http://127.0.0.1:8001/api/narrator/propose \
 
 curl -s http://127.0.0.1:8001/api/narrator/status?scene_id=demo | jq '.state.turn_counts'
 ```
+
+Editor Blocking Assistant & Snapshot Sheets
+-------------------------------------------
+- Feature flags: `features.enable_blocking_assistant`, `features.enable_snapshot_sheets` (both default **false** in `config/comfyvn.json` and `comfyvn/config/feature_flags.py`).
+- REST endpoints (`comfyvn/server/routes/editor.py`): `POST /api/editor/blocking` outputs deterministic shot/beat plans with digest + seed; `POST /api/editor/snapshot_sheet` composes PNG/PDF boards into `exports/snapshot_sheets/`.
+- Modder hooks: `on_blocking_suggested` (plan digest, seed, shot/beat ids) and `on_snapshot_sheet_rendered` (sheet id, digest, output list, project/timeline metadata). Subscribe via `/api/modder/hooks` or the WebSocket stream for automation.
+- Docs & drills: `docs/EDITOR_UX_ADVANCED.md` captures schemas/flags/hook payloads; `docs/development/dev_notes_editor_blocking.md` provides curl snippets, determinism reference, and troubleshooting steps.
+- Verification: `python tools/check_current_system.py --profile p6_editor_ux --base http://127.0.0.1:8001`.
 
 Viewer & Export Updates
 -----------------------
@@ -44,7 +67,7 @@ Security & Sandbox Audit
 
 Observability & Privacy Telemetry
 ---------------------------------
-- Feature flags: `features.enable_privacy_telemetry` and `features.enable_crash_uploader` default to `false`. Toggle them via **Settings → Debug & Feature Flags** or edit `config/comfyvn.json` and call `feature_flags.refresh_cache()` where needed.
+- Feature flags: `features.enable_observability` (legacy `enable_privacy_telemetry`) and `features.enable_crash_uploader` default to `false`. Toggle them via **Settings → Debug & Feature Flags** or edit `config/comfyvn.json` and call `feature_flags.refresh_cache()` where needed.
 - Consent storage: `/api/telemetry/settings` persists `{telemetry_opt_in, crash_opt_in, diagnostics_opt_in, dry_run}` under `config/comfyvn.json → telemetry`. Dry-run keeps telemetry local even when feature flags are enabled.
 - Hashing helpers: import `from comfyvn.obs import anonymize_payload, hash_identifier` to scrub IDs before emitting custom events. The anonymiser stores a per-installation secret at `config/telemetry/anonymizer.json`; `anonymous_installation_id()` exposes a stable hash for correlating bundles without leaking raw IDs.
 - API surface:
@@ -79,7 +102,7 @@ Collaboration & Live Presence
 - Feature flag: `features.enable_collaboration` defaults to `true`. Disable it in hosted/solo builds to remove the `/api/collab/*` surfaces while keeping offline editors intact. Toggle via **Settings → Debug & Feature Flags** or edit `config/comfyvn.json`, then call `feature_flags.refresh_cache()` in long-lived processes.
 - Core primitives — `comfyvn/collab/crdt.py` (Lamport-clock CRDT for scene fields, nodes, script lines) + `comfyvn/collab/room.py` (per-scene presence, request-control locks, dirty tracking). Hub wiring lives in `comfyvn/server/core/collab.py`, persisting snapshots through `scene_save()` with `{version, lamport}`.
 - WebSocket contract: `ws(s)://<host>/api/collab/ws?scene_id=<id>` with headers `X-ComfyVN-User`, `X-ComfyVN-Name`. Messages: `doc.apply`, `doc.pull`, `presence.update`, `control.request`, `control.release`, `feature.refresh`, `ping`. Initial `room.joined` payload contains `{snapshot, presence, feature_flags}`.
-- REST helpers: `GET /api/collab/health`, `GET /api/collab/presence/<scene_id>`, `GET /api/collab/snapshot/<scene_id>`, `GET /api/collab/history/<scene_id>?since=<version>`, `POST /api/collab/flush`.
+- REST helpers: `POST /api/collab/room/{create,join,leave,apply}` (headless presence + debug ops), `GET /api/collab/room/cache`, `GET /api/collab/health`, `GET /api/collab/presence/<scene_id>`, `GET /api/collab/snapshot/<scene_id>`, `GET /api/collab/history/<scene_id>?since=<version>`, `POST /api/collab/flush`.
 - Smoke probes:
   ```bash
   BASE=${BASE:-http://127.0.0.1:8001}
@@ -114,7 +137,7 @@ Rating Gate & SFW Workflow
 Debug & Verification Checklist
 ------------------------------
 - [ ] **Docs updated** — README, architecture.md, CHANGELOG.md, docs/development_notes.md capture telemetry/anonymiser changes, curl samples, and debug hooks.
-- [ ] **Feature flags** — `config/comfyvn.json → features` contains `enable_privacy_telemetry` and `enable_crash_uploader` (both default `false`); toggles surface in the Settings panel.
+- [ ] **Feature flags** — `config/comfyvn.json → features` contains `enable_observability` (legacy `enable_privacy_telemetry`) and `enable_crash_uploader` (both default `false`); toggles surface in the Settings panel.
 - [ ] **API surfaces** — `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics}` documented with sample requests/responses; dry-run keeps external calls disabled.
 - [ ] **Modder hooks** — hook bus publishes `on_scene_enter`, `on_asset_saved`, `on_asset_registered`, `on_asset_meta_updated`, `on_asset_removed`, `on_asset_sidecar_written`, `on_prop_applied`, `on_weather_changed`, `on_battle_simulated`, etc.; telemetry captures counts/samples.
 - [ ] **Logs** — structured events in `logs/telemetry/usage.json`; crash reports under `logs/crash/`; diagnostics bundle path returned by `/api/telemetry/diagnostics`.

@@ -101,6 +101,22 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
   -d '{"scene_id":"demo_scene","messages":[{"role":"narrator","content":"Ping from CLI"}],"dry_run":true}' | jq '.context'
 ```
 
+### 1.6 Persona importer & community connector hooks
+- Feature flag `enable_persona_importers` (default **false**) gates `/api/persona/{consent,import/text,import/images,map,preview}`. Without consent, each route returns HTTP 403.
+- Persona mapping emits `on_persona_imported` with `{persona_id, persona, character_dir, sidecar, image_assets, sources, requested_at}` so dashboards/webhooks can mirror persona payloads and provenance sidecars.
+- Community connector routes (`/api/connect/flist/*`, `/api/connect/furaffinity/upload`, `/api/connect/persona/map`) introduce three additional hook payloads:
+  - `on_flist_profile_parsed` → fired after an F-List profile is parsed, includes `{persona_id, persona, warnings, debug, requested_at}`.
+  - `on_furaffinity_asset_uploaded` → triggered per upload batch, returning `{persona_id, assets[], debug[], requested_at}` with hashed paths/sidecars.
+  - `on_connector_persona_mapped` → mirrors `on_persona_imported` but scopes to connector flows; payload includes `provenance` (sidecar path) so automation can trace connector imports separately.
+- Subscribe via:
+  ```bash
+  websocat ws://127.0.0.1:8001/api/modder/hooks/ws \
+    | jq 'select(.event | test("on_(persona_imported|connector_persona_mapped|flist_profile_parsed|furaffinity_asset_uploaded)"))'
+  ```
+  or register a REST webhook:  
+  `curl -s -X POST http://127.0.0.1:8001/api/modder/hooks/webhooks -d '{"event":"on_persona_imported","url":"https://example.org/hook"}'`
+- Debug docs: `docs/PERSONA_IMPORTERS.md`, `docs/COMMUNITY_CONNECTORS.md`, `docs/NSFW_GATING.md`, `docs/dev_notes_persona_importers.md`, and `docs/dev_notes_community_connectors.md`. Use `python tools/check_current_system.py --profile p6_persona_importers` and `python tools/check_current_system.py --profile p7_connectors_flist_fa` after toggling flags to confirm route/hook coverage.
+
 ---
 
 ## 2. Asset & Registry Hooks
@@ -432,7 +448,11 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
       "font_scale": 1.1,
       "color_filter": "deuteranopia",
       "high_contrast": true,
-      "subtitles_enabled": true
+      "subtitles_enabled": true,
+      "ui_scale": 1.25,
+      "view_overrides": {
+        "viewer": 1.5
+      }
     },
     "source": "api.accessibility.state.post",
     "timestamp": 1732924800.42
@@ -461,7 +481,8 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
       "gamepad": "button_a",
       "category": "viewer"
     },
-    "timestamp": 1732924801.12
+    "timestamp": 1732924801.12,
+    "reason": "update"
   }
   ```
 - `on_accessibility_input` — fires whenever a mapped input action triggers (keyboard shortcut, controller button, or API trigger).

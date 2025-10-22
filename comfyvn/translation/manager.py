@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
 
 from comfyvn.config.runtime_paths import config_dir, data_dir
+from comfyvn.translation.tm_store import get_store
 
 LOGGER = logging.getLogger(__name__)
 
@@ -111,6 +112,13 @@ class TranslationManager:
                     discovered.add(self._normalise_lang(path.stem) or path.stem)
             return sorted(discovered)
 
+    def get_table_value(self, key: str, lang: str) -> Optional[str]:
+        normalised_lang = self._normalise_lang(lang)
+        if not key or not normalised_lang:
+            return None
+        with self._lock:
+            return self._lookup_locked(normalised_lang, key)
+
     def t(self, key: str, lang: str | None = None, *, fallback: bool = True) -> str:
         if not key:
             return ""
@@ -120,12 +128,19 @@ class TranslationManager:
             value = self._lookup_locked(primary, key)
             if value is not None:
                 return value
-            if fallback:
-                fallback_lang = self._fallback_language
-                if primary != fallback_lang:
+        store_value = self._lookup_tm(primary, key)
+        if store_value is not None:
+            return store_value
+        if fallback:
+            fallback_lang = self._fallback_language
+            if primary != fallback_lang:
+                with self._lock:
                     value = self._lookup_locked(fallback_lang, key)
                     if value is not None:
                         return value
+                store_value = self._lookup_tm(fallback_lang, key)
+                if store_value is not None:
+                    return store_value
         return key
 
     def batch_identity(self, strings: Iterable[str]) -> list[dict[str, str]]:
@@ -308,6 +323,31 @@ class TranslationManager:
                     if isinstance(k, str) and isinstance(v, str)
                 }
         return mapping
+
+    def _lookup_tm(self, lang: str, key: str) -> Optional[str]:
+        normalised_lang = self._normalise_lang(lang)
+        if not key or not normalised_lang:
+            return None
+        try:
+            store = get_store()
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.debug("Translation memory unavailable: %s", exc)
+            return None
+        try:
+            payload = store.lookup(key, normalised_lang, include_meta=False)
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.debug(
+                "Translation memory lookup failed for %s/%s: %s",
+                key,
+                normalised_lang,
+                exc,
+            )
+            return None
+        if payload and isinstance(payload, Mapping):
+            candidate = payload.get("target")
+            if isinstance(candidate, str) and candidate:
+                return candidate
+        return None
 
 
 _MANAGER: Optional[TranslationManager] = None

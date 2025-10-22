@@ -35,6 +35,7 @@ class CollabClientState:
     typing: bool = False
     capabilities: set[str] = field(default_factory=set)
     last_seen: float = field(default_factory=_now)
+    headless: bool = False
 
     def presence_payload(self) -> Dict[str, Any]:
         return {
@@ -46,6 +47,7 @@ class CollabClientState:
             "typing": self.typing,
             "last_seen": self.last_seen,
             "caps": sorted(self.capabilities),
+            "headless": self.headless,
         }
 
 
@@ -63,6 +65,23 @@ class CollabPresence:
             "control": self.control,
             "timestamp": self.timestamp,
         }
+
+
+class _HeadlessWebSocket:
+    """No-op transport used by REST callers that need presence without WS."""
+
+    __slots__ = ("client_id",)
+
+    def __init__(self, client_id: str) -> None:
+        self.client_id = client_id
+
+    async def send_text(self, message: str) -> None:
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.debug(
+                "Dropping broadcast for headless collab client %s (%d bytes)",
+                self.client_id,
+                len(message),
+            )
 
 
 class CollabRoom:
@@ -89,6 +108,55 @@ class CollabRoom:
         self.control_expires: float = 0.0
         self.control_queue: List[str] = []
         self.control_ttl: float = 30.0
+
+    # Headless -----------------------------------------------------------------
+    def register_headless_client(
+        self,
+        client_id: str,
+        user_name: str,
+        *,
+        capabilities: Optional[Iterable[Any]] = None,
+        clock: Optional[int] = None,
+    ) -> CollabClientState:
+        """
+        Ensure a client entry exists even when no websocket session is active.
+
+        Debug tooling and REST callers can reserve a slot to update presence or
+        locks without attaching to the WebSocket loop.  The returned client
+        state reuses the normal join/leave bookkeeping so the rest of the hub
+        stays unaware of the transport details.
+        """
+
+        state = self.clients.get(client_id)
+        if state:
+            if user_name:
+                state.user_name = user_name
+            if capabilities is not None:
+                state.capabilities = {str(item) for item in capabilities if str(item)}
+            if clock is not None:
+                try:
+                    state.clock = max(state.clock, int(clock))
+                except Exception:
+                    pass
+            state.headless = True
+            state.last_seen = _now()
+            return state
+
+        websocket = _HeadlessWebSocket(client_id)
+        state = CollabClientState(
+            client_id=client_id,
+            user_name=user_name or "anon",
+            websocket=websocket,
+            headless=True,
+        )
+        if capabilities is not None:
+            state.capabilities = {str(item) for item in capabilities if str(item)}
+        if clock is not None:
+            try:
+                state.clock = int(clock)
+            except Exception:
+                state.clock = 0
+        return self.join(state)
 
     # Presence -----------------------------------------------------------------
     def presence(self) -> CollabPresence:
@@ -193,13 +261,14 @@ class CollabRoom:
             self._promote_next_owner(now=now)
 
     # Client management --------------------------------------------------------
-    def join(self, client: CollabClientState) -> None:
+    def join(self, client: CollabClientState) -> CollabClientState:
         self.clients[client.client_id] = client
         client.last_seen = _now()
+        return client
 
-    def leave(self, client_id: str) -> None:
-        if client_id in self.clients:
-            self.clients.pop(client_id)
+    def leave(self, client_id: str) -> bool:
+        removed = self.clients.pop(client_id, None)
+        changed = removed is not None
         if self.control_owner == client_id:
             self.control_owner = None
             self.control_expires = 0.0
@@ -207,6 +276,8 @@ class CollabRoom:
         else:
             if client_id in self.control_queue:
                 self.control_queue.remove(client_id)
+                changed = True
+        return changed
 
     # Operations ---------------------------------------------------------------
     def apply_operations(

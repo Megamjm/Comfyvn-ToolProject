@@ -245,6 +245,7 @@ def create_app(
         modder_hooks.__name__,
     }
     app.include_router(accessibility_routes.router)
+    app.include_router(accessibility_routes.input_router)
     app.include_router(viewer_routes.router)
     app.include_router(pov_routes.router)
     app.include_router(llm_routes.router)

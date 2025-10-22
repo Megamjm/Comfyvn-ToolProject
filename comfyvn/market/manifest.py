@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 from pydantic import (
     AnyHttpUrl,
@@ -22,11 +23,15 @@ ID_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]{2,63}$")
 KNOWN_PERMISSION_SCOPES: Mapping[str, str] = {
     "assets.read": "Read assets registry metadata and list assets.",
     "assets.write": "Register or update asset metadata/sidecars.",
+    "assets.events": "Subscribe to asset registry hook events.",
+    "assets.debug": "Access asset debug metrics, traces, and thumbnails.",
     "hooks.emit": "Emit modder hook events via the internal bus.",
     "hooks.listen": "Subscribe to modder hook events from the bus.",
     "ui.panels": "Register UI panels within the Studio shell.",
     "api.global": "Expose HTTP routes outside the extension namespace.",
     "sandbox.fs.limited": "Request write access to additional filesystem roots.",
+    "diagnostics.read": "Access debug tooling endpoints exposed by the extension.",
+    "extensions.lifecycle": "Listen for extension install/uninstall lifecycle events.",
 }
 DEFAULT_GLOBAL_ROUTE_ALLOWLIST: Mapping[str, Sequence[str]] = {
     "verified": ("/api/modder/", "/api/hooks/", "/api/extensions/", "/ws/modder"),
@@ -203,6 +208,7 @@ class TrustInfo(BaseModel):
     signature: str | None = None
     reason: str | None = None
     verified_at: str | None = None
+    signature_type: str | None = None
 
     @field_validator("level")
     @classmethod
@@ -211,6 +217,23 @@ class TrustInfo(BaseModel):
         if normalised not in TRUST_LEVELS:
             raise ManifestError(f"unsupported trust level '{level}'")
         return normalised
+
+    @field_validator("signature", mode="before")
+    @classmethod
+    def _normalise_signature(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (bytes, bytearray)):
+            return base64.b64encode(bytes(value)).decode("ascii")
+        return str(value).strip() or None
+
+    @field_validator("signature_type")
+    @classmethod
+    def _normalise_signature_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().lower()
+        return cleaned or None
 
 
 class ExtensionManifest(BaseModel):
@@ -252,11 +275,21 @@ class ExtensionManifest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _ensure_summary(cls, data: Any) -> Any:
-        if isinstance(data, dict) and not data.get("summary"):
-            description = data.get("description")
+        if not isinstance(data, MutableMapping):
+            return data
+        payload: MutableMapping[str, Any] = dict(data)
+        if not payload.get("summary"):
+            description = payload.get("description")
             if isinstance(description, str) and description.strip():
-                data = dict(data)
-                data["summary"] = description.strip()
+                payload["summary"] = description.strip()
+        author = payload.get("author")
+        authors = payload.get("authors")
+        if author and not authors:
+            if isinstance(author, str):
+                payload["authors"] = [author.strip()]
+            elif isinstance(author, Iterable):
+                payload["authors"] = [str(item).strip() for item in author]
+        return payload
         return data
 
     @field_validator("hooks")
@@ -300,6 +333,41 @@ class ExtensionManifest(BaseModel):
         payload = self.model_dump(mode="python", exclude_none=True)
         payload.setdefault("description", self.description or self.summary)
         return payload
+
+    # ------------------------------------------------------------------ Helpers
+    def primary_author(self) -> str | None:
+        """Return the first listed author when available."""
+        return self.authors[0] if self.authors else None
+
+    def contribution_summary(self) -> dict[str, Any]:
+        """Summarise surfaced capabilities for marketplace listings."""
+        return {
+            "permissions": [perm.scope for perm in self.permissions],
+            "routes": [
+                {
+                    "path": route.path,
+                    "methods": route.methods,
+                    "expose": route.expose,
+                    "summary": route.summary,
+                    "tags": route.tags,
+                }
+                for route in self.routes
+            ],
+            "events": [event.topic for event in self.events],
+            "ui": {
+                "panels": [
+                    {"slot": panel.slot, "label": panel.label, "path": panel.path}
+                    for panel in self.ui.panels
+                ]
+            },
+            "hooks": list(self.hooks),
+            "diagnostics": self.diagnostics.model_dump(),
+        }
+
+    def canonical_json(self) -> str:
+        """Return the canonical marketplace JSON representation."""
+        payload = self.to_loader_payload()
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 def find_manifest_path(root: Path) -> Path:

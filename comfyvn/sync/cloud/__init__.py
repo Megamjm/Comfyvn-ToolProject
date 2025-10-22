@@ -10,26 +10,34 @@ from __future__ import annotations
 
 from .gdrive import GoogleDriveSyncClient, GoogleDriveSyncConfig
 from .manifest import (
+    DEFAULT_EXCLUDE_PATTERNS,
+    DEFAULT_INCLUDE_FOLDERS,
     Manifest,
     ManifestEntry,
     ManifestSnapshot,
     ManifestStore,
+    SyncApplyError,
     SyncChange,
     SyncPlan,
     build_manifest,
+    checksum_manifest,
     diff_manifests,
 )
 from .s3 import S3SyncClient, S3SyncConfig
 from .secrets import SecretsVault, SecretsVaultError
 
 __all__ = [
+    "DEFAULT_EXCLUDE_PATTERNS",
+    "DEFAULT_INCLUDE_FOLDERS",
     "Manifest",
     "ManifestEntry",
     "ManifestSnapshot",
     "ManifestStore",
     "SyncChange",
+    "SyncApplyError",
     "SyncPlan",
     "build_manifest",
+    "checksum_manifest",
     "diff_manifests",
     "SecretsVault",
     "SecretsVaultError",

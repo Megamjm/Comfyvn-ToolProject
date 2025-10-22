@@ -6,9 +6,9 @@ This note documents the CPU/VRAM budgeting system, lazy asset eviction helpers, 
 
 ## Feature Flags
 
-- `config/comfyvn.json → features.enable_perf_budgets` (default `false`) gates the budget manager and queue throttling. Flip it via **Settings → Debug & Feature Flags** or patch the JSON, then call `feature_flags.refresh_cache()` when toggling at runtime.
-- `config/comfyvn.json → features.enable_perf_profiler_dashboard` (default `false`) unlocks the profiler mark/dashboard endpoints.
-- External deployments should keep both flags **OFF** by default; integrations can enable them locally to test queue behaviour before rolling out instrumentation.
+- `config/comfyvn.json → features.enable_perf` (default `false`) is the umbrella toggle for budget throttling and the profiler dashboard. Flip it via **Settings → Debug & Feature Flags** or patch the JSON, then call `feature_flags.refresh_cache()` when toggling at runtime.
+- Legacy flags `enable_perf_budgets` / `enable_perf_profiler_dashboard` remain honoured for backwards compatibility; enabling them individually also activates the respective subsystems.
+- External deployments should keep these flags **OFF** by default; integrations can enable them locally to test queue behaviour before rolling out instrumentation.
 
 ## Budget Manager API
 
@@ -25,6 +25,8 @@ Router prefix: `/api/perf/budgets`
 | `POST /budgets/assets/register` | Register a lazily loaded asset (`asset_id`, `size_mb`, metadata). |
 | `POST /budgets/assets/touch` | Mark an asset as recently used so it remains loaded. |
 | `POST /budgets/assets/evict` | Force eviction (LRU order) targeting the requested MB. |
+
+`GET /api/perf/health` (umbrella route) returns the aggregated health snapshot, echoing `feature_flag`, budget queue counts, and the profiler's top offenders for smoke checks.
 
 Sample cURL to set limits and register a job:
 
@@ -83,7 +85,7 @@ Subscribe via `/api/modder/hooks` (REST history), `/api/modder/hooks/ws` (WebSoc
 
 ## Integration Notes
 
-- The `/jobs` REST API automatically annotates submissions with budget status when `enable_perf_budgets` is on. Consumers should respect `status=delayed` and poll for transitions before dispatching work.
+- The `/jobs` REST API automatically annotates submissions with budget status when `enable_perf` (or legacy `enable_perf_budgets`) is on. Consumers should respect `status=delayed` and poll for transitions before dispatching work.
 - Workers should call `POST /api/perf/budgets/jobs/start` before executing a job and `POST /api/perf/budgets/jobs/finish` afterward to keep caps accurate. Jobs that bypass the helper risk over-scheduling when hosts are saturated.
 - Studio panels can call `/api/perf/profiler/dashboard` to render live charts; the response is structured for quick ingestion by charting libraries (`top_time`, `top_memory`, per-category aggregates, recent marks).
 - Automation scripts can inject custom unload handlers by calling `budget_manager.set_api_asset_unload_handler(...)` at startup, ensuring lazy eviction hooks tie into their asset cache or on-demand loader.

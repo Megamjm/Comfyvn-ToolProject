@@ -55,6 +55,13 @@ def _key_fingerprint(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
+def _secure_chmod(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except (OSError, NotImplementedError):  # pragma: no cover - platform specific
+        LOGGER.debug("Unable to enforce permissions on %s", path, exc_info=True)
+
+
 class SecretStoreError(RuntimeError):
     """Raised when the secrets store cannot satisfy a request."""
 
@@ -140,6 +147,7 @@ class SecretStore:
         path = self._key_paths[0]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(key.strip(), encoding="utf-8")
+        _secure_chmod(path)
 
     def _load_key(self, *, ensure: bool = False) -> str:
         if self._key:
@@ -229,6 +237,7 @@ class SecretStore:
         tmp_path = target.with_suffix(target.suffix + ".tmp")
         tmp_path.write_text(json.dumps(envelope, indent=2), encoding="utf-8")
         tmp_path.replace(target)
+        _secure_chmod(target)
         self._cache = dict(data)
 
     def _decrypt_payload(self, envelope: Mapping[str, Any]) -> Dict[str, Any]:

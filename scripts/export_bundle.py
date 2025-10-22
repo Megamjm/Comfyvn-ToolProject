@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 from fastapi import HTTPException
 
 from comfyvn.advisory.policy import require_ack
+from comfyvn.config import feature_flags
 from comfyvn.server.modules import export_api
 
 
@@ -63,6 +64,12 @@ def _convert_findings(raw: list[dict]) -> list[dict]:
 
 def main() -> int:
     args = _parse_args()
+    if not feature_flags.is_enabled("enable_export_bundle", default=False):
+        print(
+            "enable_export_bundle flag disabled. Enable it in comfyvn.json before exporting.",
+            file=sys.stderr,
+        )
+        return 3
     try:
         gate = require_ack(
             "export.bundle.cli",
@@ -100,7 +107,7 @@ def main() -> int:
         return 1
 
     try:
-        bundle_path, provenance, raw_findings = export_api._build_bundle_archive(
+        bundle_path, provenance, enforcement = export_api._build_bundle_archive(
             project_id=args.project,
             project_data=project_data,
             timeline_id=resolved_timeline,
@@ -112,6 +119,11 @@ def main() -> int:
     except HTTPException as exc:  # pragma: no cover - defensive
         print(f"Bundle export failed: {exc.detail}", file=sys.stderr)
         return 1
+
+    if hasattr(enforcement, "findings"):
+        raw_findings = enforcement.findings  # type: ignore[attr-defined]
+    else:
+        raw_findings = enforcement
 
     findings = _convert_findings(raw_findings)
     blockers = [entry for entry in findings if entry.get("level") == "block"]
@@ -137,6 +149,15 @@ def main() -> int:
             },
         },
     }
+    payload["log_path"] = None
+    if hasattr(enforcement, "to_dict"):
+        enforcement_payload = enforcement.to_dict()  # type: ignore[attr-defined]
+        payload["enforcement"] = enforcement_payload
+        if enforcement_payload.get("log_path"):
+            payload["log_path"] = enforcement_payload["log_path"]
+    elif isinstance(enforcement, dict):
+        payload["enforcement"] = enforcement
+
     if blockers:
         messages = [b.get("message") or "" for b in blockers if b.get("message")]
         summary = messages[0] if messages else "Blocking advisory findings present."

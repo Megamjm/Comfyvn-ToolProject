@@ -22,6 +22,7 @@ detect drift even when timestamps diverge:
 ```
 """
 
+import fnmatch
 import hashlib
 import json
 import logging
@@ -29,9 +30,39 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterator, Mapping, Sequence
+from typing import Any, Dict, Iterator, Mapping, Sequence
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_INCLUDE_FOLDERS: tuple[str, ...] = (
+    "assets",
+    "config",
+    "defaults",
+    "docs",
+    "extensions",
+    "models",
+    "scripts",
+    "studio",
+)
+
+DEFAULT_EXCLUDE_PATTERNS: tuple[str, ...] = (
+    "__pycache__",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "*.pyc",
+    "*.pyo",
+    "*.swp",
+    "*.tmp",
+    "cache",
+    "cache/*",
+    "logs",
+    "logs/*",
+    "tmp",
+    "tmp/*",
+)
 
 
 @dataclass(slots=True)
@@ -168,22 +199,72 @@ class SyncPlan:
         }
 
 
+class SyncApplyError(RuntimeError):
+    """Raised when a sync plan could not be applied completely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        summary: Mapping[str, Any],
+        errors: Sequence[Mapping[str, Any]],
+    ) -> None:
+        super().__init__(message)
+        self.summary: Dict[str, Any] = dict(summary)
+        self.errors: list[Dict[str, Any]] = [
+            dict(error) for error in errors if isinstance(error, Mapping)
+        ]
+
+
 def _normalise_path(path: Path, *, root: Path) -> str:
     return str(path.relative_to(root).as_posix())
 
 
 def _iter_files(
-    paths: Sequence[Path], *, follow_symlinks: bool = False
+    paths: Sequence[Path],
+    *,
+    follow_symlinks: bool = False,
+    root: Path,
+    exclude_patterns: Sequence[str],
 ) -> Iterator[Path]:
+    exclude_patterns = tuple(exclude_patterns)
+
+    def _is_excluded(candidate: Path) -> bool:
+        rel = _normalise_path(candidate, root=root)
+        for pattern in exclude_patterns:
+            if not pattern:
+                continue
+            simple = pattern.rstrip("/")
+            if simple and not any(ch in pattern for ch in "*?[]"):
+                if rel == simple or rel.startswith(f"{simple}/"):
+                    return True
+            if fnmatch.fnmatch(rel, pattern):
+                return True
+        return False
+
     for base in paths:
-        if base.is_dir():
-            for child in base.rglob("*"):
-                if not follow_symlinks and child.is_symlink():
+        if not follow_symlinks and base.is_symlink():
+            continue
+        if not base.exists():
+            logger.debug("Skipping missing path during manifest iteration: %s", base)
+            continue
+        stack: list[Path] = [base]
+        while stack:
+            current = stack.pop()
+            if not follow_symlinks and current.is_symlink():
+                continue
+            if _is_excluded(current):
+                continue
+            if current.is_dir():
+                try:
+                    children = sorted(current.iterdir())
+                except (OSError, PermissionError) as exc:
+                    logger.warning("Cannot list %s: %s", current, exc)
                     continue
-                if child.is_file():
-                    yield child
-        elif base.is_file():
-            yield base
+                stack.extend(children)
+                continue
+            if current.is_file():
+                yield current
 
 
 def _hash_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -202,9 +283,15 @@ def build_manifest(
     *,
     name: str = "default",
     root: str | os.PathLike[str] | None = None,
+    exclude_patterns: Sequence[str] | None = None,
     follow_symlinks: bool = False,
 ) -> Manifest:
     root_path = Path(root or ".").resolve()
+    exclusions: Sequence[str] = (
+        tuple(exclude_patterns)
+        if exclude_patterns is not None
+        else DEFAULT_EXCLUDE_PATTERNS
+    )
     resolved_paths: list[Path] = []
     for entry in paths:
         candidate = Path(entry)
@@ -217,7 +304,12 @@ def build_manifest(
             logger.debug("Skipping missing path during manifest build: %s", entry)
 
     entries: Dict[str, ManifestEntry] = {}
-    for file_path in _iter_files(resolved_paths, follow_symlinks=follow_symlinks):
+    for file_path in _iter_files(
+        resolved_paths,
+        follow_symlinks=follow_symlinks,
+        root=root_path,
+        exclude_patterns=exclusions,
+    ):
         try:
             stat_result = file_path.stat()
             rel_path = _normalise_path(file_path, root=root_path)
@@ -241,6 +333,10 @@ def build_manifest(
         extra={"manifest_name": name, "manifest_entries": len(entries)},
     )
     return manifest
+
+
+def checksum_manifest(manifest: Manifest) -> str:
+    return _checksum_manifest(manifest.entries)
 
 
 def _checksum_manifest(entries: Mapping[str, ManifestEntry]) -> str:
@@ -376,12 +472,16 @@ class ManifestStore:
 
 
 __all__ = [
+    "DEFAULT_INCLUDE_FOLDERS",
+    "DEFAULT_EXCLUDE_PATTERNS",
     "Manifest",
     "ManifestEntry",
     "ManifestSnapshot",
     "ManifestStore",
     "SyncChange",
     "SyncPlan",
+    "SyncApplyError",
     "build_manifest",
+    "checksum_manifest",
     "diff_manifests",
 ]

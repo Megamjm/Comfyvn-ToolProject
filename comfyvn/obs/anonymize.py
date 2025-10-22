@@ -25,11 +25,17 @@ _HASH_KEYWORDS = (
     "id",
     "uuid",
     "token",
+    "key",
+    "secret",
+    "serial",
+    "license",
     "path",
     "email",
     "user",
     "account",
     "identifier",
+    "address",
+    "fingerprint",
 )
 
 

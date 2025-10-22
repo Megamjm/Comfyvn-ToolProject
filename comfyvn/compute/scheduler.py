@@ -350,15 +350,286 @@ class JobScheduler:
             "provider_id": job.get("provider_id"),
         }
 
-    def _estimate_cost(self, job: Dict[str, Any]) -> float:
-        provider_meta: Dict[str, Any] = {}
+    def preview_cost(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return an advisory cost breakdown for the provided job specification.
+
+        The response includes numeric components and human-readable hints so
+        contributors can understand how totals were derived. Estimates are
+        non-binding and rely on provider metadata when available.
+        """
+
+        if not isinstance(spec, dict):
+            raise TypeError("job spec must be a dictionary")
+
+        payload = spec.get("payload") if isinstance(spec.get("payload"), dict) else {}
+
+        def _find(*names: str) -> Any:
+            for name in names:
+                if name in spec and spec[name] is not None:
+                    return spec[name]
+                if payload and name in payload and payload[name] is not None:
+                    return payload[name]
+            return None
+
+        queue = str(_find("queue", "target") or "local").lower()
+        provider_id = _find("provider_id")
+        if provider_id is None and queue == "local":
+            provider_id = "local"
+
+        duration_raw = _find(
+            "duration_sec",
+            "duration_seconds",
+            "eta_sec",
+            "expected_duration_sec",
+        )
+        if duration_raw is None:
+            minutes_raw = _find(
+                "duration_min",
+                "duration_minutes",
+                "eta_minutes",
+                "expected_duration_min",
+            )
+            if minutes_raw is not None:
+                try:
+                    duration_raw = float(minutes_raw) * 60.0
+                except (TypeError, ValueError):
+                    duration_raw = None
+
+        duration_sec = max(0.0, _safe_float(duration_raw, 0.0))
+        bytes_tx = max(
+            0.0, _safe_float(_find("bytes_tx", "upload_bytes", "input_bytes"), 0.0)
+        )
+        bytes_rx = max(
+            0.0, _safe_float(_find("bytes_rx", "download_bytes", "output_bytes"), 0.0)
+        )
+        vram_gb = max(
+            0.0,
+            _safe_float(_find("vram_gb", "required_vram_gb", "min_vram_gb"), 0.0),
+        )
+
+        job_view = {
+            "queue": queue,
+            "provider_id": provider_id,
+            "duration_sec": duration_sec,
+            "bytes_tx": int(bytes_tx),
+            "bytes_rx": int(bytes_rx),
+            "vram_gb": vram_gb,
+        }
+
+        provider_entry = self._resolve_provider(provider_id)
+        provider_meta = (provider_entry.get("meta") or {}) if provider_entry else {}
+        components = self._cost_components(job_view, provider_meta)
+        hints = self._cost_hint_strings(job_view, components, provider_entry)
+
+        breakdown = {
+            "duration_minutes": round(float(components["minutes"]), 3),
+            "base_rate_per_minute": round(float(components["base_rate_per_minute"]), 4),
+            "base_cost": round(float(components["base_cost"]), 4),
+            "gb_tx": round(float(components["gb_tx"]), 6),
+            "gb_rx": round(float(components["gb_rx"]), 6),
+            "egress_rate_per_gb": round(float(components["egress_rate_per_gb"]), 4),
+            "ingress_rate_per_gb": round(float(components["ingress_rate_per_gb"]), 4),
+            "transfer_cost": round(float(components["transfer_cost"]), 4),
+            "vram_gb": round(float(components["vram_gb"]), 3),
+            "vram_rate_per_gb_minute": round(
+                float(components["vram_rate_per_gb_minute"]), 4
+            ),
+            "vram_cost": round(float(components["vram_cost"]), 4),
+        }
+
+        notes = ["Advisory estimate only; no billing occurs through ComfyVN."]
+        if provider_entry is None and provider_id:
+            notes.append(
+                f"Provider '{provider_id}' not found in registry; using defaults."
+            )
+        elif provider_entry and not (provider_entry.get("meta") or {}):
+            notes.append("Provider metadata missing; using neutral defaults.")
+
+        return {
+            "provider": self._public_provider_info(provider_entry, provider_id, queue),
+            "estimate": round(float(components["total"]), 4),
+            "currency": components["currency"],
+            "breakdown": breakdown,
+            "hints": hints,
+            "notes": notes,
+            "inputs": job_view,
+        }
+
+    # ------------------------------------------------------------------
+    # Cost helpers
+    # ------------------------------------------------------------------
+    def _resolve_provider(self, provider_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not provider_id or self.registry is None:
+            return None
+        try:
+            entry = self.registry.get(provider_id)
+        except Exception:
+            return None
+        return entry or None
+
+    @staticmethod
+    def _cost_components(
+        job: Dict[str, Any],
+        provider_meta: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        queue = str(job.get("queue") or "local").lower()
+        duration_sec = max(0.0, _safe_float(job.get("duration_sec"), 0.0))
+        minutes = max(0.0, duration_sec / 60.0)
+
+        default_rate = 0.05 if queue == "remote" else 0.0
+        base_rate = _safe_float(provider_meta.get("cost_per_minute"), default_rate)
+        base_cost = max(0.0, minutes * base_rate)
+
+        bytes_tx = max(0.0, _safe_float(job.get("bytes_tx"), 0.0))
+        bytes_rx = max(0.0, _safe_float(job.get("bytes_rx"), 0.0))
+        gb_tx = bytes_tx / float(1024**3)
+        gb_rx = bytes_rx / float(1024**3)
+
+        egress_rate = _safe_float(provider_meta.get("egress_cost_per_gb"), 0.0)
+        ingress_rate = _safe_float(
+            provider_meta.get("ingress_cost_per_gb"), egress_rate
+        )
+        transfer_cost = max(0.0, gb_tx * egress_rate + gb_rx * ingress_rate)
+
+        vram_rate = _safe_float(provider_meta.get("vram_cost_per_gb_minute"), 0.0)
+        default_vram = _safe_float(provider_meta.get("default_vram_gb"), 0.0)
+        vram_gb = max(
+            0.0,
+            _safe_float(job.get("vram_gb"), default_vram),
+        )
+        vram_cost = max(0.0, minutes * vram_gb * vram_rate)
+
+        total = base_cost + transfer_cost + vram_cost
+        currency = str(provider_meta.get("currency") or "USD").upper()
+
+        return {
+            "queue": queue,
+            "minutes": minutes,
+            "base_rate_per_minute": base_rate,
+            "base_cost": base_cost,
+            "bytes_tx": bytes_tx,
+            "bytes_rx": bytes_rx,
+            "gb_tx": gb_tx,
+            "gb_rx": gb_rx,
+            "egress_rate_per_gb": egress_rate,
+            "ingress_rate_per_gb": ingress_rate,
+            "transfer_cost": transfer_cost,
+            "vram_gb": vram_gb,
+            "vram_rate_per_gb_minute": vram_rate,
+            "vram_cost": vram_cost,
+            "total": total,
+            "currency": currency,
+        }
+
+    def _cost_hint_strings(
+        self,
+        job: Dict[str, Any],
+        components: Dict[str, Any],
+        provider_entry: Optional[Dict[str, Any]],
+    ) -> List[str]:
+        hints: List[str] = []
+
+        provider_meta = provider_entry.get("meta") if provider_entry else {}
         provider_id = job.get("provider_id")
-        if provider_id and self.registry:
-            try:
-                entry = self.registry.get(provider_id) or {}
-                provider_meta = entry.get("meta") or {}
-            except Exception:
-                provider_meta = {}
+        provider_kind = provider_entry.get("kind") if provider_entry else None
+        provider_label = None
+
+        if isinstance(provider_meta, dict):
+            provider_label = (
+                provider_meta.get("label")
+                or provider_meta.get("name")
+                or provider_meta.get("title")
+            )
+
+        if provider_label is None and provider_entry:
+            provider_label = provider_entry.get("id")
+        if provider_label is None and provider_id:
+            provider_label = provider_id
+        if provider_label is None:
+            provider_label = "unspecified"
+
+        queue = components.get("queue")
+        hints.append(
+            f"Provider {provider_label} ({provider_kind or queue}) - estimates in {components['currency']}."
+        )
+
+        minutes = float(components["minutes"])
+        base_rate = float(components["base_rate_per_minute"])
+        base_cost = float(components["base_cost"])
+
+        if minutes > 0 and base_rate > 0:
+            hints.append(
+                f"Base: {minutes:.2f} min @ {base_rate:.3f} {components['currency']}/min ~= {base_cost:.2f} {components['currency']}"
+            )
+        elif minutes <= 0:
+            hints.append(
+                "Base: duration not supplied; treating as zero-minute workload."
+            )
+        else:
+            hints.append(
+                "Base: provider metadata missing rate; defaulted to zero cost."
+            )
+
+        transfer_cost = float(components["transfer_cost"])
+        gb_tx = float(components["gb_tx"])
+        gb_rx = float(components["gb_rx"])
+        if transfer_cost > 0 or gb_tx > 0 or gb_rx > 0:
+            hints.append(
+                f"Transfer: {gb_tx:.3f} GB out / {gb_rx:.3f} GB in ~= {transfer_cost:.2f} {components['currency']} (egress {float(components['egress_rate_per_gb']):.3f})."
+            )
+
+        vram_cost = float(components["vram_cost"])
+        vram_gb = float(components["vram_gb"])
+        vram_rate = float(components["vram_rate_per_gb_minute"])
+        if vram_cost > 0:
+            hints.append(
+                f"VRAM surcharge: {vram_gb:.2f} GB @ {vram_rate:.3f} per GB-min ~= {vram_cost:.2f} {components['currency']}."
+            )
+        elif vram_gb > 0 and vram_rate == 0:
+            hints.append("VRAM surcharge: provider does not bill for VRAM usage.")
+
+        if float(components["total"]) == 0:
+            hints.append(
+                "Total cost rounded to 0; ensure provider metadata is populated for accurate previews."
+            )
+
+        return hints
+
+    @staticmethod
+    def _public_provider_info(
+        provider_entry: Optional[Dict[str, Any]],
+        provider_id: Optional[str],
+        queue: str,
+    ) -> Dict[str, Any]:
+        info: Dict[str, Any] = {
+            "id": provider_id or ("local" if queue == "local" else None),
+            "kind": None,
+            "base": None,
+            "label": None,
+        }
+        if provider_entry:
+            info["id"] = provider_entry.get("id") or info["id"]
+            info["kind"] = provider_entry.get("kind")
+            info["base"] = provider_entry.get("base")
+            meta = provider_entry.get("meta") or {}
+            if isinstance(meta, dict):
+                info["label"] = (
+                    meta.get("label")
+                    or meta.get("name")
+                    or meta.get("title")
+                    or info["id"]
+                )
+                info["pricing_url"] = meta.get("pricing_url")
+                info["notes"] = meta.get("notes")
+        if info.get("label") is None and info.get("id"):
+            info["label"] = info["id"]
+        info["queue"] = queue
+        return info
+
+    def _estimate_cost(self, job: Dict[str, Any]) -> float:
+        provider_entry = self._resolve_provider(job.get("provider_id"))
+        provider_meta = (provider_entry.get("meta") or {}) if provider_entry else {}
 
         duration = job.get("duration_sec")
         if duration is None:
@@ -369,33 +640,11 @@ class JobScheduler:
             else:
                 duration = 0.0
 
-        base_rate = _safe_float(
-            provider_meta.get(
-                "cost_per_minute",
-                0.05 if (job.get("queue") == "remote") else 0.0,
-            )
-        )
-        minutes = max(0.0, _safe_float(duration) / 60.0)
-        base_cost = minutes * base_rate
+        job_view = dict(job)
+        job_view["duration_sec"] = duration
 
-        bytes_tx = float(job.get("bytes_tx") or 0)
-        bytes_rx = float(job.get("bytes_rx") or 0)
-        egress_rate = _safe_float(provider_meta.get("egress_cost_per_gb"), 0.0)
-        ingress_rate = _safe_float(
-            provider_meta.get("ingress_cost_per_gb"), egress_rate
-        )
-        gb_tx = bytes_tx / (1024**3)
-        gb_rx = bytes_rx / (1024**3)
-        transfer_cost = gb_tx * egress_rate + gb_rx * ingress_rate
-
-        vram_cost_rate = _safe_float(provider_meta.get("vram_cost_per_gb_minute"), 0.0)
-        vram_gb = _safe_float(
-            job.get("vram_gb") or provider_meta.get("default_vram_gb", 0.0)
-        )
-        vram_cost = minutes * vram_gb * vram_cost_rate
-
-        total = base_cost + transfer_cost + vram_cost
-        return round(total, 4)
+        components = self._cost_components(job_view, provider_meta)
+        return round(float(components["total"]), 4)
 
 
 def _build_registry() -> ProviderRegistry:

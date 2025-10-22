@@ -10,7 +10,7 @@ are cleared.
 """
 
 import logging
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 from comfyvn.public_providers import resolve_credential
 
@@ -33,6 +33,17 @@ SUPPORTED_MODES: Dict[str, str] = {
     "image-to-image": "Stable Image API (img2img)",
 }
 UNIT_COST_USD = 0.04  # pay-as-you-go estimate per generated image (SDXL/SD3 tier)
+LAST_CHECKED = "2025-02-17"
+CAPABILITIES: Dict[str, Any] = {
+    "modes": list(SUPPORTED_MODES.keys()),
+    "features": [
+        "negative_prompt",
+        "image_to_image",
+        "safety_settings",
+        "style_presets",
+    ],
+    "max_resolution": "2048x2048",
+}
 
 
 def catalog_entry() -> Dict[str, Any]:
@@ -55,6 +66,21 @@ def catalog_entry() -> Dict[str, Any]:
             "notes": "Costs vary by model; SD3 and Core share the same unit cost as of 2025-11.",
         },
         "tags": ["stable-diffusion", "sdxl", "sd3"],
+    }
+
+
+def metadata() -> Dict[str, Any]:
+    entry = catalog_entry()
+    return {
+        "id": PROVIDER_ID,
+        "name": entry.get("label"),
+        "pricing_url": entry.get("pricing_url"),
+        "docs_url": entry.get("docs_url"),
+        "last_checked": LAST_CHECKED,
+        "capabilities": CAPABILITIES,
+        "feature_flag": FEATURE_FLAG,
+        "env_keys": list(ENV_KEYS),
+        "aliases": list(ALIASES),
     }
 
 
@@ -119,6 +145,33 @@ def prepare_request(request: Mapping[str, Any]) -> Dict[str, Any]:
     return payload
 
 
+def _api_key(config: Optional[Mapping[str, Any]] = None) -> str:
+    token = resolve_credential(
+        PROVIDER_ID,
+        env_keys=ENV_KEYS,
+        secret_keys=("api_key", "token"),
+    )
+    if token:
+        return token.strip()
+    if config:
+        raw = config.get("api_key") or config.get("token")
+        if isinstance(raw, str):
+            return raw.strip()
+    return ""
+
+
+def _with_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
+    meta = metadata()
+    data = dict(payload)
+    data.setdefault("provider", meta["id"])
+    data.setdefault("pricing_url", meta["pricing_url"])
+    data.setdefault("docs_url", meta["docs_url"])
+    data.setdefault("last_checked", meta["last_checked"])
+    data.setdefault("capabilities", meta["capabilities"])
+    data.setdefault("dry_run", True)
+    return data
+
+
 def estimate_cost(payload: Mapping[str, Any]) -> Dict[str, Any]:
     parameters = _require_mapping(payload.get("parameters") or {}, "parameters missing")
     samples = int(parameters.get("samples") or 1)
@@ -131,10 +184,24 @@ def estimate_cost(payload: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def generate(request: Mapping[str, Any], *, execute: bool) -> Dict[str, Any]:
+def health(config: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    api_key = _api_key(config)
+    if not api_key:
+        return _with_metadata(
+            {"ok": False, "reason": "missing api key", "dry_run": True}
+        )
+    return _with_metadata({"ok": True, "credential": "present"})
+
+
+def generate(
+    request: Mapping[str, Any],
+    *,
+    execute: bool,
+    config: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
     payload = prepare_request(request)
     estimates = estimate_cost(payload)
-    api_key = resolve_credential(PROVIDER_ID, env_keys=ENV_KEYS)
+    api_key = _api_key(config)
     execution_allowed = bool(execute and api_key)
     warnings: list[str] = []
 
@@ -157,25 +224,65 @@ def generate(request: Mapping[str, Any], *, execute: bool) -> Dict[str, Any]:
         },
     )
 
-    return {
-        "provider": PROVIDER_ID,
-        "kind": KIND,
-        "mode": payload["mode"],
-        "dry_run": True,
-        "payload": payload,
-        "estimates": estimates,
-        "execution_allowed": execution_allowed,
-        "warnings": warnings,
-    }
+    return _with_metadata(
+        {
+            "provider": PROVIDER_ID,
+            "kind": KIND,
+            "mode": payload["mode"],
+            "dry_run": True,
+            "payload": payload,
+            "estimates": estimates,
+            "execution_allowed": execution_allowed,
+            "warnings": warnings,
+        }
+    )
+
+
+def submit(
+    request: Mapping[str, Any],
+    *,
+    execute: bool,
+    config: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    result = generate(request, execute=execute, config=config)
+    ok = bool(result.get("execution_allowed"))
+    if ok:
+        result.setdefault("id", "mock-stability-1")
+    else:
+        result.setdefault("id", "mock-stability-1")
+        reason = result.get("warnings", [])
+        if reason:
+            result.setdefault("reason", reason[0])
+    result.setdefault("ok", ok)
+    result["dry_run"] = True
+    return _with_metadata(result)
+
+
+def poll(job_id: str, config: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    _ = _api_key(config)  # ensures consistent merge even if unused
+    return _with_metadata(
+        {
+            "ok": True,
+            "status": "done",
+            "job_id": job_id or "mock-stability-1",
+            "artifacts": [],
+        }
+    )
 
 
 __all__ = [
     "ALIASES",
     "FEATURE_FLAG",
     "KIND",
+    "LAST_CHECKED",
+    "CAPABILITIES",
     "catalog_entry",
     "credentials_present",
     "estimate_cost",
+    "health",
+    "metadata",
+    "poll",
     "generate",
     "prepare_request",
+    "submit",
 ]

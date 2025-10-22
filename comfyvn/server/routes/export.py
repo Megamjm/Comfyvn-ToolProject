@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from comfyvn.advisory.policy import evaluate_action, gate_status
 from comfyvn.config import feature_flags
 from comfyvn.core import modder_hooks
 from comfyvn.core.policy_gate import policy_gate
@@ -400,4 +401,22 @@ def export_publish(payload: PublishRequest) -> Dict[str, Any]:
         },
         "packages": response_packages,
         "logs_path": log_path.as_posix(),
+    }
+
+
+@router.get(
+    "/bundle/status",
+    summary="Describe feature flag and policy gate status for Studio bundle export.",
+)
+def bundle_status(
+    action: str = Query(
+        "export.bundle",
+        description="Action identifier evaluated against the policy gate.",
+    ),
+) -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "enabled": feature_flags.is_enabled("enable_export_bundle", default=False),
+        "gate": evaluate_action(action),
+        "status": gate_status().to_dict(),
     }

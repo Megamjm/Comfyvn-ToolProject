@@ -159,9 +159,7 @@
       {"path": "docs/GOLDEN_TESTS.md", "required": true}
     ]
   }
-}
-{
-  "p3_dungeon": {
+  ,"p3_dungeon": {
     "flags": [
       {"key": "enable_dungeon_api", "expect": false, "required": true}
     ],
@@ -275,6 +273,369 @@
       {"path": "comfyvn/server/routes/perf.py", "required": true},
       {"path": "docs/OBS_TELEMETRY.md", "required": true},
       {"path": "docs/PERF_BUDGETS.md", "required": true}
+    ]
+  }
+
+  ,"p4_marketplace": {
+    "flags": [
+      {"key": "enable_marketplace", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/market/list", "method": "GET", "required": true},
+      {"path": "/api/market/install", "method": "POST", "required": true},
+      {"path": "/api/market/uninstall", "method": "POST", "required": true},
+      {"path": "/api/market/health", "method": "GET", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/market/manifest.py", "required": true},
+      {"path": "comfyvn/market/packaging.py", "required": true},
+      {"path": "comfyvn/server/routes/market.py", "required": true},
+      {"path": "docs/MARKETPLACE.md", "required": true}
+    ]
+  },
+
+  "p4_cloud_sync": {
+    "flags": [
+      {"key": "enable_cloud_sync", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/sync/manifest", "method": "GET", "required": true},
+      {"path": "/api/sync/dry_run", "method": "POST", "required": true},
+      {"path": "/api/sync/run", "method": "POST", "required": true},
+      {"path": "/api/backup/create", "method": "POST", "required": false},
+      {"path": "/api/backup/restore", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/sync/cloud/manifest.py", "required": true},
+      {"path": "comfyvn/sync/cloud/s3.py", "required": true},
+      {"path": "comfyvn/sync/cloud/gdrive.py", "required": true},
+      {"path": "comfyvn/sync/cloud/secrets.py", "required": true},
+      {"path": "comfyvn/server/routes/sync_cloud.py", "required": true},
+      {"path": "docs/CLOUD_SYNC.md", "required": true},
+      {"path": "docs/BACKUPS.md", "required": true}
+    ]
+  },
+
+  "p4_collab": {
+    "flags": [
+      {"key": "enable_collab", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/collab/health", "method": "GET", "required": true},
+      {"path": "/api/collab/room/create", "method": "POST", "required": true},
+      {"path": "/api/collab/room/join", "method": "POST", "required": true},
+      {"path": "/api/collab/room/leave", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/collab/crdt.py", "required": true},
+      {"path": "comfyvn/collab/room.py", "required": true},
+      {"path": "comfyvn/server/routes/collab.py", "required": true},
+      {"path": "docs/COLLAB_EDITING.md", "required": true}
+    ]
+  },
+
+  "p4_security": {
+    "flags": [
+      {"key": "enable_security_sandbox", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/security/policy", "method": "GET", "required": true},
+      {"path": "/api/security/allowlist", "method": "POST", "required": true},
+      {"path": "/api/security/signing/info", "method": "GET", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/security/sandbox.py", "required": true},
+      {"path": "comfyvn/security/signing.py", "required": true},
+      {"path": "comfyvn/server/routes/security.py", "required": true},
+      {"path": "docs/SECURITY_SANDBOX.md", "required": true},
+      {"path": "docs/CODE_SIGNING.md", "required": true}
+    ]
+  },
+
+  "p4_accessibility": {
+    "flags": [
+      {"key": "enable_accessibility", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/accessibility/state", "method": "GET", "required": true},
+      {"path": "/api/accessibility/set", "method": "POST", "required": true},
+      {"path": "/api/input/map", "method": "POST", "required": true},
+      {"path": "/api/input/reset", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/accessibility/filters.py", "required": true},
+      {"path": "comfyvn/accessibility/ui_scale.py", "required": true},
+      {"path": "comfyvn/accessibility/input_map.py", "required": true},
+      {"path": "comfyvn/server/routes/accessibility.py", "required": true},
+      {"path": "docs/ACCESSIBILITY.md", "required": true},
+      {"path": "docs/INPUT_SCHEMES.md", "required": true}
+    ]
+  },
+  "p5_translation": {
+    "flags": [
+      {"key": "enable_i18n", "expect": false, "required": true},
+      {"key": "enable_translation_manager", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/i18n/lang", "method": "GET", "required": true},
+      {"path": "/api/i18n/lang", "method": "POST", "required": true},
+      {"path": "/api/translate/batch", "method": "POST", "required": true},
+      {"path": "/api/translate/review", "method": "GET", "required": false},
+      {"path": "/api/translate/review", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/translation/manager.py", "required": true},
+      {"path": "comfyvn/translation/tm_store.py", "required": true},
+      {"path": "comfyvn/server/routes/translation.py", "required": true},
+      {"path": "docs/TRANSLATION_MANAGER.md", "required": true},
+      {"path": "docs/LLM_RECOMMENDATIONS.md", "required": true}
+    ]
+  },
+
+  "p5_audio_lab": {
+    "flags": [
+      {"key": "enable_audio_lab", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/tts/voices", "method": "GET", "required": false},
+      {"path": "/api/tts/speak", "method": "POST", "required": true},
+      {"path": "/api/audio/align", "method": "POST", "required": false},
+      {"path": "/api/audio/mix", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/bridge/tts_adapter.py", "required": true},
+      {"path": "comfyvn/audio/alignment.py", "required": true},
+      {"path": "comfyvn/audio/mixer.py", "required": true},
+      {"path": "comfyvn/server/routes/audio.py", "required": true},
+      {"path": "docs/AUDIO_LAB.md", "required": true}
+    ]
+  },
+
+  "p5_compute_advisor": {
+    "flags": [
+      {"key": "enable_compute", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/gpu/list", "method": "GET", "required": true},
+      {"path": "/api/providers", "method": "GET", "required": true},
+      {"path": "/api/compute/advise", "method": "POST", "required": true},
+      {"path": "/api/compute/costs", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/compute/providers.py", "required": true},
+      {"path": "comfyvn/compute/advisor.py", "required": true},
+      {"path": "comfyvn/compute/scheduler.py", "required": true},
+      {"path": "comfyvn/server/routes/compute.py", "required": true},
+      {"path": "docs/COMPUTE_ADVISOR.md", "required": true}
+    ]
+  },
+
+  "p5_assets_gallery": {
+    "flags": [
+      {"key": "enable_asset_gallery", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/assets/search", "method": "GET", "required": true},
+      {"path": "/api/assets/enforce", "method": "POST", "required": true},
+      {"path": "/api/assets/rebuild", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/registry/rebuild.py", "required": true},
+      {"path": "comfyvn/server/routes/assets.py", "required": true},
+      {"path": "comfyvn/gui/panels/asset_gallery.py", "required": true},
+      {"path": "docs/ASSET_REGISTRY.md", "required": true}
+    ]
+  },
+
+  "p5_advisory_export": {
+    "flags": [
+      {"key": "enable_advisory", "expect": false, "required": true},
+      {"key": "enable_export_bundle", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/policy/ack", "method": "GET", "required": true},
+      {"path": "/api/policy/ack", "method": "POST", "required": true},
+      {"path": "/api/advisory/scan", "method": "POST", "required": true},
+      {"path": "/api/export/bundle", "method": "POST", "required": true},
+      {"path": "/api/export/renpy/preview", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/advisory/policy.py", "required": true},
+      {"path": "comfyvn/advisory/scanner.py", "required": true},
+      {"path": "comfyvn/server/routes/advisory.py", "required": true},
+      {"path": "comfyvn/server/routes/export.py", "required": true},
+      {"path": "scripts/export_bundle.py", "required": true},
+      {"path": "docs/ADVISORY_EXPORT.md", "required": true}
+    ]
+  },
+  "p6_persona_importers": {
+    "flags": [
+      {"key": "enable_persona_importers", "expect": false, "required": true},
+      {"key": "enable_nsfw_mode", "expect": false, "required": false}
+    ],
+    "routes": [
+      {"path": "/api/persona/consent", "method": "POST", "required": true},
+      {"path": "/api/persona/import/text", "method": "POST", "required": true},
+      {"path": "/api/persona/import/images", "method": "POST", "required": true},
+      {"path": "/api/persona/map", "method": "POST", "required": true},
+      {"path": "/api/persona/preview", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/persona/importers/community.py", "required": true},
+      {"path": "comfyvn/persona/schema.py", "required": true},
+      {"path": "comfyvn/server/routes/persona.py", "required": true},
+      {"path": "docs/PERSONA_IMPORTERS.md", "required": true},
+      {"path": "docs/NSFW_GATING.md", "required": true}
+    ]
+  },
+
+  "p6_image2persona": {
+    "flags": [
+      {"key": "enable_image2persona", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/persona/images/analyze", "method": "POST", "required": true},
+      {"path": "/api/persona/images/unify", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/persona/image2persona.py", "required": true},
+      {"path": "comfyvn/persona/style_suggestions.py", "required": true},
+      {"path": "docs/IMAGE2PERSONA.md", "required": true}
+    ]
+  },
+
+  "p6_anim_25d": {
+    "flags": [
+      {"key": "enable_anim_25d", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/anim/rig", "method": "POST", "required": true},
+      {"path": "/api/anim/preview", "method": "POST", "required": true},
+      {"path": "/api/anim/save", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/anim/rig/autorig.py", "required": true},
+      {"path": "comfyvn/anim/rig/mograph.py", "required": true},
+      {"path": "comfyvn/server/routes/anim.py", "required": true},
+      {"path": "docs/ANIM_25D.md", "required": true}
+    ]
+  },
+  "p6_editor_ux": {
+    "flags": [
+      {"key": "enable_blocking_assistant", "expect": false, "required": true},
+      {"key": "enable_snapshot_sheets", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/editor/blocking", "method": "POST", "required": true},
+      {"path": "/api/editor/snapshot_sheet", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/editor/blocking_assistant.py", "required": true},
+      {"path": "comfyvn/editor/snapshot_sheet.py", "required": true},
+      {"path": "comfyvn/server/routes/editor.py", "required": true},
+      {"path": "docs/EDITOR_UX_ADVANCED.md", "required": true}
+    ]
+  },
+
+  "p6_publish_web": {
+    "flags": [
+      {"key": "enable_publish_web", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/publish/web/build", "method": "POST", "required": true},
+      {"path": "/api/publish/web/redact", "method": "POST", "required": false},
+      {"path": "/api/publish/web/preview", "method": "GET", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/exporters/web_packager.py", "required": true},
+      {"path": "comfyvn/server/routes/publish.py", "required": true},
+      {"path": "docs/PUBLISH_WEB.md", "required": true}
+    ]
+    },
+  "p7_connectors_flist_fa": {
+    "flags": [
+      {"key": "enable_persona_importers", "expect": false, "required": true},
+      {"key": "enable_nsfw_mode", "expect": false, "required": false}
+    ],
+    "routes": [
+      {"path": "/api/connect/flist/consent", "method": "POST", "required": true},
+      {"path": "/api/connect/flist/import_text", "method": "POST", "required": true},
+      {"path": "/api/connect/furaffinity/upload", "method": "POST", "required": true},
+      {"path": "/api/connect/persona/map", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/connectors/flist.py", "required": true},
+      {"path": "comfyvn/connectors/furaffinity.py", "required": true},
+      {"path": "comfyvn/persona/schema.py", "required": true},
+      {"path": "comfyvn/server/routes/connectors_persona.py", "required": true},
+      {"path": "docs/COMMUNITY_CONNECTORS.md", "required": true},
+      {"path": "docs/NSFW_GATING.md", "required": true}
+    ]
+  },
+
+  "p7_connectors_civitai": {
+    "flags": [
+      {"key": "enable_public_model_hubs", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/providers/civitai/health", "method": "GET", "required": true},
+      {"path": "/api/providers/civitai/search", "method": "GET", "required": true},
+      {"path": "/api/providers/civitai/metadata", "method": "GET", "required": true},
+      {"path": "/api/providers/civitai/download", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/public_providers/civitai.py", "required": true},
+      {"path": "comfyvn/server/routes/providers_civitai.py", "required": true},
+      {"path": "docs/PROVIDERS_CIVITAI.md", "required": true}
+    ]
+  },
+
+  "p7_connectors_huggingface": {
+    "flags": [
+      {"key": "enable_public_model_hubs", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/providers/hf/health", "method": "GET", "required": true},
+      {"path": "/api/providers/hf/search", "method": "GET", "required": true},
+      {"path": "/api/providers/hf/metadata", "method": "GET", "required": true},
+      {"path": "/api/providers/hf/pull", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/public_providers/hf_hub.py", "required": true},
+      {"path": "comfyvn/server/routes/providers_hf.py", "required": true},
+      {"path": "docs/PROVIDERS_HF_HUB.md", "required": true}
+    ]
+  },
+
+  "p7_license_eula_enforcer": {
+    "flags": [
+      {"key": "enable_advisory", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/advisory/license/snapshot", "method": "POST", "required": true},
+      {"path": "/api/advisory/license/ack", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/advisory/license_snapshot.py", "required": true},
+      {"path": "comfyvn/server/routes/advisory_license.py", "required": true},
+      {"path": "docs/ADVISORY_LICENSE_SNAPSHOT.md", "required": true}
+    ]
+  },
+
+  "p7_asset_ingest_cache": {
+    "flags": [
+      {"key": "enable_asset_ingest", "expect": false, "required": true}
+    ],
+    "routes": [
+      {"path": "/api/ingest/queue", "method": "POST", "required": true},
+      {"path": "/api/ingest/status", "method": "GET", "required": true},
+      {"path": "/api/ingest/apply", "method": "POST", "required": false}
+    ],
+    "files": [
+      {"path": "comfyvn/ingest/queue.py", "required": true},
+      {"path": "comfyvn/ingest/mappers.py", "required": true},
+      {"path": "comfyvn/server/routes/ingest.py", "required": true},
+      {"path": "docs/ASSET_INGEST.md", "required": true}
     ]
   }
 }

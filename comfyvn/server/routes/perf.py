@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from comfyvn.config import feature_flags
@@ -15,18 +15,32 @@ LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------- Validators
+def _perf_flag_enabled() -> bool:
+    return feature_flags.is_enabled("enable_perf", default=False)
+
+
+def _budgets_flag_enabled() -> bool:
+    if _perf_flag_enabled():
+        return True
+    return feature_flags.is_enabled("enable_perf_budgets", default=False)
+
+
+def _profiler_flag_enabled() -> bool:
+    if _perf_flag_enabled():
+        return True
+    return feature_flags.is_enabled("enable_perf_profiler_dashboard", default=False)
+
+
 def _ensure_budgets_enabled() -> None:
-    if feature_flags.is_enabled("enable_perf_budgets", default=False):
+    if _budgets_flag_enabled():
         return
-    raise HTTPException(status_code=403, detail="enable_perf_budgets flag disabled")
+    raise HTTPException(status_code=403, detail="enable_perf flag disabled")
 
 
 def _ensure_profiler_enabled() -> None:
-    if feature_flags.is_enabled("enable_perf_profiler_dashboard", default=False):
+    if _profiler_flag_enabled():
         return
-    raise HTTPException(
-        status_code=403, detail="enable_perf_profiler_dashboard flag disabled"
-    )
+    raise HTTPException(status_code=403, detail="enable_perf flag disabled")
 
 
 # -------------------------------------------------------------------------- Models
@@ -87,11 +101,26 @@ class ProfilerMarkRequest(BaseModel):
 
 
 # ------------------------------------------------------------------------ Budgets
+@router.get("/health")
+async def perf_health(limit: int = 5) -> Dict[str, Any]:
+    budgets_enabled = _budgets_flag_enabled()
+    profiler_enabled = _profiler_flag_enabled()
+    return {
+        "ok": True,
+        "feature_flag": _perf_flag_enabled(),
+        "budgets_enabled": budgets_enabled,
+        "profiler_enabled": profiler_enabled,
+        "budgets": budget_manager.health() if budgets_enabled else None,
+        "profiler": perf_profiler.health(limit=limit) if profiler_enabled else None,
+    }
+
+
 @router.get("/budgets")
 async def get_budget_snapshot() -> Dict[str, Any]:
     _ensure_budgets_enabled()
     snapshot = budget_manager.snapshot()
     LOGGER.debug("Budget snapshot requested → %s", snapshot)
+    snapshot["feature_flag"] = _budgets_flag_enabled()
     return snapshot
 
 
@@ -99,7 +128,11 @@ async def get_budget_snapshot() -> Dict[str, Any]:
 async def apply_budget_limits(payload: BudgetUpdateRequest) -> Dict[str, Any]:
     _ensure_budgets_enabled()
     limits = budget_manager.configure(**payload.model_dump(exclude_none=True))
-    return {"ok": True, "limits": limits.__dict__}
+    return {
+        "ok": True,
+        "limits": limits.__dict__,
+        "feature_flag": _budgets_flag_enabled(),
+    }
 
 
 @router.post("/budgets/jobs/register")
@@ -110,7 +143,7 @@ async def register_budgeted_job(payload: JobSubmissionRequest) -> Dict[str, Any]
         kind=payload.job_type,
         payload=(payload.payload or {}),
     )
-    return {"ok": True, **result}
+    return {"ok": True, **result, "feature_flag": _budgets_flag_enabled()}
 
 
 @router.post("/budgets/jobs/start")
@@ -119,7 +152,11 @@ async def mark_budget_job_started(payload: JobSubmissionRequest) -> Dict[str, An
     record = budget_manager.mark_started(payload.job_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"job {payload.job_id} not found")
-    return {"ok": True, "job": record.to_public_dict()}
+    return {
+        "ok": True,
+        "job": record.to_public_dict(),
+        "feature_flag": _budgets_flag_enabled(),
+    }
 
 
 @router.post("/budgets/jobs/finish")
@@ -132,14 +169,22 @@ async def mark_budget_job_finished(payload: JobFinishRequest) -> Dict[str, Any]:
     )
     if record is None:
         raise HTTPException(status_code=404, detail=f"job {payload.job_id} not found")
-    return {"ok": True, "job": record.to_public_dict()}
+    return {
+        "ok": True,
+        "job": record.to_public_dict(),
+        "feature_flag": _budgets_flag_enabled(),
+    }
 
 
 @router.post("/budgets/jobs/refresh")
 async def refresh_budget_queue() -> Dict[str, Any]:
     _ensure_budgets_enabled()
     transitions = budget_manager.refresh_queue()
-    return {"ok": True, "transitions": transitions}
+    return {
+        "ok": True,
+        "transitions": transitions,
+        "feature_flag": _budgets_flag_enabled(),
+    }
 
 
 @router.post("/budgets/assets/register")
@@ -154,6 +199,7 @@ async def register_lazy_asset(payload: AssetRegisterRequest) -> Dict[str, Any]:
     return {
         "ok": True,
         "asset": {"asset_id": handle.asset_id, "size_mb": handle.size_mb},
+        "feature_flag": _budgets_flag_enabled(),
     }
 
 
@@ -168,6 +214,7 @@ async def touch_lazy_asset(payload: AssetTouchRequest) -> Dict[str, Any]:
     return {
         "ok": True,
         "asset": {"asset_id": handle.asset_id, "last_used": handle.last_used},
+        "feature_flag": _budgets_flag_enabled(),
     }
 
 
@@ -175,7 +222,7 @@ async def touch_lazy_asset(payload: AssetTouchRequest) -> Dict[str, Any]:
 async def evict_lazy_assets(payload: AssetEvictRequest) -> Dict[str, Any]:
     _ensure_budgets_enabled()
     events = budget_manager.evict_lazy_assets(target_mb=payload.target_mb)
-    return {"ok": True, "evicted": events}
+    return {"ok": True, "evicted": events, "feature_flag": _budgets_flag_enabled()}
 
 
 # ----------------------------------------------------------------------- Profiler
@@ -185,20 +232,24 @@ async def profiler_mark(payload: ProfilerMarkRequest) -> Dict[str, Any]:
     entry = perf_profiler.mark(
         payload.name, category=payload.category, metadata=payload.metadata
     )
-    return {"ok": True, "mark": entry}
+    return {"ok": True, "mark": entry, "feature_flag": _profiler_flag_enabled()}
 
 
 @router.get("/profiler/dashboard")
 async def profiler_dashboard(limit: int = 5) -> Dict[str, Any]:
     _ensure_profiler_enabled()
-    return {"ok": True, "dashboard": perf_profiler.dashboard(limit=limit)}
+    return {
+        "ok": True,
+        "dashboard": perf_profiler.dashboard(limit=limit),
+        "feature_flag": _profiler_flag_enabled(),
+    }
 
 
 @router.post("/profiler/reset")
 async def profiler_reset() -> Dict[str, Any]:
     _ensure_profiler_enabled()
     perf_profiler.reset()
-    return {"ok": True}
+    return {"ok": True, "feature_flag": _profiler_flag_enabled()}
 
 
 __all__ = ["router"]

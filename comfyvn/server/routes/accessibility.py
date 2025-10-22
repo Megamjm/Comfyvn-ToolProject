@@ -15,6 +15,7 @@ from comfyvn.config import feature_flags
 LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/accessibility", tags=["Accessibility"])
+input_router = APIRouter(prefix="/api/input", tags=["Input"])
 
 
 class AccessibilitySettingsPayload(BaseModel):
@@ -22,6 +23,8 @@ class AccessibilitySettingsPayload(BaseModel):
     color_filter: str = Field(default="none")
     high_contrast: bool = Field(default=False)
     subtitles_enabled: bool = Field(default=True)
+    ui_scale: float = Field(default=1.0, ge=1.0, le=2.0)
+    view_overrides: dict[str, float] = Field(default_factory=dict)
 
 
 class AccessibilityStateResponse(AccessibilitySettingsPayload):
@@ -57,7 +60,17 @@ class TriggerInputPayload(BaseModel):
     meta: dict[str, Any] | None = None
 
 
+class AccessibilityProfilePayload(BaseModel):
+    accessibility: AccessibilitySettingsPayload | None = None
+    input_bindings: dict[str, Any] | None = None
+    merge_bindings: bool = Field(default=False)
+
+
 def _ensure_enabled() -> None:
+    if not feature_flags.is_enabled("enable_accessibility", default=False):
+        raise HTTPException(
+            status_code=403, detail="Accessibility disabled by feature flag."
+        )
     if feature_flags.is_enabled("enable_accessibility_api", default=True):
         return
     raise HTTPException(
@@ -71,7 +84,46 @@ def _state_payload() -> dict:
     data["color_filter"] = accessibility_filters.canonical_filter_key(
         data.get("color_filter", "none")
     )
+    overrides = data.get("view_overrides") or {}
+    data["view_overrides"] = {str(k): float(v) for k, v in overrides.items()}
     return data
+
+
+def _serialize_input_map() -> dict[str, Any]:
+    bindings = [
+        InputBindingModel.model_validate(binding.to_dict())
+        for binding in input_map_manager.bindings().values()
+    ]
+    options = [
+        {"key": key, "label": label}
+        for key, label in input_map_manager.available_gamepad_bindings()
+    ]
+    return {
+        "bindings": [binding.model_dump() for binding in bindings],
+        "gamepad_options": options,
+        "controller_enabled": feature_flags.is_enabled(
+            "enable_controller_profiles", default=True
+        ),
+    }
+
+
+async def _update_input_binding(
+    payload: UpdateInputBindingPayload,
+) -> InputBindingModel:
+    binding = input_map_manager.update_binding(
+        payload.action,
+        primary=payload.primary,
+        secondary=payload.secondary,
+        gamepad=payload.gamepad,
+    )
+    LOGGER.info(
+        "Input binding updated via API",
+        extra={
+            "event": "api.accessibility.input_map.post",
+            "binding": binding.to_dict(),
+        },
+    )
+    return InputBindingModel.model_validate(binding.to_dict())
 
 
 @router.get("/state", response_model=AccessibilityStateResponse)
@@ -94,6 +146,51 @@ async def update_accessibility_state(
         },
     )
     return AccessibilityStateResponse.model_validate(_state_payload())
+
+
+@router.post("/set", response_model=AccessibilityStateResponse)
+async def set_accessibility_state(
+    payload: AccessibilitySettingsPayload,
+) -> AccessibilityStateResponse:
+    return await update_accessibility_state(payload)
+
+
+@router.get("/export")
+async def export_accessibility_profile() -> dict[str, Any]:
+    _ensure_enabled()
+    return {
+        "accessibility": accessibility_manager.export_profile(),
+        "input_bindings": input_map_manager.export_bindings(),
+    }
+
+
+@router.post("/import", response_model=AccessibilityStateResponse)
+async def import_accessibility_profile(
+    payload: AccessibilityProfilePayload,
+) -> AccessibilityStateResponse:
+    _ensure_enabled()
+    merged_state: AccessibilityStateResponse | None = None
+    if payload.accessibility is not None:
+        accessibility_manager.update(**payload.accessibility.model_dump())
+        merged_state = AccessibilityStateResponse.model_validate(_state_payload())
+    if payload.input_bindings:
+        input_map_manager.import_bindings(
+            payload.input_bindings, merge=payload.merge_bindings
+        )
+    LOGGER.info(
+        "Accessibility profile imported via API",
+        extra={
+            "event": "api.accessibility.import",
+            "merge": payload.merge_bindings,
+            "accessibility": bool(payload.accessibility),
+            "bindings": len(payload.input_bindings or {}),
+        },
+    )
+    return (
+        merged_state
+        if merged_state is not None
+        else AccessibilityStateResponse.model_validate(_state_payload())
+    )
 
 
 @router.get("/filters")
@@ -148,40 +245,13 @@ async def clear_accessibility_subtitle() -> AccessibilityStateResponse:
 @router.get("/input-map")
 async def get_input_map() -> dict[str, Any]:
     _ensure_enabled()
-    bindings = [
-        InputBindingModel.model_validate(binding.to_dict())
-        for binding in input_map_manager.bindings().values()
-    ]
-    options = [
-        {"key": key, "label": label}
-        for key, label in input_map_manager.available_gamepad_bindings()
-    ]
-    return {
-        "bindings": [binding.model_dump() for binding in bindings],
-        "gamepad_options": options,
-        "controller_enabled": feature_flags.is_enabled(
-            "enable_controller_profiles", default=True
-        ),
-    }
+    return _serialize_input_map()
 
 
 @router.post("/input-map", response_model=InputBindingModel)
 async def update_input_map(payload: UpdateInputBindingPayload) -> InputBindingModel:
     _ensure_enabled()
-    binding = input_map_manager.update_binding(
-        payload.action,
-        primary=payload.primary,
-        secondary=payload.secondary,
-        gamepad=payload.gamepad,
-    )
-    LOGGER.info(
-        "Input binding updated via API",
-        extra={
-            "event": "api.accessibility.input_map.post",
-            "binding": binding.to_dict(),
-        },
-    )
-    return InputBindingModel.model_validate(binding.to_dict())
+    return await _update_input_binding(payload)
 
 
 @router.post("/input/event")
@@ -203,11 +273,39 @@ async def trigger_input_event(payload: TriggerInputPayload) -> dict[str, Any]:
     return {"ok": ok}
 
 
+@input_router.get("/map")
+async def input_router_get_map() -> dict[str, Any]:
+    return await get_input_map()
+
+
+@input_router.post("/map", response_model=InputBindingModel)
+async def input_router_update_map(
+    payload: UpdateInputBindingPayload,
+) -> InputBindingModel:
+    _ensure_enabled()
+    return await _update_input_binding(payload)
+
+
+@input_router.post("/reset")
+async def input_router_reset_map() -> dict[str, Any]:
+    _ensure_enabled()
+    input_map_manager.reset()
+    state = _serialize_input_map()
+    state["ok"] = True
+    LOGGER.info(
+        "Input bindings reset via API",
+        extra={"event": "api.input.reset"},
+    )
+    return state
+
+
 __all__ = [
     "router",
+    "input_router",
     "AccessibilitySettingsPayload",
     "AccessibilityStateResponse",
     "SubtitlePayload",
+    "AccessibilityProfilePayload",
     "InputBindingModel",
     "UpdateInputBindingPayload",
     "TriggerInputPayload",

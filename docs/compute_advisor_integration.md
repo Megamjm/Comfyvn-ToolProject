@@ -1,5 +1,7 @@
 # Compute Advisor Integration – Architecture & Compatibility Guide
 
+> For the server-first FastAPI surface, debug hooks, and cost previews see `docs/COMPUTE_ADVISOR.md`. This guide focuses on the core integration layer used by importer tooling.
+
 This note explains how ComfyVN’s compute advisor operates, what metadata it
 expects, and how to make the system compatible with third-party GPU services
 when you do not yet have an active subscription or live credentials.

@@ -6,7 +6,7 @@ import time
 import uuid
 import weakref
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 try:  # Qt shortcuts are optional for headless/testing modes.
     from PySide6.QtGui import QKeySequence  # type: ignore
@@ -287,23 +287,7 @@ class InputMapManager:
                 "input": binding.to_dict(),
             },
         )
-        LOGGER.info(
-            "Input binding updated",
-            extra={"event": "accessibility.input.update", "binding": binding.to_dict()},
-        )
-        if modder_hooks:
-            try:
-                modder_hooks.emit(
-                    "on_accessibility_input_map",
-                    {
-                        "action": binding.action,
-                        "binding": binding.to_dict(),
-                        "timestamp": time.time(),
-                        "event_id": uuid.uuid4().hex,
-                    },
-                )
-            except Exception:  # pragma: no cover - defensive
-                LOGGER.debug("Failed to emit input map hook", exc_info=True)
+        self._emit_binding_event(binding, reason="update")
         self._notify_subscribers()
         return binding.clone()
 
@@ -312,6 +296,20 @@ class InputMapManager:
         self._persist()
         self._refresh_targets()
         self._gamepad_adapter.refresh()
+        notifier.toast(
+            "info",
+            "Input bindings reset to defaults",
+            meta={"input": {"count": len(self._bindings)}},
+        )
+        LOGGER.info(
+            "Input bindings reset",
+            extra={
+                "event": "accessibility.input_map.reset",
+                "count": len(self._bindings),
+            },
+        )
+        for binding in self._bindings.values():
+            self._emit_binding_event(binding, reason="reset")
         self._notify_subscribers()
 
     def trigger(
@@ -390,14 +388,15 @@ class InputMapManager:
         result: Dict[str, InputBinding] = {}
         for action, default in defaults.items():
             raw = raw_bindings.get(action, {})
-            result[action] = InputBinding(
-                action=action,
-                label=str(raw.get("label") or default.label),
-                primary=self._clean_sequence(raw.get("primary", default.primary)),
-                secondary=self._clean_sequence(raw.get("secondary", default.secondary)),
-                gamepad=(raw.get("gamepad") or default.gamepad or None),
-                category=str(raw.get("category") or default.category or "viewer"),
-            )
+            if isinstance(raw, Mapping):
+                result[action] = self._binding_from_payload(action, raw, default)
+            else:
+                result[action] = default.clone()
+        for action, raw in raw_bindings.items():
+            if action in result:
+                continue
+            if isinstance(raw, Mapping):
+                result[action] = self._binding_from_payload(action, raw, None)
         return result
 
     def _default_bindings(self) -> Dict[str, InputBinding]:
@@ -413,11 +412,86 @@ class InputMapManager:
             )
         return defaults
 
+    def export_bindings(self) -> Dict[str, Dict[str, Any]]:
+        return {action: binding.to_dict() for action, binding in self._bindings.items()}
+
+    def import_bindings(
+        self, payload: Mapping[str, Any], *, merge: bool = False
+    ) -> Dict[str, InputBinding]:
+        if not isinstance(payload, Mapping):
+            raise TypeError("Input bindings payload must be a mapping.")
+        base = self._bindings if merge else self._default_bindings()
+        incoming: Dict[str, Mapping[str, Any]] = {}
+        for action, raw in payload.items():
+            if isinstance(raw, InputBinding):
+                incoming[action] = raw.to_dict()
+            elif isinstance(raw, Mapping):
+                incoming[action] = raw
+            else:
+                continue
+        updated: Dict[str, InputBinding] = {}
+        for action in sorted(set(base.keys()) | set(incoming.keys())):
+            source = incoming.get(action)
+            fallback = base.get(action)
+            if source is None:
+                if fallback is None:
+                    continue
+                updated[action] = fallback.clone()
+            else:
+                updated[action] = self._binding_from_payload(action, source, fallback)
+        self._bindings = updated
+        self._persist()
+        self._refresh_targets()
+        self._gamepad_adapter.refresh()
+        self._notify_subscribers()
+        notifier.toast(
+            "info",
+            "Input bindings imported",
+            meta={"input": {"count": len(updated), "merge": merge}},
+        )
+        LOGGER.info(
+            "Input bindings imported",
+            extra={
+                "event": "accessibility.input_map.import",
+                "count": len(updated),
+                "merge": merge,
+            },
+        )
+        for binding in updated.values():
+            self._emit_binding_event(binding, reason="import")
+        return self.bindings()
+
+    def _binding_from_payload(
+        self,
+        action: str,
+        payload: Mapping[str, Any],
+        default: Optional[InputBinding] = None,
+    ) -> InputBinding:
+        base = (
+            default.clone()
+            if default
+            else InputBinding(
+                action=action,
+                label=action,
+                category="viewer",
+            )
+        )
+        label = payload.get("label")
+        if isinstance(label, str) and label.strip():
+            base.label = label.strip()
+        primary = payload.get("primary", base.primary)
+        secondary = payload.get("secondary", base.secondary)
+        gamepad = payload.get("gamepad", base.gamepad)
+        category = payload.get("category", base.category)
+        base.primary = self._clean_sequence(primary)
+        base.secondary = self._clean_sequence(secondary)
+        base.gamepad = (str(gamepad).strip().lower() or None) if gamepad else None
+        if isinstance(category, str) and category.strip():
+            base.category = category.strip()
+        return base
+
     def _persist(self) -> None:
-        payload = {
-            action: binding.to_dict() for action, binding in self._bindings.items()
-        }
-        self._settings.patch("input_map", {"bindings": payload})
+        self._settings.patch("input_map", {"bindings": self.export_bindings()})
 
     def _refresh_targets(self) -> None:
         for key, target in list(self._targets.items()):
@@ -461,6 +535,31 @@ class InputMapManager:
             return None
         text = str(value).strip()
         return text or None
+
+    def _emit_binding_event(self, binding: InputBinding, *, reason: str) -> None:
+        payload = binding.to_dict()
+        LOGGER.info(
+            "Input binding event",
+            extra={
+                "event": "accessibility.input_map.binding",
+                "binding": payload,
+                "reason": reason,
+            },
+        )
+        if modder_hooks:
+            try:
+                modder_hooks.emit(
+                    "on_accessibility_input_map",
+                    {
+                        "action": binding.action,
+                        "binding": payload,
+                        "timestamp": time.time(),
+                        "event_id": uuid.uuid4().hex,
+                        "reason": reason,
+                    },
+                )
+            except Exception:  # pragma: no cover - defensive
+                LOGGER.debug("Failed to emit input map hook", exc_info=True)
 
     def _notify_subscribers(self) -> None:
         snapshot = self.bindings()

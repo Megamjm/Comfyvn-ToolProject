@@ -45,9 +45,10 @@ Updated: 2025-11-18 • Scope: Cloud manifests, S3/Drive transports, encrypted v
 
 ## REST API
 
-- `POST /api/sync/dry-run`
+- `GET /api/sync/manifest` — returns the current manifest summary (name, root, entries, checksum) for the requested snapshot. Accepts optional `include`, `exclude`, and `follow_symlinks` query parameters.
+- `POST /api/sync/dry_run`
   ```bash
-  curl -X POST "$BASE_URL/api/sync/dry-run" \
+  curl -X POST "$BASE_URL/api/sync/dry_run" \
     -H 'Content-Type: application/json' \
     -d '{
       "service": "s3",
@@ -57,15 +58,8 @@ Updated: 2025-11-18 • Scope: Cloud manifests, S3/Drive transports, encrypted v
       "service_config": {"bucket": "studio-nightly", "prefix": "dev"}
     }'
   ```
-  Response excerpt:
-  ```jsonc
-  {
-    "plan": {"service": "s3", "snapshot": "nightly", "uploads": [...], "deletes": [...]},
-    "manifest": {"name": "nightly", "entries": 128, "created_at": "..."},
-    "summary": {"uploads": [...], "deletes": [], "skipped": [...]}
-  }
-  ```
-  - Remote manifests are fetched read-only. If the provider SDK is unavailable the planner falls back to cached manifests and still returns the delta summary.
+  - Returns `{manifest, plan, summary, remote_manifest}`. `summary.status` is `"dry_run"`, `summary.errors` is always an empty list, and the modder hook `on_cloud_sync_plan` fires after the response is assembled.
+  - Remote fetch failures fall back to cached manifests; missing SDKs yield a stub summary instead of raising.
 - `POST /api/sync/run`
   ```bash
   curl -X POST "$BASE_URL/api/sync/run" \
@@ -80,15 +74,29 @@ Updated: 2025-11-18 • Scope: Cloud manifests, S3/Drive transports, encrypted v
       }
     }'
   ```
-  - Applies the plan, uploads the refreshed manifest to the provider, and saves the manifest locally under `cache/cloud/manifests/<service>/<snapshot>.json` (unless `commit_manifest=false`).
-  - Summary payload mirrors the counts returned by the adapter (`uploads`, `deletes`, `skipped`).
+  - Applies the plan. Adapter loops continue after per-file errors, aggregate them into `summary.errors`, and only publish the refreshed manifest/upload when no failures occurred. Runs report `summary.status: "ok"` or `"partial"`.
+  - `commit_manifest=false` skips writing the local cache when you need to review results first.
+- `POST /api/backup/create`
+  ```bash
+  curl -X POST "$BASE_URL/api/backup/create" \
+    -H 'Content-Type: application/json' \
+    -d '{"label": "pre-release", "max_backups": 10}'
+  ```
+  - Writes a ZIP archive under `backups/cloud/`, embeds the manifest in `__meta__/cloud_sync/manifest.json`, and enforces rotation. The response echoes `{name, path, files, bytes, checksum, removed}`.
+- `POST /api/backup/restore`
+  ```bash
+  curl -X POST "$BASE_URL/api/backup/restore" \
+    -H 'Content-Type: application/json' \
+    -d '{"name": "20251215T080530Z-pre-release.zip", "replace_existing": false}'
+  ```
+  - Restores files relative to the workspace, skipping metadata entries and refusing to extract outside the root. The response returns `{name, restored, skipped}`.
 
 ## Modder Hooks & Logs
 
 - `on_cloud_sync_plan` — emitted after dry-runs with `{service, snapshot, uploads, deletes, bytes}`.
-- `on_cloud_sync_complete` — emitted after successful runs with `{service, snapshot, uploads, deletes, skipped}`.
+- `on_cloud_sync_complete` — emitted after runs with `{service, snapshot, uploads, deletes, skipped, status}`. `status` mirrors `summary.status` (`ok` or `partial`).
 - Subscribe via REST (`/api/modder/hooks`) or WebSocket (`/api/modder/hooks/ws`).
-- Structured logs (`sync.dry_run`, `sync.run`) appear in `logs/server.log` with provider, snapshot, and counts; secrets never enter the log stream.
+- Structured logs (`sync.dry_run`, `sync.run`, `backup.create`, `backup.restore`) appear in `logs/server.log` with provider/paths/counts. Secrets never enter the log stream; errors redact remote payloads down to message strings.
 
 ## Provider SDKs
 
@@ -104,15 +112,15 @@ Updated: 2025-11-18 • Scope: Cloud manifests, S3/Drive transports, encrypted v
 ## Tests & Tooling
 
 - `pytest tests/test_cloud_sync.py` covers manifest diffing and vault rotation semantics.
-- When provider SDKs are installed, add an integration smoke test that seeds the vault, calls `/api/sync/dry-run`, and asserts hook emission/counts before enabling CI automation.
+- When provider SDKs are installed, add an integration smoke test that seeds the vault, calls `/api/sync/dry_run`, and asserts hook emission/counts before enabling CI automation.
 
 ## Debug & Verification Checklist
 
-- [ ] **Docs updated** — README Cloud Sync section, `architecture.md`, `architecture_updates.md`, this note.
+- [ ] **Docs updated** — README Cloud Sync section, `docs/CLOUD_SYNC.md`, `docs/BACKUPS.md`, `architecture.md`, `architecture_updates.md`, this note.
 - [ ] **Feature flags** — `config/comfyvn.json` stores `enable_cloud_sync*` (default `false`).
-- [ ] **API surfaces** — `/api/sync/dry-run`, `/api/sync/run` documented with curl samples.
-- [ ] **Modder hooks** — `on_cloud_sync_plan`, `on_cloud_sync_complete` payloads documented.
-- [ ] **Logs** — `logs/server.log` entries `sync.dry_run` / `sync.run`; manifests cached under `cache/cloud/manifests/`.
+- [ ] **API surfaces** — `/api/sync/manifest`, `/api/sync/dry_run`, `/api/sync/run`, `/api/backup/{create,restore}` documented with curl samples.
+- [ ] **Modder hooks** — `on_cloud_sync_plan`, `on_cloud_sync_complete` payloads (including `status`) documented.
+- [ ] **Logs** — `logs/server.log` entries `sync.dry_run`, `sync.run`, `backup.create`, `backup.restore`; manifests cached under `cache/cloud/manifests/`.
 - [ ] **Provenance** — manifests record hashes/timestamps; reruns remain idempotent once remote and local digests match.
 - [ ] **Determinism** — identical manifests + provider state → zero uploads on the next dry-run.
 - [ ] **Windows/Linux** — manifest builder relies on pathlib; no platform-specific logic.
