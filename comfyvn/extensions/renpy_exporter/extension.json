@@ -1,0 +1,10 @@
+{
+  "id": "renpy_exporter",
+  "name": "Ren'Py Exporter",
+  "version": "0.1.0",
+  "entrypoint": "extensions.renpy_exporter.main:register",
+  "permissions": {
+    "ui": true,
+    "api": ["/api/export/*"]
+  }
+}
