@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from comfyvn.accessibility import accessibility_manager
 from comfyvn.config import runtime_paths
@@ -244,13 +245,17 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             return
         tools_menu = None
         for action in menubar.actions():
+            if not isValid(action):
+                continue
             if action.text().replace("&", "") == "Tools":
                 tools_menu = action.menu()
                 break
+        if tools_menu is not None and not isValid(tools_menu):
+            tools_menu = None
         if tools_menu is None:
             return
         previous_action = getattr(self, "_tools_import_menu_action", None)
-        if previous_action is not None:
+        if previous_action is not None and isValid(previous_action):
             tools_menu.removeAction(previous_action)
             self._tools_import_menu_action = None
 
@@ -269,15 +274,21 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         actions = tools_menu.actions()
         insert_index = None
         for idx, action in enumerate(actions):
+            if not isValid(action):
+                continue
             if str(action.property("_sourceLabel") or "") == "Import Assets":
                 insert_index = idx + 1
                 break
         if insert_index is not None and insert_index < len(actions):
             before_action = actions[insert_index]
-            tools_menu.insertMenu(before_action, import_menu)
+            if isValid(before_action):
+                tools_menu.insertMenu(before_action, import_menu)
+            else:
+                tools_menu.addMenu(import_menu)
         else:
             tools_menu.addMenu(import_menu)
         self._tools_import_menu_action = import_menu.menuAction()
+        self._tools_import_menu = import_menu
 
     def import_from_file(self) -> None:
         caption = "Select Import Payload"
