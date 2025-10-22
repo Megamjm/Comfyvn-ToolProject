@@ -243,7 +243,7 @@ menu.addAction(act)
 
 * **Remove demo menu items**: un-register or guard their registration (e.g., `if DEBUG_EXAMPLES: …`). Move example code under `docs/examples/` for reference.
 * **Hide or remove** the duplicate tab strip under the center; keep one primary tab row. Display a concise instruction in the status bar:
-  “Start the VN viewer to preview scenes. Tools → Import to ingest assets.”
+  “Start the VN viewer to preview scenes. Tools → Import Processing to ingest assets.”
 
 **Acceptance**
 

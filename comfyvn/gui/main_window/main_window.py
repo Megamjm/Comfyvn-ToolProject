@@ -147,7 +147,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._set_script_status(True, "No scripts executed yet.")
         self._metrics_display.start()
         self._status.showMessage(
-            "Start the VN viewer to preview scenes. Tools → Import to ingest assets."
+            "Start the VN viewer to preview scenes. Tools → Import Processing to ingest assets."
         )
 
         self._notify_overlay = NotifyOverlay(self)
@@ -265,8 +265,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         existing_menu = getattr(self, "_tools_import_menu", None)
         if existing_menu is not None and isValid(existing_menu):
             existing_menu.deleteLater()
-        import_menu = QMenu("Import", self)
-        import_menu.setObjectName("tools_import_submenu")
+        self._tools_import_menu = None
+
+        import_menu = QMenu("Import Processing", self)
+        import_menu.setObjectName("tools_import_processing_submenu")
 
         from_file_action = import_menu.addAction("From File…")
         from_file_action.triggered.connect(self.import_from_file)
@@ -285,48 +287,30 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             if str(action.property("_sourceLabel") or "") == "Import Assets":
                 insert_index = idx + 1
                 break
+        inserted = False
         if insert_index is not None and insert_index < len(actions):
             before_action = actions[insert_index]
-            if before_action is None or not isValid(before_action):
-                tools_menu.addMenu(import_menu)
-            else:
+            if before_action is not None and isValid(before_action):
                 try:
                     tools_menu.insertMenu(before_action, import_menu)
+                    inserted = True
                 except RuntimeError:
                     logger.debug(
                         "Tools menu insertMenu failed; falling back to addMenu",
                         exc_info=True,
                     )
-                    import_menu = QMenu("Import", self)
-                    import_menu.setObjectName("tools_import_submenu")
-                    from_file_action = import_menu.addAction("From File…")
-                    from_file_action.triggered.connect(self.import_from_file)
-                    import_menu.addSeparator()
-                    import_menu.addAction(
-                        "SillyTavern Chat…", self.open_import_sillytavern_chat
-                    )
-                    import_menu.addAction("Persona JSON…", self.open_import_persona)
-                    import_menu.addAction("Lore JSON…", self.open_import_lore)
-                    import_menu.addAction(
-                        "FurAffinity Export…", self.open_import_furaffinity
-                    )
-                    import_menu.addAction(
-                        "Roleplay Transcript…", self.open_import_roleplay
-                    )
-                    try:
-                        tools_menu.addMenu(import_menu)
-                    except RuntimeError:
-                        logger.exception("Failed to add import submenu; aborting")
-                        import_menu.deleteLater()
-                        return
-        else:
+        if not inserted:
             try:
                 tools_menu.addMenu(import_menu)
+                inserted = True
             except RuntimeError:
                 logger.exception("Failed to add import submenu to Tools menu")
                 import_menu.deleteLater()
                 return
-        self._tools_import_menu_action = import_menu.menuAction()
+
+        menu_action = import_menu.menuAction()
+        menu_action.setProperty("_sourceLabel", "Import Processing")
+        self._tools_import_menu_action = menu_action
         self._tools_import_menu = import_menu
 
     def import_from_file(self) -> None:
