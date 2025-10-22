@@ -1,30 +1,38 @@
 import logging
-
-from PySide6.QtGui import QAction
-
-logger = logging.getLogger(__name__)
-# comfyvn/gui/menus/help_menu.py
-import webbrowser
+from pathlib import Path
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import QMessageBox
 
 from comfyvn.config.runtime_paths import diagnostics_dir
 from comfyvn.gui.menus.menu_utils import make_action
 
+logger = logging.getLogger(__name__)
+
+DOCS = {
+    "Getting Started": "README.md",
+    "Theme Kits": "docs/THEME_KITS.md",
+    "Importers & Extractors": "docs/EXTRACTORS.md",
+    "Persona Importers": "docs/PERSONA_IMPORTERS.md",
+    "Liability Gate": "docs/ADVISORY_EXPORT.md",
+}
+
+
+def _open_local(path: Path) -> None:
+    resolved = path.resolve()
+    if not resolved.exists():
+        logger.warning("Documentation path missing: %s", resolved)
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved)))
+
 
 def register_menu(window, menubar):
     menu = menubar.addMenu("Help")
-    menu.addAction(
-        make_action(
-            "📖 Documentation",
-            window,
-            lambda: webbrowser.open_new_tab(
-                "https://github.com/Megamjm/Comfyvn-ToolProject"
-            ),
-        )
-    )
+    for label, rel in DOCS.items():
+        path = Path(rel)
+        act = QAction(f"📚 {label}", window)
+        act.triggered.connect(lambda _, p=path: _open_local(p))
+        menu.addAction(act)
 
     def _open_diagnostics():
         target = diagnostics_dir()

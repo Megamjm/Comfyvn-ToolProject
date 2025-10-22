@@ -5,16 +5,14 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 
-from comfyvn.advisory.policy import gate_status, set_ack
+from comfyvn.advisory.policy import (
+    gate_status,
+    get_ack,
+    require_ack_or_raise,
+    set_ack,
+)
 from comfyvn.config import feature_flags
 from comfyvn.policy.enforcer import policy_enforcer
-
-
-class GateResponse(BaseModel):
-    ok: bool = True
-    status: dict
-    message: str
-    allow_override: bool
 
 
 class AckRequest(BaseModel):
@@ -47,21 +45,6 @@ class ScanRequest(BaseModel):
     )
 
 
-class ScanResponse(BaseModel):
-    ok: bool = True
-    allow: bool
-    gate: Dict[str, Any]
-    counts: Dict[str, int]
-    findings: list[Dict[str, Any]]
-    warnings: list[Dict[str, Any]]
-    blocked: list[Dict[str, Any]]
-    info: list[Dict[str, Any]]
-    status: Dict[str, Any]
-    log_path: Optional[str] = None
-    bundle: Optional[Dict[str, Any]] = None
-    source: Optional[str] = None
-
-
 policy_router = APIRouter(prefix="/api/policy", tags=["Advisory"])
 advisory_router = APIRouter(prefix="/api/advisory", tags=["Advisory"])
 router = APIRouter(tags=["Advisory"])
@@ -69,48 +52,64 @@ router.include_router(policy_router)
 router.include_router(advisory_router)
 
 
-def _status_response(message: str | None = None) -> GateResponse:
+def _ack_payload(message: Optional[str] = None) -> Dict[str, Any]:
     status = gate_status()
-    default_message = (
-        "Legal acknowledgement required before completing exports."
-        if status.requires_ack
-        else "Legal acknowledgement recorded; proceed responsibly."
-    )
-    return GateResponse(
-        status=status.to_dict(),
-        message=message or default_message,
-        allow_override=status.warn_override_enabled,
-    )
+    return {
+        "ack": bool(status.ack_legal_v1),
+        "status": status.to_dict(),
+        "allow_override": status.warn_override_enabled,
+        "message": message
+        or (
+            "Legal acknowledgement required before completing exports."
+            if status.requires_ack
+            else "Legal acknowledgement recorded; proceed responsibly."
+        ),
+    }
 
 
-@policy_router.get(
-    "/ack", response_model=GateResponse, summary="Read acknowledgement status"
-)
-def read_ack() -> GateResponse:
-    return _status_response()
+@policy_router.get("/ack", summary="Read acknowledgement status")
+def read_ack() -> Dict[str, Any]:
+    """Return the persisted acknowledgement flag and gate metadata."""
+    return _ack_payload()
 
 
 @policy_router.post(
     "/ack",
-    response_model=GateResponse,
     summary="Persist acknowledgement for liability gate",
 )
-def write_ack(payload: AckRequest = Body(...)) -> GateResponse:
+def write_ack(payload: AckRequest = Body(...)) -> Dict[str, Any]:
     set_ack(True, user=payload.user, notes=payload.notes)
-    return _status_response("Acknowledgement recorded. Proceed with caution.")
+    return _ack_payload("Acknowledgement recorded. Proceed with caution.")
+
+
+@policy_router.delete(
+    "/ack",
+    summary="Clear acknowledgement (development/testing only)",
+)
+def clear_ack() -> Dict[str, Any]:
+    set_ack(False, user="system", notes="cleared via API")
+    return _ack_payload("Acknowledgement cleared.")
 
 
 @advisory_router.post(
     "/scan",
-    response_model=ScanResponse,
     summary="Evaluate a bundle payload with advisory scanners and policy gate",
 )
-def scan_bundle(payload: ScanRequest = Body(...)) -> ScanResponse:
+def scan_bundle(payload: ScanRequest = Body(...)) -> Dict[str, Any]:
     if not feature_flags.is_enabled("enable_advisory", default=False):
         raise HTTPException(status_code=403, detail="enable_advisory disabled")
 
     action = payload.action or "export.bundle.preview"
     bundle = payload.bundle or {}
+
+    try:
+        require_ack_or_raise(action, override=payload.override)
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=423,
+            detail={"message": str(exc), "gate": gate_status().to_dict()},
+        ) from exc
+
     result = policy_enforcer.enforce(
         action,
         bundle,
@@ -118,20 +117,21 @@ def scan_bundle(payload: ScanRequest = Body(...)) -> ScanResponse:
         source=payload.source or "api.advisory.scan",
     ).to_dict()
 
-    response = ScanResponse(
-        allow=result.get("allow", False),
-        gate=result.get("gate") or {},
-        counts=result.get("counts") or {},
-        findings=result.get("findings") or [],
-        warnings=result.get("warnings") or [],
-        blocked=result.get("blocked") or [],
-        info=result.get("info") or [],
-        status=gate_status().to_dict(),
-        log_path=result.get("log_path"),
-    )
+    response: Dict[str, Any] = {
+        "allow": result.get("allow", False),
+        "gate": result.get("gate") or {},
+        "counts": result.get("counts") or {},
+        "findings": result.get("findings") or [],
+        "warnings": result.get("warnings") or [],
+        "blocked": result.get("blocked") or [],
+        "info": result.get("info") or [],
+        "log_path": result.get("log_path"),
+        "status": gate_status().to_dict(),
+        "ack": get_ack(),
+    }
     if payload.include_debug:
-        response.bundle = result.get("bundle") or {}
-        response.source = result.get("source")
+        response["bundle"] = result.get("bundle") or {}
+        response["source"] = result.get("source")
 
     if not result.get("allow", False):
         gate = result.get("gate") or {}
@@ -148,4 +148,5 @@ def scan_bundle(payload: ScanRequest = Body(...)) -> ScanResponse:
             },
         )
 
+    response["ok"] = True
     return response

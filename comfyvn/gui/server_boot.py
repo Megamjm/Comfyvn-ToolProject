@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import logging
 import os
+import pathlib
+import platform
 import socket
+import subprocess
+import sys
 import threading
 import time
+from typing import Optional
 
 import requests
-from PySide6.QtGui import QAction
 
 from comfyvn.config import ports as ports_config
 from comfyvn.config.baseurl_authority import (
@@ -16,6 +20,11 @@ from comfyvn.config.baseurl_authority import (
     find_open_port,
     write_runtime_authority,
 )
+
+try:
+    from comfyvn.config import runtime_paths
+except Exception:  # pragma: no cover - defensive
+    runtime_paths = None  # type: ignore[assignment]
 
 LOGGER = logging.getLogger(__name__)
 _LOCAL_BIND_HOSTS = {
@@ -28,6 +37,95 @@ _LOCAL_BIND_HOSTS = {
     "[::]",
     "::1",
 }
+
+
+def _resolve_repo_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parents[2]
+
+
+def _default_log_path() -> pathlib.Path:
+    if runtime_paths and callable(getattr(runtime_paths, "logs_dir", None)):
+        return pathlib.Path(runtime_paths.logs_dir("server_detached.log"))
+    return _resolve_repo_root() / "logs" / "server_detached.log"
+
+
+def _apply_env_for_detached(host: str, port: int, env: Optional[dict] = None) -> dict:
+    env = dict(env or os.environ)
+    base = f"http://{host}:{port}"
+    env.setdefault("COMFYVN_HOST", str(host))
+    env.setdefault("COMFYVN_PORT", str(port))
+    env.setdefault("COMFYVN_BASE_URL", base)
+    env.setdefault("COMFYVN_SERVER_BASE", base)
+    env.setdefault("COMFYVN_SERVER_HOST", str(host))
+    env.setdefault("COMFYVN_SERVER_PORT", str(port))
+    return env
+
+
+def _creationflags() -> int:
+    if platform.system() != "Windows":
+        return 0
+    detached = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+    new_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+    return int(detached) | int(new_group)
+
+
+def start_detached_server(
+    host: str,
+    port: int,
+    *,
+    reload: bool = False,
+    log_file: str | os.PathLike[str] | None = None,
+) -> subprocess.Popen:
+    """Launch the FastAPI backend via ``uvicorn`` as a detached process."""
+
+    # Phase 2/2 Project Integration Chat — Live Fix Stub
+    repo_root = _resolve_repo_root()
+    env = os.environ.copy()
+    pythonpath = env.get("PYTHONPATH", "")
+    path_prefix = str(repo_root)
+    if pythonpath:
+        env["PYTHONPATH"] = f"{path_prefix}{os.pathsep}{pythonpath}"
+    else:
+        env["PYTHONPATH"] = path_prefix
+    env = _apply_env_for_detached(host, port, env)
+
+    args = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "comfyvn.app:app",
+        "--host",
+        str(host),
+        "--port",
+        str(port),
+    ]
+    if reload:
+        args.append("--reload")
+
+    target_log = pathlib.Path(log_file) if log_file else _default_log_path()
+    target_log.parent.mkdir(parents=True, exist_ok=True)
+    creationflags = _creationflags()
+
+    log_handle = open(target_log, "a", encoding="utf-8")
+    try:
+        proc = subprocess.Popen(
+            args,
+            cwd=str(repo_root),
+            env=env,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            creationflags=creationflags,
+        )
+    finally:
+        log_handle.close()
+    logging.getLogger(__name__).info(
+        "Detached server launched via uvicorn (pid=%s, host=%s, port=%s, reload=%s)",
+        getattr(proc, "pid", "unknown"),
+        host,
+        port,
+        reload,
+    )
+    return proc
 
 
 def _connect_host(host: str) -> str:
@@ -111,6 +209,13 @@ def _ensure_started(host: str, port: int, starter):
     if _port_open(host, port):
         return
     if starter is None:
+        try:
+            start_detached_server(host, port)
+            return
+        except Exception:
+            LOGGER.exception(
+                "Detached server launch failed; falling back to inline uvicorn."
+            )
         t = threading.Thread(target=_fallback_uvicorn, args=(host, port), daemon=True)
         t.start()
     else:

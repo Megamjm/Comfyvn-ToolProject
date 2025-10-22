@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.check_current_system import _discover_base  # reuse helper
+from comfyvn.config.baseurl_authority import discover_base
 
 CHECKER = ROOT / "tools" / "check_current_system.py"
 PROFILES = ROOT / "tools" / "check_profiles.json"
@@ -162,7 +162,7 @@ def main():
         if (not inc or inc.match(k)) and (not exc or not exc.match(k))
     ]
 
-    base, tried, warns = _discover_base(args.base, args.flags_file)
+    base, tried, warns = discover_base(args.base)
     if base:
         print(f"[doctor_phase_all] base={base} tried={tried}", file=sys.stderr)
     else:

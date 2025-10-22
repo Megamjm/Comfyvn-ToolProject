@@ -71,6 +71,54 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
     )
     registry.add("Reconnect Server", "manual_reconnect", section="Tools", order=15)
     registry.add(
+        "Import Assets",
+        "open_import_manager",
+        section="Tools",
+        order=20,
+    )
+    registry.add(
+        "Ren'Py Exporter",
+        "open_renpy_exporter",
+        section="Tools",
+        order=30,
+    )
+    registry.add(
+        "External Tool Installer",
+        "open_tools_installer",
+        section="Tools",
+        order=40,
+    )
+    registry.add(
+        "Import → SillyTavern Chat",
+        "open_import_sillytavern_chat",
+        section="Tools",
+        order=50,
+    )
+    registry.add(
+        "Import → Character/Persona",
+        "open_import_persona",
+        section="Tools",
+        order=55,
+    )
+    registry.add(
+        "Import → Lore/World",
+        "open_import_lore",
+        section="Tools",
+        order=60,
+    )
+    registry.add(
+        "Import → FurAffinity Gallery",
+        "open_import_furaffinity",
+        section="Tools",
+        order=65,
+    )
+    registry.add(
+        "Import → Roleplay Archive",
+        "open_import_roleplay",
+        section="Tools",
+        order=70,
+    )
+    registry.add(
         "Install Base Scripts",
         "install_base_scripts",
         section="Tools",
@@ -84,5 +132,11 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
         "open_extensions_folder",
         section="Extensions",
         order=10,
+    )
+    registry.add(
+        "Settings Window",
+        "open_settings_window",
+        section="Settings",
+        order=5,
     )
     registry.add("Settings Panel", "open_settings_panel", section="Settings", order=10)

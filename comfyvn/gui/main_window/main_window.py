@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from comfyvn.accessibility import accessibility_manager
 from comfyvn.config import runtime_paths
+from comfyvn.config.baseurl_authority import current_authority
 from comfyvn.core.extensions_discovery import ExtensionMetadata, load_extension_metadata
 
 # Dynamic systems
@@ -53,6 +54,8 @@ from comfyvn.gui.panels.audio_panel import AudioPanel
 from comfyvn.gui.panels.characters_panel import CharactersPanel
 from comfyvn.gui.panels.debug_integrations import DebugIntegrationsPanel
 from comfyvn.gui.panels.diffmerge_graph_panel import DiffmergeGraphPanel
+from comfyvn.gui.panels.export_renpy import RenPyExportPanel
+from comfyvn.gui.panels.import_manager_panel import ImportManagerPanel
 from comfyvn.gui.panels.imports_panel import ImportsPanel
 from comfyvn.gui.panels.notify_overlay import NotifyOverlay
 from comfyvn.gui.panels.player_persona_panel import PlayerPersonaPanel
@@ -65,11 +68,14 @@ from comfyvn.gui.panels.sprite_panel import SpritePanel
 from comfyvn.gui.panels.studio_center import StudioCenter
 from comfyvn.gui.panels.telemetry_panel import TelemetryPanel
 from comfyvn.gui.panels.timeline_panel import TimelinePanel
+from comfyvn.gui.panels.tools_installer import ToolsInstallerPanel
 
 # Services
+from comfyvn.gui.server_boot import start_detached_server
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.gui.statusbar_metrics import StatusBarMetrics
 from comfyvn.gui.widgets.log_hub import LogHub
+from comfyvn.gui.windows.settings_window import SettingsWindow
 from comfyvn.studio.core import CharacterRegistry, SceneRegistry, TimelineRegistry
 
 from .quick_access_toolbar import QuickAccessToolbarMixin
@@ -78,22 +84,6 @@ from .quick_access_toolbar import QuickAccessToolbarMixin
 from .shell_studio import ShellStudio
 
 logger = logging.getLogger(__name__)
-
-
-def _detached_server():
-    """Launch the backend as a detached process; return Popen or None."""
-    try:
-        exe = sys.executable
-        script = Path("comfyvn/app.py").resolve()
-        log_path = runtime_paths.logs_dir("server_detached.log")
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as log:
-            proc = subprocess.Popen([exe, str(script)], stdout=log, stderr=log)
-        print(f"[ComfyVN GUI] 🚀 Detached server started (PID={proc.pid})")
-        return proc
-    except Exception as e:
-        print(f"[ComfyVN GUI] ❌ Failed to launch detached server: {e}")
-        return None
 
 
 class MainWindow(ShellStudio, QuickAccessToolbarMixin):
@@ -150,6 +140,9 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._status.addPermanentWidget(self._script_status_label, 1)
         self._set_script_status(True, "No scripts executed yet.")
         self._metrics_display.start()
+        self._status.showMessage(
+            "Start the VN viewer to preview scenes. Tools → Import to ingest assets."
+        )
 
         self._notify_overlay = NotifyOverlay(self)
         self._notify_overlay.attach(self)
@@ -462,8 +455,16 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
     # --------------------
     # Utility helpers
     # --------------------
+    def _resolve_base_url(self) -> str:
+        authority = current_authority(refresh=True)
+        return authority.base_url
+
     def launch_detached_server(self):
-        _detached_server()
+        authority = current_authority(refresh=True)
+        start_detached_server(authority.host, authority.port)
+        self._status.showMessage(
+            f"Launching detached server on {authority.host}:{authority.port}", 5000
+        )
 
     def open_projects_folder(self):
         self._open_folder(Path("data/projects"))
@@ -481,6 +482,67 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         path = Path(folder).resolve()
         path.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def open_import_manager(self, action_label: str | None = None):
+        dock = getattr(self, "_import_manager_dock", None)
+        if dock is None:
+            panel = ImportManagerPanel(self._resolve_base_url(), parent=self)
+            dock = self.dockman.dock(panel, "Import Manager")
+            self._import_manager_dock = dock
+            logger.debug("Import Manager panel created")
+        dock.setVisible(True)
+        dock.raise_()
+        widget = dock.widget()
+        if isinstance(widget, ImportManagerPanel) and action_label:
+            widget.select_action(action_label)
+
+    def open_import_sillytavern_chat(self):
+        self.open_import_manager("Import Chat Transcript")
+
+    def open_import_persona(self):
+        self.open_import_manager("Import Persona Bundle")
+
+    def open_import_lore(self):
+        self.open_import_manager("Import Lore Library")
+
+    def open_import_furaffinity(self):
+        self.open_import_manager("Import FurAffinity Gallery")
+
+    def open_import_roleplay(self):
+        self.open_import_manager("Import Roleplay Archive")
+
+    def open_renpy_exporter(self):
+        dock = getattr(self, "_renpy_exporter_dock", None)
+        if dock is None:
+            panel = RenPyExportPanel(self._resolve_base_url(), parent=self)
+            dock = self.dockman.dock(panel, "Ren'Py Exporter")
+            self._renpy_exporter_dock = dock
+            logger.debug("Ren'Py exporter panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
+    def open_tools_installer(self):
+        dock = getattr(self, "_tools_installer_dock", None)
+        if dock is None:
+            panel = ToolsInstallerPanel(self._resolve_base_url(), parent=self)
+            dock = self.dockman.dock(panel, "Tools Installer")
+            self._tools_installer_dock = dock
+            logger.debug("Tools Installer panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
+    def open_settings_window(self):
+        window = getattr(self, "_settings_window", None)
+        if window is None:
+            window = SettingsWindow(self.bridge, parent=self)
+            self._settings_window = window
+            window.finished.connect(self._clear_settings_window)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def _clear_settings_window(self):
+        self._settings_window = None
 
     # --------------------
     # Project workflows
