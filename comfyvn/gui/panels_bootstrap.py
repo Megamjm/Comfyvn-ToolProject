@@ -8,6 +8,8 @@ from comfyvn.config.baseurl_authority import default_base_url
 def install_panels(main_window, base_url: str | None = None):
     # Lazy imports to avoid hard deps if Qt variant changes
     try:
+        from comfyvn.gui.panels.asset_gallery import AssetGalleryPanel
+        from comfyvn.gui.panels.schedule_board import ScheduleBoardPanel
         from comfyvn.gui.widgets.flow_selector import FlowSelectorDock
         from comfyvn.gui.widgets.ops_panel import OpsPanelDock
     except Exception as e:
@@ -33,6 +35,19 @@ def install_panels(main_window, base_url: str | None = None):
         setattr(mw, "_dock_ops_panel", op)
         mw.addDockWidget(0x2, op)  # RightDockWidgetArea
 
+    gallery = getattr(mw, "_dock_asset_gallery", None)
+    if gallery is None or getattr(gallery, "parent", lambda: None)() is None:
+        registry = getattr(mw, "_asset_registry", None)
+        gallery = AssetGalleryPanel(registry=registry, parent=mw)
+        setattr(mw, "_dock_asset_gallery", gallery)
+        mw.addDockWidget(0x2, gallery)  # RightDockWidgetArea
+
+    schedule = getattr(mw, "_dock_schedule_board", None)
+    if schedule is None or getattr(schedule, "parent", lambda: None)() is None:
+        schedule = ScheduleBoardPanel(resolved_base, mw)
+        setattr(mw, "_dock_schedule_board", schedule)
+        mw.addDockWidget(0x2, schedule)  # RightDockWidgetArea
+
     # Add a Panels menu if missing
     try:
         mb = mw.menuBar()
@@ -45,7 +60,11 @@ def install_panels(main_window, base_url: str | None = None):
             panels_menu = mb.addMenu("Panels")
         act1 = panels_menu.addAction("Flow Selector")
         act2 = panels_menu.addAction("System Ops")
+        act3 = panels_menu.addAction("Asset Gallery")
+        act4 = panels_menu.addAction("Scheduler Board")
         act1.triggered.connect(lambda: fs.show())
         act2.triggered.connect(lambda: op.show())
+        act3.triggered.connect(lambda: gallery.show())
+        act4.triggered.connect(lambda: schedule.show())
     except Exception as e:
         print("[Panels] menu wiring failed:", e)

@@ -476,3 +476,46 @@ def pytest_ignore_collect(collection_path, path=None, config=None):  # noqa: D40
     if candidate is None and hasattr(collection_path, "basename"):
         candidate = collection_path.basename
     return candidate == "test_gui_mainwindow_headless.py"
+
+
+@pytest.fixture()
+def sample_playtest_scene() -> dict:
+    return {
+        "id": "demo_scene",
+        "start": "intro",
+        "metadata": {"default_pov": "narrator"},
+        "variables": {"route": "unset"},
+        "nodes": [
+            {
+                "id": "intro",
+                "text": "The adventure begins.",
+                "choices": [
+                    {
+                        "id": "choose_a",
+                        "label": "Take path A",
+                        "target": "path_a",
+                        "weight": 1,
+                    },
+                    {
+                        "id": "choose_b",
+                        "label": "Take path B",
+                        "target": "path_b",
+                        "weight": 1,
+                    },
+                ],
+                "actions": [{"type": "set", "key": "route", "value": "start"}],
+            },
+            {
+                "id": "path_a",
+                "text": "Path A reached.",
+                "actions": [{"type": "set", "key": "route", "value": "A"}],
+                "choices": [],
+            },
+            {
+                "id": "path_b",
+                "text": "Path B reached.",
+                "actions": [{"type": "set", "key": "route", "value": "B"}],
+                "choices": [],
+            },
+        ],
+    }

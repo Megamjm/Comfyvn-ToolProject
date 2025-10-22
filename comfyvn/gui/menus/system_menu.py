@@ -8,6 +8,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from comfyvn.config.runtime_paths import diagnostics_dir
+
 # comfyvn/gui/menus/system_menu.py
 from comfyvn.gui.menus.menu_utils import make_action
 
@@ -27,6 +28,13 @@ def register_menu(window, menubar):
             "🪄 Settings",
             window,
             lambda: window.main_tabs.setCurrentWidget(window.settings_tab),
+        )
+    )
+    menu.addAction(
+        make_action(
+            "🧩 Debug Integrations",
+            window,
+            window.open_debug_integrations,
         )
     )
     menu.addSeparator()

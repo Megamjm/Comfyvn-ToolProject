@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Mapping, MutableMapping, Optional
 
 from fastapi import APIRouter, HTTPException
 
+from comfyvn.core import modder_hooks
 from comfyvn.runner import ScenarioRunner, ValidationError, validate_scene
 
 router = APIRouter(prefix="/api/scenario", tags=["Scenario"])
@@ -54,6 +56,10 @@ async def scenario_step(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     seed_raw = payload.get("seed")
     seed = int(seed_raw) if seed_raw is not None else None
     choice_id = _normalize_choice_id(payload)
+    pov_raw = payload.get("pov")
+    pov_value = None
+    if isinstance(pov_raw, str) and pov_raw.strip():
+        pov_value = pov_raw.strip()
 
     state_raw = payload.get("state")
     state: Optional[MutableMapping[str, Any]] = None
@@ -67,14 +73,48 @@ async def scenario_step(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     except Exception as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    base_state = state or runner.initial_state(seed=seed)
+    if state is None:
+        base_state = runner.initial_state(seed=seed, pov=pov_value)
+    else:
+        if pov_value:
+            state["pov"] = pov_value
+        base_state = state
 
     try:
-        next_state = runner.step(base_state, choice_id=choice_id, seed=seed)
+        next_state = runner.step(
+            base_state, choice_id=choice_id, seed=seed, pov=pov_value
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     peek = runner.peek(next_state)
+
+    event_timestamp = time.time()
+    node_payload = peek.get("node") or {}
+    node_id = node_payload.get("id") or next_state.get("current_node")
+    scene_enter_payload = {
+        "scene_id": runner.scene_id,
+        "node": node_id,
+        "pov": next_state.get("pov"),
+        "variables": next_state.get("variables"),
+        "history": next_state.get("history"),
+        "finished": bool(next_state.get("finished")),
+        "timestamp": event_timestamp,
+    }
+    choice_payload = {
+        "scene_id": runner.scene_id,
+        "node": node_id,
+        "choices": peek.get("choices") or [],
+        "pov": next_state.get("pov"),
+        "finished": bool(peek.get("finished")),
+        "timestamp": event_timestamp,
+    }
+    try:
+        modder_hooks.emit("on_scene_enter", scene_enter_payload)
+        modder_hooks.emit("on_choice_render", choice_payload)
+    except Exception:
+        # Hook dispatching should never break the primary RPC.
+        pass
 
     return {
         "ok": True,

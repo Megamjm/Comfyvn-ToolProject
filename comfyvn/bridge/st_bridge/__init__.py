@@ -8,12 +8,30 @@ from .extension_sync import (
     sync_extension,
 )
 from .health import probe_health
+from .session_sync import (
+    SessionContext,
+    SessionSyncError,
+    SessionSyncResult,
+    build_session_context,
+    collect_session_context,
+    load_scene_dialogue,
+    normalise_messages,
+    sync_session,
+)
 
 __all__ = [
     "DEFAULT_EXTENSION_NAME",
     "ExtensionPathInfo",
+    "SessionContext",
+    "SessionSyncError",
+    "SessionSyncResult",
+    "build_session_context",
     "copy_extension_tree",
+    "collect_session_context",
+    "load_scene_dialogue",
+    "normalise_messages",
     "probe_health",
     "resolve_paths",
     "sync_extension",
+    "sync_session",
 ]

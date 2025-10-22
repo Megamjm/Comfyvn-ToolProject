@@ -169,6 +169,10 @@ class SillyTavernBridge:
         result = self._get("roots", user_id=user_id)
         return result
 
+    def get_active(self, *, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Return the active SillyTavern session snapshot."""
+        return self._get("active", user_id=user_id)
+
     # --- Worlds -------------------------------------------------------
     def list_worlds(self, *, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         payload = self._get("worlds", user_id=user_id)

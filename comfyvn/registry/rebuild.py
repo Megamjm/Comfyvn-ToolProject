@@ -18,7 +18,7 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from comfyvn.config.runtime_paths import thumb_cache_dir
 from comfyvn.core.db_manager import DEFAULT_DB_PATH
@@ -47,6 +47,24 @@ class RebuildSummary:
             "processed": self.processed,
             "skipped": self.skipped,
             "removed": self.removed,
+        }
+
+
+@dataclass(frozen=True)
+class SidecarReport:
+    """Audit results for sidecar enforcement runs."""
+
+    missing_sidecars: List[str]
+    repaired_sidecars: List[str]
+    metadata_missing: List[Dict[str, Any]]
+    metadata_fixed: List[str]
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "missing_sidecars": list(self.missing_sidecars),
+            "repaired_sidecars": list(self.repaired_sidecars),
+            "metadata_missing": list(self.metadata_missing),
+            "metadata_fixed": list(self.metadata_fixed),
         }
 
 
@@ -279,6 +297,93 @@ def rebuild_from_disk(
     )
 
 
+def audit_sidecars(
+    registry: AssetRegistry,
+    *,
+    fix_missing: bool = False,
+    overwrite: bool = False,
+    fill_metadata: bool = False,
+) -> SidecarReport:
+    """Check for missing sidecars and metadata, optionally repairing issues."""
+
+    assets = registry.list_assets()
+    missing_sidecars: List[str] = []
+    repaired_sidecars: set[str] = set()
+    metadata_fixed: set[str] = set()
+    metadata_missing: List[Dict[str, Any]] = []
+
+    for asset in assets:
+        uid = asset.get("uid") or str(asset.get("id"))
+        rel_path = Path(asset["path"])
+        sidecar_path = registry._sidecar_path(rel_path)
+        if not sidecar_path.exists():
+            missing_sidecars.append(uid)
+            if fix_missing:
+                try:
+                    registry.ensure_sidecar(uid, overwrite=overwrite)
+                    if registry._sidecar_path(rel_path).exists():
+                        repaired_sidecars.add(uid)
+                except Exception as exc:  # pragma: no cover - defensive
+                    LOGGER.error("Failed to repair sidecar for %s: %s", uid, exc)
+
+        meta_payload = dict(asset.get("meta") or {})
+        missing_fields: List[str] = []
+        tags = meta_payload.get("tags")
+        license_tag = meta_payload.get("license")
+        if not isinstance(tags, list) or not tags:
+            missing_fields.append("tags")
+        if not isinstance(license_tag, str) or not license_tag.strip():
+            missing_fields.append("license")
+
+        if missing_fields and fix_missing and fill_metadata:
+            updated = False
+            if "tags" in missing_fields:
+                meta_payload["tags"] = meta_payload.get("tags") or _tags_from_path(
+                    rel_path
+                )
+                updated = True
+            if "license" in missing_fields:
+                meta_payload["license"] = license_tag or "unknown"
+                updated = True
+            if updated:
+                try:
+                    registry.update_asset_meta(uid, meta_payload)
+                    metadata_fixed.add(uid)
+                    meta_payload = dict(
+                        (registry.get_asset(uid) or {}).get("meta") or {}
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    LOGGER.error("Failed to repair metadata for %s: %s", uid, exc)
+
+        final_missing: List[str] = []
+        tags_final = meta_payload.get("tags")
+        license_final = meta_payload.get("license")
+        if not isinstance(tags_final, list) or not tags_final:
+            final_missing.append("tags")
+        if not isinstance(license_final, str) or not license_final.strip():
+            final_missing.append("license")
+        if final_missing:
+            metadata_missing.append({"uid": uid, "fields": final_missing})
+
+    if fix_missing and missing_sidecars:
+        still_missing: List[str] = []
+        for uid in missing_sidecars:
+            asset = registry.get_asset(uid)
+            if not asset:
+                continue
+            rel_path = Path(asset["path"])
+            if not registry._sidecar_path(rel_path).exists():
+                still_missing.append(uid)
+        missing_sidecars = still_missing
+
+    return SidecarReport(
+        missing_sidecars=missing_sidecars,
+        repaired_sidecars=sorted(repaired_sidecars),
+        metadata_missing=metadata_missing,
+        metadata_fixed=sorted(metadata_fixed),
+    )
+
+
 def smoke_check(db_path: Path | str) -> Tuple[int, int]:
     """
     Run a lightweight smoke check ensuring scenes and assets have content.
@@ -343,6 +448,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the post-rebuild smoke check.",
     )
     parser.add_argument(
+        "--enforce-sidecars",
+        action="store_true",
+        help="Ensure every asset has a sidecar after rebuilding.",
+    )
+    parser.add_argument(
+        "--overwrite-sidecars",
+        action="store_true",
+        help="Rewrite sidecar files even if they already exist when enforcing.",
+    )
+    parser.add_argument(
+        "--fix-metadata",
+        action="store_true",
+        help="When enforcing sidecars, populate missing tags/licenses from filenames.",
+    )
+    parser.add_argument(
+        "--metadata-report",
+        action="store_true",
+        help="Output a report of assets missing key metadata fields.",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress non-error logging output.",
@@ -399,6 +524,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         "Processed %(processed)s assets (%(skipped)s skipped, %(removed)s removed).",
         summary.as_dict(),
     )
+
+    if args.enforce_sidecars or args.metadata_report or args.fix_metadata:
+        registry = AssetRegistry(
+            db_path=db_path,
+            project_id=args.project_id,
+            assets_root=summary.assets_root,
+            thumb_root=summary.thumb_root,
+        )
+        report = audit_sidecars(
+            registry,
+            fix_missing=args.enforce_sidecars,
+            overwrite=args.overwrite_sidecars,
+            fill_metadata=args.fix_metadata,
+        )
+        LOGGER.info(
+            "Sidecar audit: repaired=%s remaining=%s metadata_fixed=%s metadata_missing=%s",
+            len(report.repaired_sidecars),
+            len(report.missing_sidecars),
+            len(report.metadata_fixed),
+            len(report.metadata_missing),
+        )
+        if args.metadata_report and report.metadata_missing:
+            for entry in report.metadata_missing:
+                LOGGER.warning(
+                    "Metadata missing for %s fields=%s",
+                    entry.get("uid"),
+                    ",".join(entry.get("fields", [])),
+                )
 
     if not args.no_smoke:
         assets_count, scenes_count = smoke_check(db_path)

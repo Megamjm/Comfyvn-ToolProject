@@ -97,3 +97,56 @@ def test_upload_audio_embeds_id3_provenance_marker(client: TestClient, tmp_path:
     saved = Path("data/assets") / asset["path"]
     data = saved.read_bytes()
     assert b"comfyvn_provenance" in data  # expected to fail until implemented
+
+
+def test_asset_debug_endpoints_surface_modder_hooks(client: TestClient):
+    payload = b"sample debug payload"
+    resp = client.post(
+        "/assets/upload",
+        headers=_auth_headers(),
+        files={"file": ("debug.txt", payload, "text/plain")},
+        data={"asset_type": "documents"},
+    )
+    assert resp.status_code == 200, resp.text
+    asset = resp.json()["asset"]
+    uid = asset["uid"]
+
+    hooks_resp = client.get("/assets/debug/hooks")
+    assert hooks_resp.status_code == 200, hooks_resp.text
+    hooks_payload = hooks_resp.json()
+    hooks = hooks_payload.get("hooks") or {}
+    assert isinstance(hooks, dict)
+    if hooks:
+        assert "asset_registered" in hooks
+        assert isinstance(hooks["asset_registered"], list)
+
+    specs_resp = client.get("/assets/debug/modder-hooks")
+    assert specs_resp.status_code == 200, specs_resp.text
+    specs_payload = specs_resp.json()
+    spec_names = {item["name"] for item in specs_payload.get("hooks", [])}
+    assert {
+        "on_asset_saved",
+        "on_asset_registered",
+        "on_asset_meta_updated",
+        "on_asset_removed",
+        "on_asset_sidecar_written",
+    }.issubset(spec_names)
+
+    history_resp = client.get("/assets/debug/history", params={"limit": 5})
+    assert history_resp.status_code == 200, history_resp.text
+    history_payload = history_resp.json()
+    items = history_payload.get("items") or []
+    assert items, "expected at least one asset modder event"
+    asset_events = [
+        entry
+        for entry in items
+        if entry.get("event") in {"on_asset_saved", "on_asset_registered"}
+    ]
+    assert asset_events, "expected on_asset_saved/on_asset_registered events in history"
+    matching_event = next(
+        (entry for entry in asset_events if entry.get("data", {}).get("uid") == uid),
+        None,
+    )
+    assert matching_event, f"expected history entry for uid {uid}"
+    data = matching_event.get("data") or {}
+    assert data.get("hook_event") == "asset_registered"

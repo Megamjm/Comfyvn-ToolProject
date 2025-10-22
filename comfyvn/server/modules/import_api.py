@@ -11,15 +11,16 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from PySide6.QtGui import QAction
 
-from comfyvn.core.advisory_hooks import BundleContext
-from comfyvn.core.advisory_hooks import scan as scan_bundle
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
-from comfyvn.server.core.chat_import import (apply_alias_map,
-                                             assign_by_patterns, parse_text,
-                                             to_scene_dict)
-from comfyvn.server.core.manga_importer import (MangaImportError,
-                                                import_manga_archive)
+from comfyvn.policy.enforcer import policy_enforcer
+from comfyvn.server.core.chat_import import (
+    apply_alias_map,
+    assign_by_patterns,
+    parse_text,
+    to_scene_dict,
+)
+from comfyvn.server.core.manga_importer import MangaImportError, import_manga_archive
 from comfyvn.server.modules.auth import require_scope
 
 router = APIRouter()
@@ -236,32 +237,53 @@ async def import_chat(
     else:
         scenes = [lines]
 
-    created = []
     scene_payloads: Dict[str, Dict[str, Any]] = {}
-    scene_sources: Dict[str, Path] = {}
+    scene_paths: Dict[str, Path] = {}
     for i, seq in enumerate(scenes):
         name = base if len(scenes) == 1 else f"{base}_{i+1:02d}"
         data = to_scene_dict(name, seq)
-        _write_scene(name, data)
-        created.append(name)
         scene_payloads[name] = data
-        scene_sources[name] = (SCENE_DIR / f"{name}.json").resolve()
+        scene_paths[name] = (SCENE_DIR / f"{name}.json").resolve()
 
-    scan_bundle(
-        BundleContext(
-            project_id=str(body.get("project_id") or ""),
-            timeline_id=body.get("timeline_id"),
-            scenes=scene_payloads,
-            scene_sources=scene_sources,
-            licenses=body.get("licenses") or [],
-            metadata={
-                "source": "import.chat",
-                "import_name": base,
-                "split_on": split_on or None,
+    bundle_payload = {
+        "project_id": body.get("project_id"),
+        "timeline_id": body.get("timeline_id"),
+        "scenes": scene_payloads,
+        "scene_sources": {key: path.as_posix() for key, path in scene_paths.items()},
+        "licenses": body.get("licenses") or [],
+        "metadata": {
+            "source": "import.chat",
+            "import_name": base,
+            "split_on": split_on or None,
+            "project_id": body.get("project_id"),
+        },
+    }
+    enforcement = policy_enforcer.enforce(
+        "import.chat",
+        bundle_payload,
+        source="import.chat",
+    )
+    if not enforcement.allow:
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "message": "policy enforcement blocked",
+                "result": enforcement.to_dict(),
             },
         )
-    )
-    return {"ok": True, "created": created, "count": len(created), "gate": gate}
+
+    created: List[str] = []
+    for name, data in scene_payloads.items():
+        _write_scene(name, data)
+        created.append(name)
+
+    return {
+        "ok": True,
+        "created": created,
+        "count": len(created),
+        "gate": gate,
+        "enforcement": enforcement.to_dict(),
+    }
 
 
 @router.post("/manga/import")

@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import requests
 
+from comfyvn.config import feature_flags
 from comfyvn.core.settings_manager import SettingsManager
 
 try:  # pragma: no cover - optional dependency may be missing in headless envs
@@ -22,7 +23,11 @@ except Exception:  # pragma: no cover - fall back when PySide/httpx not present
         """Fallback error when SillyTavern bridge helper is unavailable."""
 
 
-from .extension_sync import ExtensionPathInfo, resolve_paths
+from .extension_sync import (
+    ExtensionPathInfo,
+    collect_extension_status,
+    resolve_paths,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -144,6 +149,23 @@ def probe_health(
         settings_manager = None
 
     paths = resolve_paths(settings=settings_manager)
+    if not feature_flags.is_enabled("enable_sillytavern_bridge"):
+        return {
+            "status": "disabled",
+            "enabled": False,
+            "base_url": None,
+            "plugin_base": None,
+            "ping": None,
+            "plugin": None,
+            "paths": paths.as_dict(),
+            "config": {
+                "enabled": False,
+                "message": "SillyTavern bridge disabled via feature flag.",
+            },
+            "extension": None,
+            "versions": {"extension": {}, "plugin": {}},
+            "alerts": ["feature_disabled"],
+        }
     config_base_hint = paths.config.get("base_url") or paths.config.get("base") or None
     config_plugin_hint = paths.config.get("plugin_base")
 
@@ -193,6 +215,57 @@ def probe_health(
             overall_status = "degraded"
 
     merged_config = _merge_config(paths, bridge_config)
+    extension_state = collect_extension_status(paths=paths)
+    extension_version_status = str(extension_state.get("version_status", "unknown"))
+    plugin_info = extension_state.get("plugin", {}) or {}
+    plugin_version_status = str(
+        extension_state.get(
+            "plugin_version_status", plugin_info.get("version_status", "unknown")
+        )
+    )
+    bundle_plugin_version = (
+        plugin_info.get("source", {}).get("package", {}).get("version")
+    )
+    installed_plugin_version = (
+        (plugin_info.get("destination_package") or {}).get("version")
+        if plugin_info
+        else None
+    )
+    extension_versions = {
+        "source": extension_state.get("source_manifest", {}).get("version"),
+        "installed": extension_state.get("dest_manifest", {}).get("version"),
+        "status": extension_version_status,
+    }
+    plugin_versions = {
+        "bundled": bundle_plugin_version,
+        "installed": installed_plugin_version,
+        "remote": plugin_health.get("version") if plugin_health else None,
+        "status": plugin_version_status,
+    }
+
+    alerts: list[str] = []
+    if extension_version_status in {"mismatch", "missing"}:
+        alerts.append(f"extension_{extension_version_status}")
+    if plugin_version_status in {"mismatch", "missing"}:
+        alerts.append(f"plugin_{plugin_version_status}")
+    if plugin_health and not plugin_health.get("ok", True):
+        alerts.append("plugin_health_error")
+
+    if overall_status == "ok":
+        if extension_version_status in {
+            "mismatch",
+            "missing",
+        } or plugin_version_status in {
+            "mismatch",
+            "missing",
+        }:
+            overall_status = "degraded"
+    if (
+        plugin_health
+        and not plugin_health.get("ok", True)
+        and overall_status not in {"disabled", "error"}
+    ):
+        overall_status = "degraded"
 
     return {
         "status": overall_status,
@@ -203,4 +276,10 @@ def probe_health(
         "plugin": plugin_health,
         "paths": paths.as_dict(),
         "config": merged_config,
+        "extension": extension_state,
+        "versions": {
+            "extension": extension_versions,
+            "plugin": plugin_versions,
+        },
+        "alerts": alerts,
     }

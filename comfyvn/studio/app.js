@@ -23,6 +23,11 @@
   const btnAddLine = $("btnAddLine");
   const btnClearLines = $("btnClearLines");
   const linesTable = document.querySelector("#linesTable tbody");
+  const extensionsCard = $("extensionsCard");
+  const extensionsBody = $("extensionsBody");
+  const extensionMounts = Object.create(null);
+  window.__comfyExtensionMounts = extensionMounts;
+  window.getExtensionPanelMount = (panelId) => extensionMounts[panelId] || null;
 
   // preview
   const bgImg = $("bgImg");
@@ -100,6 +105,53 @@
     const res = await fetch(path, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body||{}) });
     let js={}; try{ js=await res.json(); }catch{}
     logJSON(js); return js;
+  }
+
+  async function loadExtensionPanels(){
+    if(!extensionsCard || !extensionsBody) return;
+    try{
+      const res = await fetch("/api/extensions/ui/panels");
+      if(!res.ok) return;
+      let payload = {};
+      try{ payload = await res.json(); }catch{ payload = {}; }
+      const panels = Array.isArray(payload.panels) ? payload.panels : [];
+      if(!panels.length) return;
+      extensionsCard.hidden = false;
+      panels.forEach((panel, idx) => {
+        const pluginId = panel.plugin_id || panel.id || "extension";
+        if(!pluginId) return;
+        const panelId = `${pluginId}:${idx}`;
+        if(extensionMounts[panelId]) return;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "ext-panel";
+        wrapper.dataset.pluginId = pluginId;
+        wrapper.dataset.panelSlot = panel.slot || "";
+
+        const header = document.createElement("h4");
+        header.textContent = panel.label || pluginId || "Extension Panel";
+        wrapper.appendChild(header);
+
+        const mount = document.createElement("div");
+        mount.className = "ext-panel-mount";
+        wrapper.appendChild(mount);
+
+        extensionMounts[panelId] = mount;
+        extensionsBody.appendChild(wrapper);
+
+        const script = document.createElement("script");
+        script.type = "module";
+        script.src = `/api/extensions/${encodeURIComponent(pluginId)}/ui/${panel.path}?panel=${encodeURIComponent(panelId)}`;
+        script.dataset.pluginId = pluginId;
+        script.dataset.panelId = panelId;
+        script.onerror = () => {
+          mount.textContent = "Failed to load extension panel.";
+        };
+        document.body.appendChild(script);
+      });
+    }catch(err){
+      console.warn("[extensions] load failure", err);
+    }
   }
 
   // inputs wire-up
@@ -191,4 +243,6 @@
     if(!Array.isArray(state.lines)) state.lines=[];
     syncFormToState();
   })();
+
+  loadExtensionPanels();
 })();

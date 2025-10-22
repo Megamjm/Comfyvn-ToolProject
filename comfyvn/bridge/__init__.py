@@ -15,6 +15,7 @@ from .comfy_hardening import (
     HardenedComfyBridge,
     LoRAEntry,
 )
+from .comfy_stream import PreviewCollector
 from .music_adapter import remix
 from .remote import RemoteBridge, RemoteCapabilityReport
 from .tts import TTSBridge, TTSBridgeConfig, TTSBridgeResult
@@ -32,6 +33,7 @@ __all__ = [
     "HardenedBridgeUnavailable",
     "CharacterLoRARegistry",
     "LoRAEntry",
+    "PreviewCollector",
     "RemoteBridge",
     "RemoteCapabilityReport",
     "remix",

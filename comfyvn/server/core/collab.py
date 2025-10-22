@@ -1,79 +1,37 @@
 from __future__ import annotations
 
-import time
-from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Dict
+import asyncio
+import logging
+from typing import Any, Dict
 
-from PySide6.QtGui import QAction
+from comfyvn.collab import CollabClientState, CollabHub
+from comfyvn.config.feature_flags import load_feature_flags
+from comfyvn.server.core.storage import scene_load, scene_save
 
-try:
-    from comfyvn.server.core.metrics import WS_CONN  # optional
-except Exception:
-    WS_CONN = None
+LOGGER = logging.getLogger(__name__)
 
 
-@dataclass
-class Client:
-    ws: any
-    user_id: str
-    user_name: str
-    last_seen: float = field(default_factory=lambda: time.time())
+def _loader(scene_id: str):
+    return asyncio.to_thread(scene_load, scene_id)
 
 
-class Hub:
-    def __init__(self):
-        self.rooms: dict[str, dict[str, Client]] = defaultdict(dict)
-        self.locks: dict[str, tuple[str, float]] = {}
-        self.ttl = 30
-
-    def join(self, scene_id: str, client: Client):
-        self.rooms[scene_id][client.user_id] = client
-        try:
-            WS_CONN and WS_CONN.labels(scene=scene_id).inc()
-        except Exception:
-            pass
-
-    def leave(self, scene_id: str, user_id: str):
-        if scene_id in self.rooms and user_id in self.rooms[scene_id]:
-            del self.rooms[scene_id][user_id]
-            if not self.rooms[scene_id]:
-                del self.rooms[scene_id]
-        try:
-            WS_CONN and WS_CONN.labels(scene=scene_id).dec()
-        except Exception:
-            pass
-
-    def presence(self, scene_id: str):
-        now = time.time()
-        items = [
-            {"user_id": uid, "user_name": c.user_name, "last_seen": c.last_seen}
-            for uid, c in self.rooms.get(scene_id, {}).items()
-        ]
-        lock = self.locks.get(scene_id)
-        return {
-            "now": now,
-            "participants": items,
-            "lock": {"owner": lock[0], "expires": lock[1]} if lock else None,
-        }
-
-    def acquire_lock(self, scene_id: str, user_id: str, ttl: int | None = None) -> bool:
-        now = time.time()
-        ttl = int(ttl or self.ttl)
-        owner = self.locks.get(scene_id)
-        if owner and owner[1] > now and owner[0] != user_id:
-            return False
-        self.locks[scene_id] = (user_id, now + ttl)
-        return True
-
-    def release_lock(self, scene_id: str, user_id: str) -> bool:
-        owner = self.locks.get(scene_id)
-        if not owner:
-            return True
-        if owner[0] == user_id or owner[1] < time.time():
-            self.locks.pop(scene_id, None)
-            return True
-        return False
+def _saver(payload: Dict[str, Any]):
+    return asyncio.to_thread(scene_save, payload)
 
 
-HUB = Hub()
+HUB = CollabHub(
+    loader=_loader,
+    saver=_saver,
+    feature_flags=load_feature_flags(),
+)
+
+
+async def get_room(scene_id: str):
+    return await HUB.room(scene_id)
+
+
+async def refresh_feature_flags() -> None:
+    HUB.update_feature_flags(load_feature_flags())
+
+
+__all__ = ["HUB", "get_room", "refresh_feature_flags", "CollabClientState"]

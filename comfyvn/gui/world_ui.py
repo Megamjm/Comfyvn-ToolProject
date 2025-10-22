@@ -6,9 +6,19 @@ logger = logging.getLogger(__name__)
 # comfyvn/gui/world_ui.py
 # 🌍 World Manager GUI with integrated StatusBar feedback
 
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QLabel, QLineEdit,
-                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from comfyvn.config import feature_flags
+from comfyvn.core.notifier import notifier
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.core.world_loader import WorldLoader
 from comfyvn.gui.status_bar import StatusBar
@@ -71,6 +81,11 @@ class WorldUI(QWidget):
         # --- Status Bar ---
         self.status_bar = StatusBar("Idle: Waiting for user action.")
         layout.addWidget(self.status_bar)
+        self._bridge_flag_enabled = True
+        notifier.attach(self._handle_notifier_event)
+        self._apply_feature_flag_state(
+            feature_flags.load_feature_flags(), announce=False
+        )
 
     def set_data_path(self):
         folder = QFileDialog.getExistingDirectory(self, "Select World Data Folder")
@@ -79,6 +94,17 @@ class WorldUI(QWidget):
             self._set_status("success", f"Data path set: {folder}")
 
     def manual_refresh(self):
+        if not self._bridge_flag_enabled:
+            self._set_status(
+                "warning",
+                "SillyTavern bridge disabled via feature flag. Enable it in Settings → Debug & Feature Flags.",
+            )
+            QMessageBox.information(
+                self,
+                "Bridge Disabled",
+                "Enable the SillyTavern bridge feature flag before attempting a remote sync.",
+            )
+            return
         if self.source_box.currentText() != "SillyTavern":
             self._set_status("warning", "Source not set to SillyTavern.")
             QMessageBox.warning(
@@ -111,3 +137,34 @@ class WorldUI(QWidget):
         """Update both local and global status bars."""
         if hasattr(self, "status_bar") and self.status_bar:
             self.status_bar.set_status(state, message)
+
+    def _handle_notifier_event(self, event: dict) -> None:
+        meta = event.get("meta")
+        if not isinstance(meta, dict):
+            return
+        if "feature_flags" in meta:
+            flags = meta["feature_flags"]
+            if isinstance(flags, dict):
+                self._apply_feature_flag_state(flags, announce=True)
+
+    def _apply_feature_flag_state(self, flags: dict, *, announce: bool) -> None:
+        enabled = bool(flags.get("enable_sillytavern_bridge"))
+        if enabled == getattr(self, "_bridge_flag_enabled", None):
+            self._bridge_flag_enabled = enabled
+            return
+        self._bridge_flag_enabled = enabled
+        if enabled:
+            self.source_box.setEnabled(True)
+            self.refresh_button.setEnabled(True)
+            if announce:
+                self._set_status(
+                    "success", "SillyTavern bridge enabled for world sync."
+                )
+        else:
+            self.source_box.setCurrentIndex(0)
+            self.source_box.setEnabled(False)
+            self.refresh_button.setEnabled(False)
+            self._set_status(
+                "warning",
+                "SillyTavern bridge disabled via feature flag.",
+            )

@@ -20,6 +20,25 @@ from fastapi.routing import APIRoute
 
 from comfyvn.core.warning_bus import warning_bus
 from comfyvn.logging_config import init_logging
+from comfyvn.obs.crash_reporter import install_sys_hook
+from comfyvn.obs.telemetry import get_telemetry
+from comfyvn.server.routes import accessibility as accessibility_routes
+from comfyvn.server.routes import battle as battle_routes
+from comfyvn.server.routes import llm as llm_routes
+from comfyvn.server.routes import (
+    modder_hooks,
+    pov_worlds,
+    providers_gpu,
+    providers_image_video,
+    providers_llm,
+    providers_translate_ocr_speech,
+    remote_orchestrator,
+)
+from comfyvn.server.routes import perf as perf_routes
+from comfyvn.server.routes import pov as pov_routes
+from comfyvn.server.routes import themes as themes_routes
+from comfyvn.server.routes import viewer as viewer_routes
+from comfyvn.server.routes import weather as weather_routes
 from comfyvn.server.system_metrics import collect_system_metrics
 
 try:
@@ -58,6 +77,9 @@ PRIORITY_MODULES: tuple[str, ...] = (
     "comfyvn.server.modules.gpu_api",
     "comfyvn.server.routes.audio",
     "comfyvn.server.routes.compute",
+    "comfyvn.server.routes.providers",
+    "comfyvn.server.routes.pov_worlds",
+    "comfyvn.server.routes.diffmerge",
     "comfyvn.manga.routes",
 )
 
@@ -123,8 +145,8 @@ def _iter_module_names(
     yield from _walk([str(base_path)], f"{package}.")
 
 
-def _include_routers(app: FastAPI) -> None:
-    seen: set[str] = set()
+def _include_routers(app: FastAPI, *, seen: Optional[Set[str]] = None) -> None:
+    seen = set(seen or ())
     for module_name in PRIORITY_MODULES:
         _include_router_module(app, module_name, seen=seen)
     for module_name in _iter_module_names(MODULE_PATH, MODULE_PACKAGE):
@@ -161,12 +183,14 @@ def create_app(
     *, enable_cors: bool = True, allowed_origins: Optional[Sequence[str]] = None
 ) -> FastAPI:
     """Application factory used by both CLI launches and ASGI servers."""
+    install_sys_hook()
     log_path = _configure_logging()
 
     default_kwargs = {"default_response_class": _ORJSON} if _ORJSON else {}
     app = FastAPI(title="ComfyVN", version=APP_VERSION, **default_kwargs)
     app.state.version = APP_VERSION
     app.state.log_path = log_path
+    app.state.telemetry = get_telemetry(app_version=APP_VERSION)
 
     if enable_cors:
         origins = _resolve_cors_origins(allowed_origins)
@@ -179,7 +203,40 @@ def create_app(
         )
         LOGGER.info("CORS enabled for origins: %s", origins)
 
-    _include_routers(app)
+    preloaded_modules: Set[str] = {
+        accessibility_routes.__name__,
+        viewer_routes.__name__,
+        pov_routes.__name__,
+        llm_routes.__name__,
+        pov_worlds.__name__,
+        perf_routes.__name__,
+        themes_routes.__name__,
+        weather_routes.__name__,
+        battle_routes.__name__,
+        providers_gpu.__name__,
+        providers_image_video.__name__,
+        providers_translate_ocr_speech.__name__,
+        providers_llm.__name__,
+        remote_orchestrator.__name__,
+        modder_hooks.__name__,
+    }
+    app.include_router(accessibility_routes.router)
+    app.include_router(viewer_routes.router)
+    app.include_router(pov_routes.router)
+    app.include_router(llm_routes.router)
+    app.include_router(pov_worlds.router)
+    app.include_router(perf_routes.router)
+    app.include_router(themes_routes.router)
+    app.include_router(weather_routes.router)
+    app.include_router(battle_routes.router)
+    app.include_router(providers_gpu.router)
+    app.include_router(providers_image_video.router)
+    app.include_router(providers_translate_ocr_speech.router)
+    app.include_router(providers_llm.router)
+    app.include_router(remote_orchestrator.router)
+    app.include_router(modder_hooks.router)
+
+    _include_routers(app, seen=preloaded_modules)
 
     @app.get("/health", tags=["System"], summary="Simple health probe")
     async def core_health():

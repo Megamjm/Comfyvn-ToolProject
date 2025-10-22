@@ -114,13 +114,19 @@ def main() -> int:
         return 1
 
     findings = _convert_findings(raw_findings)
+    blockers = [entry for entry in findings if entry.get("level") == "block"]
+    warnings = [entry for entry in findings if entry.get("level") == "warn"]
+
     payload = {
-        "ok": True,
+        "ok": not blockers,
+        "blocked": bool(blockers),
         "project": args.project,
         "timeline": resolved_timeline,
         "out": bundle_path.as_posix(),
         "gate": gate,
         "findings": findings,
+        "warning_count": len(warnings),
+        "blocker_count": len(blockers),
         "provenance": {
             "generated_at": provenance.get("generated_at"),
             "project": provenance.get("project"),
@@ -131,6 +137,28 @@ def main() -> int:
             },
         },
     }
+    if blockers:
+        messages = [b.get("message") or "" for b in blockers if b.get("message")]
+        summary = messages[0] if messages else "Blocking advisory findings present."
+        print(
+            f"Export blocked due to advisory findings: {summary}",
+            file=sys.stderr,
+        )
+        print(json.dumps(payload, indent=2))
+        return 2
+
+    if warnings:
+        warning_messages = [
+            w.get("message") or "" for w in warnings if w.get("message")
+        ]
+        preview = "; ".join(warning_messages[:3])
+        if len(warning_messages) > 3:
+            preview += f"; … (+{len(warning_messages) - 3} more)"
+        print(
+            f"Advisory warnings present ({len(warnings)}): {preview}",
+            file=sys.stderr,
+        )
+
     print(json.dumps(payload, indent=2))
     return 0
 

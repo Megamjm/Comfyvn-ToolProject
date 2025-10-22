@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from comfyvn.advisory.scanner import run_bundle_plugins
 from comfyvn.core.advisory import AdvisoryIssue, log_issue, scanner
 
 LOGGER = logging.getLogger("comfyvn.advisory.hooks")
@@ -115,6 +116,10 @@ def scan(bundle: BundleContext) -> List[Dict[str, Any]]:
             },
         )
         _record(issue)
+
+    plugin_findings = run_bundle_plugins(bundle)
+    if plugin_findings:
+        findings.extend(plugin_findings)
 
     LOGGER.info(
         "Advisory bundle scan project=%s timeline=%s findings=%s scenes=%s assets=%s",

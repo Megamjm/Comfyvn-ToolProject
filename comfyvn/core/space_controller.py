@@ -11,6 +11,7 @@ from comfyvn.gui.panels.gpu_manager_panel import GPUManagerPanel
 from comfyvn.gui.panels.importer_panel import ImporterPanel
 from comfyvn.gui.panels.render_dashboard_panel import RenderDashboardPanel
 from comfyvn.gui.panels.system_monitor_panel import SystemMonitorPanel
+
 # Panels used as central views
 from comfyvn.gui.panels.vn_viewport_panel import VNViewportPanel
 
@@ -97,6 +98,7 @@ class SpaceController:
         self._set_central(center, "System Monitor")
         try:
             # keep logs hub in bottom
-            pass
+            self.w.open_log_hub()
+            self.w.open_debug_integrations()
         except Exception:
             pass

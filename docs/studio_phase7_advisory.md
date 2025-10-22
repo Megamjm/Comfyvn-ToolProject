@@ -5,6 +5,8 @@ Scope
 -----
 Phase 7 formalises liability gates, advisory scans, and SFW/NSFW filters. The new API stubs allow early integration with the studio UI while keeping the policy rules pluggable.
 
+See also `docs/development/advisory_modding.md` for contributor-facing guidance on scanner plugins, debug hooks, and legal acknowledgement flows.
+
 Subsystem Components
 --------------------
 - Core logic in `comfyvn/core/advisory.py` manages findings, resolution tracking, and log storage.

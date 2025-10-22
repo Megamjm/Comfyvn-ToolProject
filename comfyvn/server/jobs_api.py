@@ -8,6 +8,9 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Body, WebSocket, WebSocketDisconnect
 from PySide6.QtGui import QAction
 
+from comfyvn.config import feature_flags
+from comfyvn.perf import budget_manager
+
 jobs = APIRouter(prefix="/jobs", tags=["Jobs"])
 root = APIRouter(tags=["Jobs"])
 
@@ -28,13 +31,43 @@ def _event(e: Dict[str, Any]):
 
 @jobs.get("/poll")
 def poll():
+    if feature_flags.is_enabled("enable_perf_budgets", default=False):
+        transitions = budget_manager.refresh_queue()
+        if transitions:
+            index = {item["id"]: item for item in _QUEUE}
+            for transition in transitions:
+                job = transition.get("job", {})
+                jid = job.get("id")
+                if not jid or jid not in index:
+                    continue
+                entry = index[jid]
+                entry["status"] = transition.get("queue_state", entry.get("status"))
+                budget_state = entry.setdefault("budget", {})
+                budget_state["queue_state"] = transition.get("queue_state")
+                budget_state["reason"] = transition.get("reason")
     return {"items": list(_QUEUE)}
 
 
 @jobs.post("/submit")
 def submit(payload: Dict[str, Any] = Body(...)):
     jid = str(uuid.uuid4())
-    item = {"id": jid, "status": "queued", "payload": payload, "ts": int(time.time())}
+    status = "queued"
+    budget_state: Dict[str, Any] | None = None
+    if feature_flags.is_enabled("enable_perf_budgets", default=False):
+        result = budget_manager.register_job(
+            jid, kind=payload.get("type", "job"), payload=payload
+        )
+        budget_state = result
+        if result.get("queue_state") == "delayed":
+            status = "delayed"
+    item = {
+        "id": jid,
+        "status": status,
+        "payload": payload,
+        "ts": int(time.time()),
+    }
+    if budget_state is not None:
+        item["budget"] = budget_state
     _QUEUE.append(item)
     _event({"type": "queued", "job": item})
     return {"ok": True, "id": jid}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from typing import (
     Any,
     Dict,
@@ -18,6 +19,7 @@ try:  # Optional dependency wired through requirements.txt
 except Exception:  # pragma: no cover - optional
     jsonschema = None
 
+from comfyvn.core import modder_hooks
 from comfyvn.schema import get_scenario_schema
 
 from .rng import DeterministicRNG, RNGError
@@ -25,6 +27,8 @@ from .rng import DeterministicRNG, RNGError
 ValidationIssue = Dict[str, Any]
 
 __all__ = ["ScenarioRunner", "validate_scene", "ValidationError"]
+
+DEFAULT_POV = "narrator"
 
 
 class ValidationError(Exception):
@@ -301,8 +305,26 @@ def _check_condition(
     return False
 
 
+def _normalise_visible_to(raw: Any) -> List[str]:
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        return [candidate] if candidate else []
+    if isinstance(raw, Iterable):
+        values: List[str] = []
+        for item in raw:
+            if isinstance(item, str):
+                candidate = item.strip()
+                if candidate:
+                    values.append(candidate)
+        return values
+    return []
+
+
 def _available_choices(
-    node: Mapping[str, Any], variables: Mapping[str, Any]
+    node: Mapping[str, Any],
+    variables: Mapping[str, Any],
+    *,
+    pov: Optional[str],
 ) -> List[Mapping[str, Any]]:
     raw = node.get("choices") or []
     if not isinstance(raw, list):
@@ -310,6 +332,9 @@ def _available_choices(
     filtered: List[Mapping[str, Any]] = []
     for choice in raw:
         if not isinstance(choice, Mapping):
+            continue
+        visible_to = _normalise_visible_to(choice.get("visible_to"))
+        if visible_to and (pov is None or str(pov) not in visible_to):
             continue
         weight = choice.get("weight", 1)
         try:
@@ -354,6 +379,7 @@ class ScenarioRunner:
         self._default_variables: Dict[str, Any] = (
             copy.deepcopy(raw_vars) if isinstance(raw_vars, Mapping) else {}
         )
+        self._default_pov_id = self._coalesce_default_pov(scene)
 
     @property
     def scene_id(self) -> str:
@@ -369,11 +395,34 @@ class ScenarioRunner:
     def _clone_node(self, node_id: str) -> Dict[str, Any]:
         return copy.deepcopy(self._nodes[node_id])
 
+    def _coalesce_default_pov(self, scene: Mapping[str, Any]) -> str:
+        raw = scene.get("default_pov")
+        if isinstance(raw, str):
+            candidate = raw.strip()
+            if candidate:
+                return candidate
+        metadata = scene.get("metadata")
+        if isinstance(metadata, Mapping):
+            meta_default = metadata.get("default_pov")
+            if isinstance(meta_default, str):
+                candidate = meta_default.strip()
+                if candidate:
+                    return candidate
+        return DEFAULT_POV
+
+    def _normalize_pov_value(self, pov: Any) -> str:
+        if isinstance(pov, str):
+            candidate = pov.strip()
+            if candidate:
+                return candidate
+        return self._default_pov_id
+
     def initial_state(
         self,
         *,
         seed: Optional[int] = None,
         variables: Optional[Mapping[str, Any]] = None,
+        pov: Optional[str] = None,
     ) -> Dict[str, Any]:
         merged_vars = copy.deepcopy(self._default_variables)
         if variables:
@@ -383,6 +432,8 @@ class ScenarioRunner:
         rng_seed = int(seed if seed is not None else 0)
         rng = DeterministicRNG.from_seed(rng_seed)
 
+        resolved_pov = self._normalize_pov_value(pov)
+
         state = {
             "scene_id": self.scene_id,
             "current_node": self.start_node,
@@ -390,13 +441,43 @@ class ScenarioRunner:
             "history": [{"node": self.start_node, "choice": None}],
             "rng": rng.to_state(),
             "finished": False,
+            "pov": resolved_pov,
         }
 
         start_node = self._node(self.start_node)
         _apply_actions(start_node.get("actions"), state["variables"])
-        available_start = _available_choices(start_node, state["variables"])
+        available_start = _available_choices(
+            start_node, state["variables"], pov=resolved_pov
+        )
         if not available_start:
             state["finished"] = True
+        timestamp = time.time()
+        try:
+            modder_hooks.emit(
+                "on_scene_enter",
+                {
+                    "scene_id": self.scene_id,
+                    "node": self.start_node,
+                    "pov": resolved_pov,
+                    "variables": copy.deepcopy(state["variables"]),
+                    "history": list(state.get("history", [])),
+                    "finished": state["finished"],
+                    "timestamp": timestamp,
+                },
+            )
+            modder_hooks.emit(
+                "on_choice_render",
+                {
+                    "scene_id": self.scene_id,
+                    "node": self.start_node,
+                    "choices": copy.deepcopy(available_start),
+                    "pov": resolved_pov,
+                    "finished": state["finished"],
+                    "timestamp": timestamp,
+                },
+            )
+        except Exception:
+            pass
         return state
 
     def peek(self, state: Mapping[str, Any]) -> Dict[str, Any]:
@@ -405,8 +486,10 @@ class ScenarioRunner:
         variables = state.get("variables")
         if not isinstance(variables, Mapping):
             variables = {}
+        pov_value = self._normalize_pov_value(state.get("pov"))
         choices = [
-            copy.deepcopy(choice) for choice in _available_choices(node, variables)
+            copy.deepcopy(choice)
+            for choice in _available_choices(node, variables, pov=pov_value)
         ]
         finished = bool(state.get("finished")) or not choices
         return {
@@ -433,6 +516,7 @@ class ScenarioRunner:
         *,
         choice_id: Optional[str] = None,
         seed: Optional[int] = None,
+        pov: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not isinstance(state, Mapping):
             raise ValueError("state must be a mapping")
@@ -455,8 +539,13 @@ class ScenarioRunner:
             variables = {}
             working["variables"] = variables
 
+        if pov is not None:
+            working["pov"] = pov
+        current_pov = self._normalize_pov_value(working.get("pov"))
+        working["pov"] = current_pov
+
         node = self._node(current_node_id)
-        available = _available_choices(node, variables)
+        available = _available_choices(node, variables, pov=current_pov)
 
         if not available:
             working["finished"] = True
@@ -502,6 +591,6 @@ class ScenarioRunner:
         next_node = self._node(target)
         _apply_actions(next_node.get("actions"), variables)
 
-        available_next = _available_choices(next_node, variables)
+        available_next = _available_choices(next_node, variables, pov=current_pov)
         working["finished"] = not available_next
         return working

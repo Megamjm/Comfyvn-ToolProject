@@ -1,0 +1,97 @@
+{
+  "providers": [
+    {
+      "name": "lmstudio_local",
+      "adapter": "lmstudio",
+      "base": "http://127.0.0.1:1234/v1",
+      "metadata": {
+        "kind": "local",
+        "notes": "Default LM Studio endpoint (OpenAI compatible)."
+      },
+      "models": [
+        {
+          "id": "phi-3-mini-4k-instruct",
+          "label": "Phi-3 Mini 4k",
+          "tags": ["chat", "translate", "json"],
+          "options": {"temperature": 0.2, "top_p": 0.8, "max_tokens": 512}
+        },
+        {
+          "id": "hermes-3-llama-3.1-8b",
+          "label": "Hermes 3 (8B)",
+          "tags": ["chat", "roleplay", "worldbuild"],
+          "options": {"temperature": 0.6, "top_p": 0.9, "max_tokens": 2048}
+        }
+      ]
+    },
+    {
+      "name": "ollama_default",
+      "adapter": "ollama",
+      "base": "http://127.0.0.1:11434",
+      "metadata": {
+        "kind": "local",
+        "notes": "Ollama REST interface."
+      },
+      "models": [
+        {
+          "id": "mistral:latest",
+          "label": "Mistral (latest)",
+          "tags": ["chat", "json", "summarize"],
+          "options": {"temperature": 0.4, "top_p": 0.85, "max_tokens": 1024}
+        },
+        {
+          "id": "nemotron-mini:latest",
+          "label": "Nemotron Mini",
+          "tags": ["roleplay", "creative", "worldbuild"],
+          "options": {"temperature": 0.75, "top_p": 0.95, "max_tokens": 1536}
+        }
+      ]
+    },
+    {
+      "name": "anthropic_api",
+      "adapter": "anthropic_compat",
+      "base": "https://api.anthropic.com/v1",
+      "metadata": {
+        "kind": "cloud",
+        "notes": "Requires ANTHROPIC_API_KEY environment variable."
+      },
+      "settings": {
+        "anthropic_version": "2023-06-01"
+      },
+      "models": [
+        {
+          "id": "claude-3-5-sonnet-20240620",
+          "label": "Claude 3.5 Sonnet",
+          "tags": ["analysis", "long", "json"],
+          "options": {"temperature": 0.4, "top_p": 0.85, "max_tokens": 2048}
+        }
+      ]
+    }
+  ],
+  "defaults": {
+    "provider": "lmstudio_local",
+    "model": "phi-3-mini-4k-instruct",
+    "modules": {
+      "translate": {
+        "provider": "lmstudio_local",
+        "model": "phi-3-mini-4k-instruct",
+        "options": {"temperature": 0.2, "top_p": 0.8, "max_tokens": 512}
+      },
+      "worldbuild": {
+        "provider": "lmstudio_local",
+        "model": "hermes-3-llama-3.1-8b",
+        "options": {"temperature": 0.5, "top_p": 0.9, "max_tokens": 2048}
+      },
+      "persona": {
+        "provider": "ollama_default",
+        "model": "nemotron-mini:latest",
+        "options": {"temperature": 0.7, "top_p": 0.95, "max_tokens": 512}
+      },
+      "narrator": {
+        "provider": "anthropic_api",
+        "model": "claude-3-5-sonnet-20240620",
+        "options": {"temperature": 0.6, "top_p": 0.9, "max_tokens": 1024}
+      }
+    }
+  }
+}
+

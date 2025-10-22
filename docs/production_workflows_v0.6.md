@@ -6,7 +6,7 @@ This document captures the “Consistency-First” production wiring for sprites
 
 - **Determinism** – record seeds, sampler, model hash, and node commit for every render. Workflows expect seeds in the `RenderContext.seeds` map and write sidecars (`*.render.json`, atlas manifests) for reproducibility.
 - **Identity lock** – characters use IPAdapter FaceID/Style; ControlNet anchors structure; Impact detailers run last.
-- **Single source of truth** – pipelines read from `data/characters/*.json`, `data/scenes/*.json`, `data/voices/*.json`. Exporters (Ren’Py, VN bundle, web gallery) consume the same JSON.
+- **Single source of truth** – pipelines read from `data/characters/<id>/character.json` (legacy flat files mirrored for compatibility), `data/scenes/*.json`, `data/voices/*.json`. Exporters (Ren’Py, VN bundle, web gallery) consume the same JSON.
 - **Batching** – sprite/shot lists run as arrays; video and TTS support chunking and resume.
 - **Re-renderable** – PNG sidecars + JSON prompt logs; audio exports include SRT/VTT with timestamps.
 

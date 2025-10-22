@@ -4,6 +4,7 @@ from PySide6.QtGui import QAction
 
 __all__ = [
     "asset_browser",
+    "central",
     "community_assets_browser",
     "main_window",
     "playground_ui",

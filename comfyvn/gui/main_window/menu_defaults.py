@@ -27,12 +27,25 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
     registry.add("Scenes", "open_scenes_panel", section="Modules", order=20)
     registry.add("Characters", "open_characters_panel", section="Modules", order=30)
     registry.add(
+        "Character Designer",
+        "open_character_designer",
+        section="Modules",
+        order=32,
+    )
+    registry.add(
         "Player Persona", "open_player_persona_panel", section="Modules", order=35
     )
     registry.add("Assets", "open_asset_browser", section="Modules", order=40)
     registry.add("Playground", "open_playground", section="Modules", order=50)
     registry.add("Sprites", "open_sprite_panel", section="Modules", order=55)
     registry.add("Timeline", "open_timeline", section="Modules", order=60)
+    registry.add(
+        "Worldline Graph",
+        "open_diffmerge_graph",
+        section="Modules",
+        order=62,
+    )
+    registry.add("VN Chat", "open_vn_chat_panel", section="Modules", order=65)
     registry.add(
         "Imports",
         "open_imports_panel",

@@ -1,5 +1,73 @@
 {
   "features": {
-    "enable_comfy_bridge_hardening": false
+    "enable_policy_enforcer": true,
+    "enable_comfy_bridge_hardening": false,
+    "enable_comfy_preview_stream": false,
+    "enable_sillytavern_bridge": false,
+    "enable_st_bridge": false,
+    "enable_llm_proxy": false,
+    "enable_narrator_mode": false,
+    "enable_playtest_harness": false,
+    "enable_remote_installer": false,
+    "enable_extension_market": false,
+    "enable_extension_market_uploads": false,
+    "enable_public_gpu": false,
+    "enable_public_image_video": false,
+    "enable_public_image_providers": false,
+    "enable_public_video_providers": false,
+    "enable_public_translate": false,
+    "enable_public_llm": false,
+    "enable_privacy_telemetry": false,
+    "enable_crash_uploader": false,
+    "enable_cloud_sync": false,
+    "enable_cloud_sync_s3": false,
+    "enable_cloud_sync_gdrive": false,
+    "enable_export_publish": false,
+    "enable_export_publish_steam": false,
+    "enable_export_publish_itch": false,
+    "enable_weather_planner": true,
+    "enable_weather": true,
+    "enable_battle": true,
+    "enable_themes": true,
+    "enable_accessibility_controls": true,
+    "enable_accessibility_api": true,
+    "enable_controller_profiles": true,
+    "enable_rating_api": true,
+    "enable_rating_modder_stream": false,
+    "enable_perf_budgets": false,
+    "enable_perf_profiler_dashboard": false,
+    "enable_diffmerge_tools": false,
+    "enable_security_api": false,
+    "enable_security_sandbox_guard": true,
+    "enable_collaboration": true
+  },
+  "sync": {
+    "include": [
+      "assets",
+      "config",
+      "defaults",
+      "docs",
+      "extensions",
+      "models",
+      "scripts",
+      "studio",
+      "comfyvn.json"
+    ],
+    "exclude": [
+      "__pycache__",
+      ".git",
+      ".pytest_cache",
+      "logs",
+      "tmp",
+      "cache"
+    ],
+    "snapshot_prefix": "snapshots",
+    "default_root": "."
+  },
+  "telemetry": {
+    "telemetry_opt_in": false,
+    "crash_opt_in": false,
+    "diagnostics_opt_in": false,
+    "dry_run": true
   }
 }

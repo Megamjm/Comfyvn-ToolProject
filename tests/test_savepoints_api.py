@@ -165,6 +165,7 @@ def test_runner_resume_consistent_after_save(savepoint_client: TestClient):
         "seed": deepcopy(initial_state["rng"]),
         "history": deepcopy(initial_state.get("history", [])),
         "finished": initial_state.get("finished", False),
+        "pov": initial_state.get("pov"),
     }
 
     resp = savepoint_client.post("/api/save/demo-slot", json=payload)
@@ -181,6 +182,7 @@ def test_runner_resume_consistent_after_save(savepoint_client: TestClient):
         "rng": deepcopy(saved["seed"]),
         "history": deepcopy(saved.get("history", [])),
         "finished": saved.get("finished", False),
+        "pov": saved.get("pov", initial_state.get("pov")),
     }
 
     fresh_runner = ScenarioRunner(scene)

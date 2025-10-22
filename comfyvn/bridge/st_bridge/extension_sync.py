@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import json
 import logging
 import os
 import shutil
@@ -26,6 +27,9 @@ ENV_ST_ROOT = "SILLYTAVERN_PATH"
 DEFAULT_EXTENSION_NAME = "ComfyVN"
 DEFAULT_SOURCE_ROOT = Path("SillyTavern Extension") / "extension"
 DEFAULT_ST_RELATIVE = Path("public") / "scripts" / "extensions"
+DEFAULT_MANIFEST_NAME = "manifest.json"
+PLUGIN_FOLDER_NAME = "comfyvn-data-exporter"
+PLUGIN_PACKAGE_NAME = "package.json"
 
 
 @dataclass(slots=True)
@@ -267,6 +271,219 @@ def resolve_paths(
         enabled=enabled,
         settings_path=settings_path,
     )
+
+
+def _manifest_info(directory: Path) -> dict[str, object]:
+    manifest_path = Path(directory) / DEFAULT_MANIFEST_NAME
+    info: dict[str, object] = {
+        "path": manifest_path.as_posix(),
+        "exists": manifest_path.exists(),
+        "version": None,
+        "error": None,
+    }
+    if not manifest_path.exists():
+        info["error"] = "missing"
+        return info
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        info["error"] = str(exc)
+        return info
+    info["manifest"] = data
+    version = data.get("version")
+    if version is not None:
+        info["version"] = str(version)
+    return info
+
+
+def _bundle_plugin_info() -> dict[str, object]:
+    plugin_dir = _detect_repo_root() / "SillyTavern Extension" / "plugin"
+    bundle_dir = plugin_dir / PLUGIN_FOLDER_NAME
+    package_json = bundle_dir / PLUGIN_PACKAGE_NAME
+    manifest = {
+        "path": package_json.as_posix(),
+        "exists": package_json.exists(),
+        "version": None,
+        "error": None,
+    }
+    if not package_json.exists():
+        manifest["error"] = "missing"
+        return {
+            "plugin_dir": plugin_dir.as_posix(),
+            "bundle_dir": bundle_dir.as_posix(),
+            "package": manifest,
+        }
+    try:
+        data = json.loads(package_json.read_text(encoding="utf-8"))
+        manifest["manifest"] = data
+        version = data.get("version")
+        if version is not None:
+            manifest["version"] = str(version)
+    except Exception as exc:  # pragma: no cover - defensive
+        manifest["error"] = str(exc)
+    return {
+        "plugin_dir": plugin_dir.as_posix(),
+        "bundle_dir": bundle_dir.as_posix(),
+        "package": manifest,
+    }
+
+
+def _package_info(path: Path) -> dict[str, object]:
+    package_path = path / PLUGIN_PACKAGE_NAME if path.is_dir() else path
+    info: dict[str, object] = {
+        "path": package_path.as_posix(),
+        "exists": package_path.exists(),
+        "version": None,
+        "error": None,
+    }
+    if not package_path.exists():
+        info["error"] = "missing"
+        return info
+    try:
+        data = json.loads(package_path.read_text(encoding="utf-8"))
+        info["manifest"] = data
+        version = data.get("version")
+        if version is not None:
+            info["version"] = str(version)
+    except Exception as exc:  # pragma: no cover - defensive
+        info["error"] = str(exc)
+    return info
+
+
+def _guess_st_root(path_info: ExtensionPathInfo) -> Optional[Path]:
+    candidates = [
+        path_info.selected_candidate,
+        path_info.destination_dir,
+        path_info.destination_dir.parent,
+    ]
+    for base in candidates:
+        if not base:
+            continue
+        base = Path(base)
+        for ancestor in (base, *base.parents):
+            if ancestor.name.lower() == "sillytavern":
+                return ancestor
+        for ancestor in (base, *base.parents):
+            if ancestor.name.lower() == "public":
+                return ancestor.parent
+    return None
+
+
+def collect_extension_status(
+    *,
+    source: Optional[Path | str] = None,
+    destination: Optional[Path | str] = None,
+    extension_name: str = DEFAULT_EXTENSION_NAME,
+    settings: Optional[SettingsManager] = None,
+    paths: Optional[ExtensionPathInfo] = None,
+) -> dict[str, object]:
+    context = paths or resolve_paths(
+        source=source,
+        destination=destination,
+        extension_name=extension_name,
+        settings=settings,
+    )
+
+    source_manifest = _manifest_info(context.source_dir)
+    dest_manifest = _manifest_info(context.destination_dir)
+
+    extension_needs_sync = False
+    version_status = "unknown"
+    if not context.destination_exists:
+        version_status = "missing"
+        extension_needs_sync = True
+    elif (
+        source_manifest.get("version")
+        and dest_manifest.get("version")
+        and source_manifest["version"] == dest_manifest["version"]
+    ):
+        version_status = "match"
+    elif dest_manifest.get("exists"):
+        version_status = "mismatch" if source_manifest.get("version") else "unknown"
+        extension_needs_sync = True
+    else:
+        version_status = "missing"
+        extension_needs_sync = True
+
+    watch_paths: list[dict[str, object]] = []
+    seen: set[str] = set()
+
+    def _add_watch(path: Path, purpose: str) -> None:
+        posix = path.as_posix()
+        if posix in seen:
+            return
+        seen.add(posix)
+        watch_paths.append({"path": posix, "purpose": purpose, "exists": path.exists()})
+
+    _add_watch(context.source_dir, "extension_source")
+    _add_watch(context.destination_dir, "extension_destination")
+    if context.destination_dir.parent:
+        _add_watch(context.destination_dir.parent, "extensions_root")
+    if context.selected_candidate:
+        _add_watch(context.selected_candidate, "candidate_base")
+
+    plugin_source = _detect_repo_root() / "SillyTavern Extension" / "plugin"
+    _add_watch(plugin_source, "plugin_source")
+    bundle_info = _bundle_plugin_info()
+    bundle_dir = Path(bundle_info.get("bundle_dir") or plugin_source)
+    _add_watch(bundle_dir, "plugin_bundle_dir")
+    bundle_package_path = Path(bundle_info["package"]["path"])
+    _add_watch(bundle_package_path, "plugin_bundle_package")
+
+    st_root = _guess_st_root(context)
+    plugin_dest = None
+    plugin_dest_manifest: dict[str, object] | None = None
+    if st_root:
+        candidate = st_root / "plugins" / PLUGIN_FOLDER_NAME
+        plugin_dest = candidate
+        _add_watch(candidate, "plugin_destination")
+        plugin_dest_manifest = _package_info(candidate)
+        _add_watch(Path(plugin_dest_manifest["path"]), "plugin_destination_package")
+
+    plugin_bundle = bundle_info
+
+    bundle_version = plugin_bundle["package"].get("version")
+    dest_version = plugin_dest_manifest.get("version") if plugin_dest_manifest else None
+    plugin_version_status = "unknown"
+    plugin_needs_sync = False
+    if plugin_dest_manifest is None:
+        plugin_version_status = "unresolved"
+    elif not plugin_dest_manifest.get("exists"):
+        plugin_version_status = "missing"
+        plugin_needs_sync = True
+    elif bundle_version and dest_version:
+        if bundle_version == dest_version:
+            plugin_version_status = "match"
+        else:
+            plugin_version_status = "mismatch"
+            plugin_needs_sync = True
+    elif bundle_version and not dest_version:
+        plugin_version_status = "unknown"
+        plugin_needs_sync = True
+    else:
+        plugin_version_status = "unknown"
+
+    overall_needs_sync = extension_needs_sync or plugin_needs_sync
+
+    return {
+        "needs_sync": extension_needs_sync,
+        "overall_needs_sync": overall_needs_sync,
+        "extension_needs_sync": extension_needs_sync,
+        "version_status": version_status,
+        "source_manifest": source_manifest,
+        "dest_manifest": dest_manifest,
+        "plugin": {
+            "source": plugin_bundle,
+            "destination": plugin_dest.as_posix() if plugin_dest is not None else None,
+            "destination_exists": plugin_dest.exists() if plugin_dest else False,
+            "destination_package": plugin_dest_manifest,
+            "version_status": plugin_version_status,
+            "needs_sync": plugin_needs_sync,
+        },
+        "watch_paths": watch_paths,
+        "plugin_version_status": plugin_version_status,
+        "plugin_needs_sync": plugin_needs_sync,
+    }
 
 
 def _iter_files(src: Path) -> Iterable[Path]:

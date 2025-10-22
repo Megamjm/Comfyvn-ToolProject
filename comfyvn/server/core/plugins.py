@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 import types
+
 # comfyvn/server/core/plugins.py
 from pathlib import Path
 from typing import Any, Callable, Dict, List
@@ -12,6 +13,9 @@ HOOKS = [
     "on_render_start",
     "on_character_load",
     "on_asset_registered",
+    "on_scene_enter",
+    "on_choice_render",
+    "on_asset_saved",
 ]
 
 

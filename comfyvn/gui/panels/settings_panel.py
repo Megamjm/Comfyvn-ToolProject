@@ -1,8 +1,9 @@
 import json
+import logging
 import os
 import socket
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Mapping, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -29,11 +31,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comfyvn.accessibility import AccessibilityState, accessibility_manager
+from comfyvn.accessibility import filters as accessibility_filters
+from comfyvn.accessibility.input_map import InputBinding, input_map_manager
+from comfyvn.config import feature_flags
 from comfyvn.config.baseurl_authority import current_authority, default_base_url
 from comfyvn.core.compute_registry import ComputeProviderRegistry
+from comfyvn.core.notifier import notifier
 from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.gui.widgets.drawer import Drawer, DrawerContainer
+from comfyvn.gui.widgets.shortcut_capture import ShortcutCapture
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsPanel(QDockWidget):
@@ -46,6 +56,13 @@ class SettingsPanel(QDockWidget):
         self._editing_provider_id: str | None = None
         self._providers_cache: dict[str, dict] = {}
         self._templates_cache: list[dict] = []
+        self._accessibility_manager = accessibility_manager
+        self._accessibility_token: str | None = None
+        self._accessibility_updating = False
+        self._input_token: str | None = None
+        self._input_rows: dict[
+            str, tuple[ShortcutCapture, ShortcutCapture, QComboBox]
+        ] = {}
 
         w = QWidget()
         root = QVBoxLayout(w)
@@ -101,6 +118,27 @@ class SettingsPanel(QDockWidget):
 
         self.audio_group = self._build_audio_settings(cfg_snapshot)
         drawer_container.add_drawer(Drawer("Audio & Music", self.audio_group))
+
+        features_state = feature_flags.load_feature_flags()
+        if features_state.get("enable_accessibility_controls", True):
+            self.accessibility_group = self._build_accessibility_settings()
+            drawer_container.add_drawer(
+                Drawer("Accessibility", self.accessibility_group, start_open=False)
+            )
+            self._accessibility_token = self._accessibility_manager.subscribe(
+                self._on_accessibility_state_changed
+            )
+            self.destroyed.connect(self._cleanup_accessibility_subscription)
+
+        if features_state.get("enable_controller_profiles", True):
+            self.input_group = self._build_input_settings()
+            drawer_container.add_drawer(
+                Drawer("Input & Controllers", self.input_group, start_open=False)
+            )
+            self._input_token = input_map_manager.subscribe(
+                self._on_input_bindings_changed
+            )
+            self.destroyed.connect(self._cleanup_input_subscription)
 
         self.debug_group = self._build_debug_settings()
         drawer_container.add_drawer(
@@ -237,6 +275,204 @@ class SettingsPanel(QDockWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #666666;")
         layout.addWidget(hint)
+
+        self.preview_stream_checkbox = QCheckBox(
+            "Capture ComfyUI preview stream snapshots"
+        )
+        self.preview_stream_checkbox.setChecked(
+            bool(features.get("enable_comfy_preview_stream", False))
+        )
+        self.preview_stream_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox(
+                "enable_comfy_preview_stream", state
+            )
+        )
+        layout.addWidget(self.preview_stream_checkbox)
+
+        preview_hint = QLabel(
+            "Stores intermediate images and manifests under data/cache/comfy_previews "
+            "so the VN Viewer can reflect live renders."
+        )
+        preview_hint.setWordWrap(True)
+        preview_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(preview_hint)
+
+        self.silly_bridge_checkbox = QCheckBox("Enable SillyTavern bridge integration")
+        self.silly_bridge_checkbox.setChecked(
+            bool(features.get("enable_sillytavern_bridge", False))
+        )
+        self.silly_bridge_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox(
+                "enable_sillytavern_bridge", state
+            )
+        )
+        layout.addWidget(self.silly_bridge_checkbox)
+
+        st_hint = QLabel(
+            "Controls the SillyTavern export bridge, including world sync and asset import helpers."
+        )
+        st_hint.setWordWrap(True)
+        st_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(st_hint)
+
+        self.narrator_mode_checkbox = QCheckBox("Enable Narrator presentation mode")
+        self.narrator_mode_checkbox.setChecked(
+            bool(features.get("enable_narrator_mode", False))
+        )
+        self.narrator_mode_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox("enable_narrator_mode", state)
+        )
+        layout.addWidget(self.narrator_mode_checkbox)
+
+        narrator_hint = QLabel(
+            "Adds narrator-forward overlays in the VN Viewer so directs and modders can focus on scene pacing."
+        )
+        narrator_hint.setWordWrap(True)
+        narrator_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(narrator_hint)
+
+        image_flag_default = bool(
+            features.get(
+                "enable_public_image_providers",
+                features.get("enable_public_image_video", False),
+            )
+        )
+        self.public_image_checkbox = QCheckBox(
+            "Enable public image providers (Stability, fal.ai)"
+        )
+        self.public_image_checkbox.setChecked(image_flag_default)
+        self.public_image_checkbox.stateChanged.connect(
+            lambda state: self._on_public_media_flag("image", state)
+        )
+        layout.addWidget(self.public_image_checkbox)
+
+        image_hint = QLabel(
+            "Dry-run adapters for Stability and fal.ai stay active until API keys are added; "
+            "payload shapes are logged for debugging."
+        )
+        image_hint.setWordWrap(True)
+        image_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(image_hint)
+
+        video_flag_default = bool(
+            features.get(
+                "enable_public_video_providers",
+                features.get("enable_public_image_video", False),
+            )
+        )
+        self.public_video_checkbox = QCheckBox(
+            "Enable public video providers (Runway, Pika, Luma)"
+        )
+        self.public_video_checkbox.setChecked(video_flag_default)
+        self.public_video_checkbox.stateChanged.connect(
+            lambda state: self._on_public_media_flag("video", state)
+        )
+        layout.addWidget(self.public_video_checkbox)
+
+        video_hint = QLabel(
+            "Video endpoints remain dry-run until credentials exist; cost estimates surface in the job log."
+        )
+        video_hint.setWordWrap(True)
+        video_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(video_hint)
+
+        self.telemetry_checkbox = QCheckBox("Enable privacy-aware telemetry counters")
+        self.telemetry_checkbox.setChecked(
+            bool(features.get("enable_privacy_telemetry", False))
+        )
+        self.telemetry_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox(
+                "enable_privacy_telemetry", state
+            )
+        )
+        layout.addWidget(self.telemetry_checkbox)
+
+        telemetry_hint = QLabel(
+            "Requires consent via Settings → Debug & Feature Flags or POST /api/telemetry/settings; "
+            "counters stay local while telemetry dry-run remains true."
+        )
+        telemetry_hint.setWordWrap(True)
+        telemetry_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(telemetry_hint)
+
+        self.crash_upload_checkbox = QCheckBox(
+            "Enable crash upload diagnostics (opt-in)"
+        )
+        self.crash_upload_checkbox.setChecked(
+            bool(features.get("enable_crash_uploader", False))
+        )
+        self.crash_upload_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox("enable_crash_uploader", state)
+        )
+        layout.addWidget(self.crash_upload_checkbox)
+
+        crash_hint = QLabel(
+            "Combines with telemetry consent to register crash digests and unlock /api/telemetry/diagnostics exports."
+        )
+        crash_hint.setWordWrap(True)
+        crash_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(crash_hint)
+
+        self.accessibility_controls_checkbox = QCheckBox(
+            "Enable accessibility controls (UI + overlays)"
+        )
+        self.accessibility_controls_checkbox.setChecked(
+            bool(features.get("enable_accessibility_controls", True))
+        )
+        self.accessibility_controls_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox(
+                "enable_accessibility_controls", state
+            )
+        )
+        layout.addWidget(self.accessibility_controls_checkbox)
+
+        accessibility_controls_hint = QLabel(
+            "Hide the Accessibility drawer when packaging kiosk builds or running headless tests."
+        )
+        accessibility_controls_hint.setWordWrap(True)
+        accessibility_controls_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(accessibility_controls_hint)
+
+        self.accessibility_api_checkbox = QCheckBox(
+            "Enable accessibility REST/WebSocket surfaces"
+        )
+        self.accessibility_api_checkbox.setChecked(
+            bool(features.get("enable_accessibility_api", True))
+        )
+        self.accessibility_api_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox(
+                "enable_accessibility_api", state
+            )
+        )
+        layout.addWidget(self.accessibility_api_checkbox)
+
+        accessibility_api_hint = QLabel(
+            "Disable when exposing the server without auth; subtitles and settings remain local-only."
+        )
+        accessibility_api_hint.setWordWrap(True)
+        accessibility_api_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(accessibility_api_hint)
+
+        self.controller_profiles_checkbox = QCheckBox(
+            "Enable controller remapping profiles"
+        )
+        self.controller_profiles_checkbox.setChecked(
+            bool(features.get("enable_controller_profiles", True))
+        )
+        self.controller_profiles_checkbox.stateChanged.connect(
+            lambda state: self._on_feature_flag_checkbox(
+                "enable_controller_profiles", state
+            )
+        )
+        layout.addWidget(self.controller_profiles_checkbox)
+
+        controller_hint = QLabel(
+            "Required for controller/hotkey remaps exposed in the upcoming Input Mapping drawer."
+        )
+        controller_hint.setWordWrap(True)
+        controller_hint.setStyleSheet("color: #666666;")
+        layout.addWidget(controller_hint)
+
         layout.addStretch(1)
         return widget
 
@@ -270,7 +506,17 @@ class SettingsPanel(QDockWidget):
             if "features" in combined:
                 payload["features"] = dict(combined.get("features") or {})
 
-        return combined, payload or {}, path
+        defaults = dict(feature_flags.FEATURE_DEFAULTS)
+        combined_features = dict(defaults)
+        combined_features.update(dict(combined.get("features") or {}))
+        combined["features"] = combined_features
+
+        payload = payload or {}
+        payload_features = dict(defaults)
+        payload_features.update(dict(payload.get("features") or {}))
+        payload["features"] = payload_features
+
+        return combined, payload, path
 
     def _persist_comfy_config(self) -> None:
         try:
@@ -292,13 +538,312 @@ class SettingsPanel(QDockWidget):
         combined_features = dict(self._comfy_config_combined.get("features") or {})
         combined_features.update(features)
         self._comfy_config_combined["features"] = combined_features
+        try:
+            feature_flags.refresh_cache()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Failed to refresh feature flag cache: %s", exc)
+        notifier.toast(
+            "info",
+            "Feature flags updated.",
+            meta={"feature_flags": dict(combined_features)},
+        )
 
     def _on_bridge_hardening_toggled(self, state: int) -> None:
+        self._update_feature_flag("enable_comfy_bridge_hardening", state == Qt.Checked)
+
+    def _on_feature_flag_checkbox(self, key: str, state: int) -> None:
+        self._update_feature_flag(key, state == Qt.Checked)
+
+    def _on_public_media_flag(self, kind: str, state: int) -> None:
         enabled = state == Qt.Checked
+        if kind == "image":
+            updates = {
+                "enable_public_image_providers": enabled,
+                "enable_public_image_video": enabled,
+            }
+        else:
+            updates = {
+                "enable_public_video_providers": enabled,
+                "enable_public_image_video": enabled,
+            }
+        self._update_feature_flags(updates)
+
+    def _update_feature_flag(self, key: str, enabled: bool) -> None:
+        self._update_feature_flags({key: enabled})
+
+    def _update_feature_flags(self, updates: Mapping[str, bool]) -> None:
         features = dict(self._comfy_config_payload.get("features") or {})
-        features["enable_comfy_bridge_hardening"] = enabled
+        changed = False
+        for flag_key, state in updates.items():
+            if features.get(flag_key) == state:
+                continue
+            features[flag_key] = state
+            changed = True
+        if not changed:
+            return
         self._comfy_config_payload["features"] = features
         self._persist_comfy_config()
+
+    def _build_accessibility_settings(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        state = self._accessibility_manager.snapshot()
+
+        form = QFormLayout()
+        form.setSpacing(8)
+
+        self.access_font_scale_spin = QDoubleSpinBox()
+        self.access_font_scale_spin.setRange(0.75, 2.5)
+        self.access_font_scale_spin.setSingleStep(0.05)
+        self.access_font_scale_spin.setValue(state.font_scale)
+        self.access_font_scale_spin.setSuffix("×")
+        self.access_font_scale_spin.valueChanged.connect(
+            self._on_accessibility_widgets_changed
+        )
+        form.addRow("Font scale multiplier", self.access_font_scale_spin)
+
+        self.access_color_filter_combo = QComboBox()
+        for spec in accessibility_filters.AVAILABLE_FILTERS:
+            self.access_color_filter_combo.addItem(spec.label, spec.key)
+        index = self.access_color_filter_combo.findData(state.color_filter)
+        if index != -1:
+            self.access_color_filter_combo.setCurrentIndex(index)
+        self.access_color_filter_combo.currentIndexChanged.connect(
+            self._on_accessibility_widgets_changed
+        )
+        form.addRow("Color filter", self.access_color_filter_combo)
+
+        self.access_high_contrast_check = QCheckBox("Enable high-contrast palette")
+        self.access_high_contrast_check.setChecked(state.high_contrast)
+        self.access_high_contrast_check.stateChanged.connect(
+            self._on_accessibility_widgets_changed
+        )
+        form.addRow("High contrast", self.access_high_contrast_check)
+
+        self.access_subtitles_check = QCheckBox("Display subtitles overlay in viewer")
+        self.access_subtitles_check.setChecked(state.subtitles_enabled)
+        self.access_subtitles_check.stateChanged.connect(
+            self._on_accessibility_widgets_changed
+        )
+        form.addRow("Subtitles", self.access_subtitles_check)
+
+        layout.addLayout(form)
+
+        hint = QLabel(
+            "Changes apply instantly and persist to config/settings/accessibility."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #6b7280;")
+        layout.addWidget(hint)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        reset_btn = QPushButton("Reset Accessibility")
+        reset_btn.clicked.connect(self._on_accessibility_reset)
+        button_row.addWidget(reset_btn)
+        layout.addLayout(button_row)
+
+        layout.addStretch(1)
+        return widget
+
+    def _on_accessibility_widgets_changed(self, *_args) -> None:
+        if self._accessibility_updating:
+            return
+        font_widget = getattr(self, "access_font_scale_spin", None)
+        if font_widget is None:
+            return
+        font_scale = float(font_widget.value())
+        color_data = self.access_color_filter_combo.currentData()
+        color_filter = str(color_data or "none")
+        high_contrast = self.access_high_contrast_check.isChecked()
+        subtitles_enabled = self.access_subtitles_check.isChecked()
+        self._accessibility_manager.update(
+            font_scale=font_scale,
+            color_filter=color_filter,
+            high_contrast=high_contrast,
+            subtitles_enabled=subtitles_enabled,
+        )
+
+    def _on_accessibility_state_changed(self, state: AccessibilityState) -> None:
+        if not hasattr(self, "access_font_scale_spin"):
+            return
+        self._accessibility_updating = True
+        try:
+            self.access_font_scale_spin.setValue(state.font_scale)
+            index = self.access_color_filter_combo.findData(state.color_filter)
+            if index != -1:
+                self.access_color_filter_combo.setCurrentIndex(index)
+            self.access_high_contrast_check.setChecked(state.high_contrast)
+            self.access_subtitles_check.setChecked(state.subtitles_enabled)
+        finally:
+            self._accessibility_updating = False
+
+    def _on_accessibility_reset(self) -> None:
+        self._accessibility_manager.reset()
+
+    def _cleanup_accessibility_subscription(self, *_args) -> None:
+        if self._accessibility_token:
+            self._accessibility_manager.unsubscribe(self._accessibility_token)
+            self._accessibility_token = None
+
+    def _build_input_settings(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        bindings = input_map_manager.bindings()
+        for action, binding in bindings.items():
+            group = QGroupBox(binding.label)
+            form = QFormLayout(group)
+            form.setSpacing(6)
+
+            primary_capture = ShortcutCapture()
+            self._set_capture_value(primary_capture, binding.primary)
+            primary_record = QPushButton("Record")
+            primary_record.clicked.connect(
+                lambda _=False, cap=primary_capture: cap.setFocus()
+            )
+            primary_clear = QPushButton("Clear")
+            primary_clear.clicked.connect(
+                lambda _=False, cap=primary_capture: self._clear_capture(cap)
+            )
+            primary_row = QWidget()
+            primary_layout = QHBoxLayout(primary_row)
+            primary_layout.setContentsMargins(0, 0, 0, 0)
+            primary_layout.setSpacing(4)
+            primary_layout.addWidget(primary_capture, 1)
+            primary_layout.addWidget(primary_record)
+            primary_layout.addWidget(primary_clear)
+            form.addRow("Primary", primary_row)
+
+            secondary_capture = ShortcutCapture()
+            self._set_capture_value(secondary_capture, binding.secondary)
+            secondary_record = QPushButton("Record")
+            secondary_record.clicked.connect(
+                lambda _=False, cap=secondary_capture: cap.setFocus()
+            )
+            secondary_clear = QPushButton("Clear")
+            secondary_clear.clicked.connect(
+                lambda _=False, cap=secondary_capture: self._clear_capture(cap)
+            )
+            secondary_row = QWidget()
+            secondary_layout = QHBoxLayout(secondary_row)
+            secondary_layout.setContentsMargins(0, 0, 0, 0)
+            secondary_layout.setSpacing(4)
+            secondary_layout.addWidget(secondary_capture, 1)
+            secondary_layout.addWidget(secondary_record)
+            secondary_layout.addWidget(secondary_clear)
+            form.addRow("Secondary", secondary_row)
+
+            controller_combo = QComboBox()
+            for key, label in input_map_manager.available_gamepad_bindings():
+                controller_combo.addItem(label, key)
+            current_index = controller_combo.findData(binding.gamepad or "")
+            if current_index != -1:
+                controller_combo.setCurrentIndex(current_index)
+            form.addRow("Controller", controller_combo)
+
+            button_row = QWidget()
+            button_layout = QHBoxLayout(button_row)
+            button_layout.setContentsMargins(0, 0, 0, 0)
+            button_layout.setSpacing(6)
+            apply_btn = QPushButton("Apply")
+            apply_btn.clicked.connect(
+                lambda _=False, act=action: self._apply_input_binding(act)
+            )
+            reset_btn = QPushButton("Reset")
+            reset_btn.clicked.connect(
+                lambda _=False, act=action: self._reset_input_binding(act)
+            )
+            button_layout.addStretch(1)
+            button_layout.addWidget(apply_btn)
+            button_layout.addWidget(reset_btn)
+            form.addRow("", button_row)
+
+            layout.addWidget(group)
+            self._input_rows[action] = (
+                primary_capture,
+                secondary_capture,
+                controller_combo,
+            )
+
+        footer = QWidget()
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.addStretch(1)
+        reset_all = QPushButton("Reset All Input Bindings")
+        reset_all.clicked.connect(self._reset_all_input_bindings)
+        footer_layout.addWidget(reset_all)
+        layout.addWidget(footer)
+        layout.addStretch(1)
+        return widget
+
+    def _set_capture_value(
+        self, capture: ShortcutCapture, value: Optional[str]
+    ) -> None:
+        capture._seq = value  # type: ignore[attr-defined]
+        capture.setText(value or "")
+
+    def _clear_capture(self, capture: ShortcutCapture) -> None:
+        capture._seq = None  # type: ignore[attr-defined]
+        capture.setText("")
+
+    def _read_capture(self, capture: ShortcutCapture) -> Optional[str]:
+        seq = capture.sequence()
+        if seq:
+            return seq
+        text = capture.text().strip()
+        return text or None
+
+    def _apply_input_binding(self, action: str) -> None:
+        row = self._input_rows.get(action)
+        if not row:
+            return
+        primary_capture, secondary_capture, controller_combo = row
+        primary = self._read_capture(primary_capture)
+        secondary = self._read_capture(secondary_capture)
+        gamepad = controller_combo.currentData()
+        input_map_manager.update_binding(
+            action,
+            primary=primary,
+            secondary=secondary,
+            gamepad=gamepad,
+        )
+
+    def _reset_input_binding(self, action: str) -> None:
+        default_binding = input_map_manager.default_bindings().get(action)
+        if not default_binding:
+            return
+        input_map_manager.update_binding(
+            action,
+            primary=default_binding.primary,
+            secondary=default_binding.secondary,
+            gamepad=default_binding.gamepad,
+        )
+
+    def _reset_all_input_bindings(self) -> None:
+        input_map_manager.reset()
+
+    def _on_input_bindings_changed(self, bindings: Dict[str, InputBinding]) -> None:
+        for action, row in self._input_rows.items():
+            binding = bindings.get(action)
+            if not binding:
+                continue
+            primary_capture, secondary_capture, controller_combo = row
+            self._set_capture_value(primary_capture, binding.primary)
+            self._set_capture_value(secondary_capture, binding.secondary)
+            index = controller_combo.findData(binding.gamepad or "")
+            if index != -1:
+                controller_combo.setCurrentIndex(index)
+
+    def _cleanup_input_subscription(self, *_args) -> None:
+        if self._input_token:
+            input_map_manager.unsubscribe(self._input_token)
+            self._input_token = None
 
     def _build_audio_settings(self, cfg_snapshot: dict) -> QGroupBox:
         group = QGroupBox("Audio & Music Pipelines")

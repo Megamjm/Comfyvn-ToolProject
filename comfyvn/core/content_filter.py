@@ -4,8 +4,10 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from comfyvn.config import feature_flags
 from comfyvn.core.advisory import AdvisoryIssue, log_issue
 from comfyvn.core.settings_manager import SettingsManager
+from comfyvn.rating import rating_service
 
 LOGGER = logging.getLogger("comfyvn.policy.filter")
 
@@ -47,6 +49,19 @@ class ContentFilter:
         for tag in tags:
             if isinstance(tag, str) and tag.lower() in NSFW_KEYWORDS:
                 return False, f"tag '{tag}' flagged as NSFW", "warn"
+        if feature_flags.is_enabled("enable_rating_api"):
+            try:
+                result = rating_service().classify(
+                    item.get("id") or item.get("uid") or "unknown", item
+                )
+            except Exception:
+                LOGGER.debug("Rating fallback classification failed", exc_info=True)
+            else:
+                if result.rating in {"M", "Adult"}:
+                    reason = (
+                        ", ".join(result.reasons) if result.reasons else result.rating
+                    )
+                    return False, f"rating {result.rating} ({reason})", "warn"
         return True, None, "info"
 
     def filter_items(

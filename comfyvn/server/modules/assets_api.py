@@ -5,13 +5,13 @@ import logging
 import tempfile
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
-                     UploadFile)
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from comfyvn.core import modder_hooks
 from comfyvn.server.core.trash import move_to_trash
 from comfyvn.server.modules.auth import require_scope
 from comfyvn.studio.core import AssetRegistry
@@ -71,19 +71,143 @@ def _sanitize_relative_path(value: Optional[str]) -> Optional[Path]:
     return candidate
 
 
+def _describe_callback(callback: Any) -> Dict[str, Any]:
+    module = getattr(callback, "__module__", None)
+    qualname = getattr(callback, "__qualname__", None)
+    name = getattr(callback, "__name__", None)
+    descriptor = repr(callback)
+    if module and qualname:
+        descriptor = f"{module}:{qualname}"
+    return {
+        "module": module,
+        "qualname": qualname,
+        "name": name,
+        "repr": descriptor,
+    }
+
+
+def _registry_hook_snapshot() -> Dict[str, List[Dict[str, Any]]]:
+    base_events = getattr(_asset_registry, "_HOOK_EVENTS", ())
+    snapshot: Dict[str, List[Dict[str, Any]]] = {event: [] for event in base_events}
+    registry_hooks = _asset_registry.iter_hooks()
+    for event, callbacks in registry_hooks.items():
+        snapshot[event] = [_describe_callback(cb) for cb in callbacks]
+    return snapshot
+
+
+def _asset_modder_specs() -> List[Dict[str, Any]]:
+    specs: List[Dict[str, Any]] = []
+    for name, spec in sorted(modder_hooks.hook_specs().items()):
+        if not (name.startswith("on_asset_") or name == "on_asset_saved"):
+            continue
+        specs.append(
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "ws_topic": spec.ws_topic,
+                "rest_event": spec.rest_event,
+                "payload": dict(spec.payload_fields),
+            }
+        )
+    return specs
+
+
+def _asset_modder_history(limit: int) -> List[Dict[str, Any]]:
+    limit = max(1, limit)
+    collected: List[Dict[str, Any]] = []
+    history = modder_hooks.history(limit=limit * 3)
+    # Walk newest→oldest to preserve most recent asset events, then flip back.
+    for entry in reversed(history):
+        event = entry.get("event")
+        if not isinstance(event, str):
+            continue
+        if not (event.startswith("on_asset_") or event == "on_asset_saved"):
+            continue
+        collected.append(entry)
+        if len(collected) >= limit:
+            break
+    collected.reverse()
+    return collected
+
+
 @router.get("/")
 def list_assets(
     asset_type: Optional[str] = Query(
         None, alias="type", description="Optional asset type filter."
     ),
+    asset_hash: Optional[str] = Query(
+        None, alias="hash", description="Filter by registered asset hash."
+    ),
+    tags: Optional[List[str]] = Query(
+        None,
+        alias="tags",
+        description="Require assets to include each tag (repeat or comma-separate).",
+    ),
+    single_tag: Optional[List[str]] = Query(
+        None,
+        alias="tag",
+        description="Alias for tags=…; repeat parameter for multiple tag filters.",
+    ),
+    search_text: Optional[str] = Query(
+        None,
+        alias="q",
+        description="Case-insensitive substring match across asset path and metadata.",
+    ),
     limit: int = Query(200, ge=1, le=1000),
 ):
     """List assets stored in the registry."""
+    tag_filters: List[str] = []
+    for collection in (tags or []) + (single_tag or []):
+        if not isinstance(collection, str):
+            continue
+        parts = [part.strip() for part in collection.split(",")]
+        tag_filters.extend([p for p in parts if p])
+    if tag_filters:
+        seen = set()
+        deduped: List[str] = []
+        for tag in tag_filters:
+            key = tag.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(tag)
+        tag_filters = deduped
+
     assets = [
         _normalize_asset_payload(dict(item))
-        for item in _asset_registry.list_assets(asset_type)
+        for item in _asset_registry.list_assets(
+            asset_type,
+            hash_value=asset_hash,
+            tags=tag_filters or None,
+            text=search_text,
+        )
     ]
     return {"ok": True, "items": assets[:limit], "total": len(assets)}
+
+
+@router.get("/{uid}/sidecar")
+def get_asset_sidecar(uid: str):
+    """Return the parsed sidecar JSON for a registered asset."""
+
+    if not _asset_registry.get_asset(uid):
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    path = _asset_registry.sidecar_path(uid)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Sidecar path unavailable.")
+    try:
+        payload = _asset_registry.read_sidecar(uid)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Sidecar file missing.")
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=500, detail=f"Sidecar JSON is invalid: {exc}"
+        ) from exc
+    return {
+        "ok": True,
+        "uid": uid,
+        "path": path.as_posix(),
+        "sidecar": payload,
+    }
 
 
 @router.get("/{uid}")
@@ -255,3 +379,28 @@ def delete_asset(
         move_to_trash(path)
     LOGGER.info("Trashed asset uid=%s", uid)
     return {"ok": True, "trashed": True}
+
+
+@router.get("/debug/hooks")
+def debug_asset_registry_hooks():
+    """Expose the current in-process AssetRegistry hook listeners."""
+    return {"ok": True, "hooks": _registry_hook_snapshot()}
+
+
+@router.get("/debug/modder-hooks")
+def debug_asset_modder_hooks():
+    """List modder hook specifications related to asset events."""
+    return {"ok": True, "hooks": _asset_modder_specs()}
+
+
+@router.get("/debug/history")
+def debug_asset_modder_history(
+    limit: int = Query(
+        15,
+        ge=1,
+        le=200,
+        description="Number of recent asset modder events to return.",
+    )
+):
+    """Return recent modder hook events filtered to asset-related envelopes."""
+    return {"ok": True, "items": _asset_modder_history(limit)}

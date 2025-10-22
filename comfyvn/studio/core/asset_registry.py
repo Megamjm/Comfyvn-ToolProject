@@ -11,13 +11,15 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 import wave
 from array import array
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from comfyvn.config.runtime_paths import thumb_cache_dir
+from comfyvn.core import modder_hooks
 
 try:  # thumbnail generation optional
     from PIL import (
@@ -71,6 +73,16 @@ class AssetRegistry(BaseRegistry):
     _thumb_executor_lock = threading.Lock()
     _pending_futures: set[Future] = set()
     _pending_lock = threading.Lock()
+    HOOK_ASSET_REGISTERED = "asset_registered"
+    HOOK_ASSET_META_UPDATED = "asset_meta_updated"
+    HOOK_ASSET_REMOVED = "asset_removed"
+    HOOK_SIDECAR_WRITTEN = "asset_sidecar_written"
+    _HOOK_EVENTS = (
+        HOOK_ASSET_REGISTERED,
+        HOOK_ASSET_META_UPDATED,
+        HOOK_ASSET_REMOVED,
+        HOOK_SIDECAR_WRITTEN,
+    )
 
     def __init__(
         self,
@@ -97,6 +109,9 @@ class AssetRegistry(BaseRegistry):
         self._provenance = ProvenanceRegistry(
             db_path=self.db_path, project_id=self.project_id
         )
+        self._hooks: dict[str, list[Callable[[Dict[str, Any]], None]]] = {
+            event: [] for event in self._HOOK_EVENTS
+        }
 
     @classmethod
     def _resolve_assets_root(cls, override: Path | str | None) -> Path:
@@ -163,7 +178,15 @@ class AssetRegistry(BaseRegistry):
     # ---------------------
     # Public query helpers
     # ---------------------
-    def list_assets(self, asset_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_assets(
+        self,
+        asset_type: Optional[str] = None,
+        *,
+        hash_value: Optional[str] = None,
+        tags: Optional[Iterable[str]] = None,
+        text: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         if asset_type:
             rows = self.fetchall(
                 f"SELECT id, uid, type, path_full, path_thumb, hash, bytes, meta "
@@ -176,7 +199,52 @@ class AssetRegistry(BaseRegistry):
                 f"FROM {self.TABLE} WHERE project_id = ? ORDER BY id DESC",
                 [self.project_id],
             )
-        return [self._format_asset_row(row) for row in rows]
+        assets = [self._format_asset_row(row) for row in rows]
+
+        if hash_value:
+            target_hash = str(hash_value).strip().lower()
+            assets = [
+                asset
+                for asset in assets
+                if str(asset.get("hash") or "").strip().lower() == target_hash
+            ]
+
+        if tags:
+            requested = {str(tag).strip().lower() for tag in tags if str(tag).strip()}
+            if requested:
+                filtered: List[Dict[str, Any]] = []
+                for asset in assets:
+                    meta_raw = asset.get("meta")
+                    meta = meta_raw if isinstance(meta_raw, dict) else {}
+                    tag_values: Iterable[str] = meta.get("tags") or []
+                    normalized = {str(t).strip().lower() for t in tag_values if t}
+                    if requested.issubset(normalized):
+                        filtered.append(asset)
+                assets = filtered
+
+        if text:
+            needle = str(text).strip().lower()
+
+            def _matches(candidate: Dict[str, Any]) -> bool:
+                if needle in str(candidate.get("path") or "").lower():
+                    return True
+                meta_payload = candidate.get("meta") or {}
+                if isinstance(meta_payload, dict):
+                    for value in meta_payload.values():
+                        if isinstance(value, str) and needle in value.lower():
+                            return True
+                        if isinstance(value, list):
+                            for item in value:
+                                if isinstance(item, str) and needle in item.lower():
+                                    return True
+                return False
+
+            assets = [asset for asset in assets if _matches(asset)]
+
+        if limit is not None and limit >= 0:
+            assets = assets[:limit]
+
+        return assets
 
     def get_asset(self, uid: str) -> Optional[Dict[str, Any]]:
         row = self.fetchone(
@@ -185,6 +253,215 @@ class AssetRegistry(BaseRegistry):
             [self.project_id, uid],
         )
         return self._format_asset_row(row) if row else None
+
+    def resolve_thumbnail_path(self, asset: Dict[str, Any] | str) -> Optional[Path]:
+        """Resolve the on-disk thumbnail path for an asset, if available."""
+
+        if isinstance(asset, str):
+            record = self.get_asset(asset)
+            if record is None:
+                return None
+        else:
+            record = asset
+        thumb_rel = record.get("thumb") if isinstance(record, dict) else None
+        if not thumb_rel:
+            return None
+        try:
+            thumb_name = Path(str(thumb_rel)).name
+        except Exception:
+            return None
+        candidate = (self.THUMB_ROOT / thumb_name).resolve()
+        return candidate if candidate.exists() else None
+
+    # ---------------------
+    # Hook management
+    # ---------------------
+    def add_hook(self, event: str, callback: Callable[[Dict[str, Any]], None]) -> None:
+        """Register ``callback`` for a supported registry event."""
+
+        if event not in self._hooks:
+            raise ValueError(f"Unsupported asset registry hook: {event}")
+        listeners = self._hooks[event]
+        if callback not in listeners:
+            listeners.append(callback)
+
+    def remove_hook(
+        self, event: str, callback: Callable[[Dict[str, Any]], None]
+    ) -> None:
+        """Detach ``callback`` from the registry event list."""
+
+        listeners = self._hooks.get(event)
+        if not listeners:
+            return
+        try:
+            listeners.remove(callback)
+        except ValueError:
+            return
+
+    def iter_hooks(self, event: Optional[str] = None) -> Dict[str, tuple]:
+        """Return a snapshot of registered hooks for debugging."""
+
+        if event:
+            if event not in self._hooks:
+                raise ValueError(f"Unsupported asset registry hook: {event}")
+            return {event: tuple(self._hooks[event])}
+        return {name: tuple(callbacks) for name, callbacks in self._hooks.items()}
+
+    def _emit_hook(self, event: str, payload: Dict[str, Any]) -> None:
+        listeners = list(self._hooks.get(event, ()))
+        for callback in listeners:
+            try:
+                callback(dict(payload))
+            except Exception as exc:  # pragma: no cover - defensive
+                LOGGER.warning(
+                    "AssetRegistry hook %s failed via %s: %s", event, callback, exc
+                )
+        modder_event_map = {
+            self.HOOK_ASSET_REGISTERED: (
+                "on_asset_saved",
+                "on_asset_registered",
+            ),
+            self.HOOK_ASSET_META_UPDATED: ("on_asset_meta_updated",),
+            self.HOOK_ASSET_REMOVED: ("on_asset_removed",),
+            self.HOOK_SIDECAR_WRITTEN: ("on_asset_sidecar_written",),
+        }
+        modder_targets = modder_event_map.get(event)
+        if modder_targets:
+            bridge_payload = dict(payload)
+            bridge_payload.setdefault("hook_event", event)
+            bridge_payload.setdefault("timestamp", time.time())
+            for modder_event in modder_targets:
+                try:
+                    modder_hooks.emit(modder_event, dict(bridge_payload))
+                except Exception:
+                    LOGGER.debug(
+                        "Modder hook emit failed for asset event %s -> %s",
+                        event,
+                        modder_event,
+                        exc_info=True,
+                    )
+
+    def sidecar_path(self, uid: str) -> Optional[Path]:
+        """Return the resolved sidecar path for ``uid`` if the asset exists."""
+
+        asset = self.get_asset(uid)
+        if asset is None:
+            return None
+        rel_path = Path(asset["path"])
+        return self._sidecar_path(rel_path)
+
+    def read_sidecar(self, uid: str) -> Dict[str, Any]:
+        """Read and return the JSON payload stored in the asset sidecar."""
+
+        asset = self.get_asset(uid)
+        if asset is None:
+            raise KeyError(f"Unknown asset uid: {uid}")
+        sidecar_path = self.sidecar_path(uid)
+        if sidecar_path is None or not sidecar_path.exists():
+            raise FileNotFoundError(f"Sidecar missing for uid: {uid}")
+        with sidecar_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def update_asset_meta(self, uid: str, meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist a new metadata payload for ``uid`` and rewrite its sidecar."""
+
+        asset = self.get_asset(uid)
+        if asset is None:
+            raise KeyError(f"Unknown asset uid: {uid}")
+        return self._save_asset_meta(asset, meta)
+
+    def bulk_update_tags(
+        self,
+        uids: Sequence[str],
+        *,
+        add_tags: Iterable[str] | None = None,
+        remove_tags: Iterable[str] | None = None,
+        license_tag: str | None = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Update tag collections (and optional license) for a set of assets."""
+
+        add_list = list(add_tags or [])
+        remove_keys = {str(tag).strip().lower() for tag in (remove_tags or []) if tag}
+        results: Dict[str, Dict[str, Any]] = {}
+        for uid in uids:
+            asset = self.get_asset(uid)
+            if asset is None:
+                LOGGER.warning("bulk_update_tags skipping unknown asset %s", uid)
+                continue
+            meta_payload = dict(asset.get("meta") or {})
+            tags = meta_payload.get("tags")
+            if not isinstance(tags, list):
+                tags = []
+            normalized = self._normalise_tags(tags)
+            existing_keys = {t.lower() for t in normalized}
+            if add_list:
+                for tag in add_list:
+                    candidate = str(tag).strip()
+                    if not candidate:
+                        continue
+                    key = candidate.lower()
+                    if key not in existing_keys:
+                        normalized.append(candidate)
+                        existing_keys.add(key)
+            if remove_keys:
+                normalized = [t for t in normalized if t.lower() not in remove_keys]
+                existing_keys = {t.lower() for t in normalized}
+            meta_payload["tags"] = normalized
+            if license_tag is not None:
+                if license_tag:
+                    meta_payload["license"] = license_tag
+                else:
+                    meta_payload.pop("license", None)
+            results[uid] = self._save_asset_meta(asset, meta_payload)
+        return results
+
+    def ensure_sidecar(self, uid: str, *, overwrite: bool = False) -> Path:
+        """Ensure the sidecar file representing ``uid`` exists on disk."""
+
+        asset = self.get_asset(uid)
+        if asset is None:
+            raise KeyError(f"Unknown asset uid: {uid}")
+        rel_path = Path(asset["path"])
+        sidecar_path = self._sidecar_path(rel_path)
+        if sidecar_path.exists() and not overwrite:
+            return sidecar_path
+        meta_payload = dict(asset.get("meta") or {})
+        meta_payload.setdefault("tags", [])
+        payload: Dict[str, Any] = {
+            "id": uid,
+            "uid": uid,
+            "type": asset.get("type"),
+            "path": asset["path"],
+            "hash": asset.get("hash"),
+            "bytes": asset.get("bytes"),
+            "meta": meta_payload,
+        }
+        license_tag = meta_payload.get("license")
+        if license_tag:
+            payload["license"] = license_tag
+        thumb_rel = asset.get("thumb")
+        if thumb_rel:
+            preview_kind = (
+                "waveform" if str(thumb_rel).lower().endswith(".json") else "thumbnail"
+            )
+            payload["preview"] = {"path": thumb_rel, "kind": preview_kind}
+        self._write_sidecar(rel_path, payload)
+        sidecar_path = self._sidecar_path(rel_path)
+        try:
+            sidecar_rel = sidecar_path.relative_to(self.ASSETS_ROOT).as_posix()
+        except ValueError:
+            sidecar_rel = sidecar_path.as_posix()
+        self._emit_hook(
+            self.HOOK_ASSET_META_UPDATED,
+            {
+                "uid": uid,
+                "type": asset.get("type"),
+                "meta": meta_payload,
+                "path": asset["path"],
+                "sidecar": sidecar_rel,
+            },
+        )
+        return sidecar_path
 
     # ---------------------
     # Registration helpers
@@ -320,6 +597,17 @@ class AssetRegistry(BaseRegistry):
             sidecar_rel = str(sidecar_path.relative_to(self.ASSETS_ROOT).as_posix())
         except ValueError:
             sidecar_rel = sidecar_path.as_posix()
+        self._emit_hook(
+            self.HOOK_ASSET_REGISTERED,
+            {
+                "uid": uid,
+                "type": asset_type,
+                "path": str(rel_path.as_posix()),
+                "meta": meta_payload,
+                "sidecar": sidecar_rel,
+                "bytes": size_bytes,
+            },
+        )
         return {
             "uid": uid,
             "type": asset_type,
@@ -383,7 +671,31 @@ class AssetRegistry(BaseRegistry):
                 except Exception:
                     LOGGER.debug("Failed to remove legacy sidecar for %s", uid)
 
+        try:
+            sidecar_rel = primary_sidecar.relative_to(self.ASSETS_ROOT).as_posix()
+        except Exception:
+            sidecar_rel = primary_sidecar.as_posix()
+        meta_payload: Dict[str, Any]
+        raw_meta = asset.get("meta")
+        if isinstance(raw_meta, dict):
+            meta_payload = dict(raw_meta)
+        elif raw_meta is None:
+            meta_payload = {}
+        else:
+            meta_payload = {"raw": raw_meta}
+
         LOGGER.info("Removed asset %s", uid)
+        self._emit_hook(
+            self.HOOK_ASSET_REMOVED,
+            {
+                "uid": uid,
+                "type": asset.get("type"),
+                "path": asset["path"],
+                "sidecar": sidecar_rel,
+                "meta": meta_payload,
+                "bytes": asset.get("bytes"),
+            },
+        )
         return True
 
     # ---------------------
@@ -418,6 +730,15 @@ class AssetRegistry(BaseRegistry):
                 json.dumps(canonical, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             LOGGER.debug("Legacy sidecar mirrored: %s", legacy_path)
+        self._emit_hook(
+            self.HOOK_SIDECAR_WRITTEN,
+            {
+                "uid": canonical.get("uid"),
+                "type": canonical.get("type"),
+                "sidecar": str(primary_path),
+                "rel_path": rel_path.as_posix(),
+            },
+        )
 
     def _format_asset_row(self, row: sqlite3.Row) -> Dict[str, Any]:
         payload = dict(row)
@@ -439,6 +760,68 @@ class AssetRegistry(BaseRegistry):
         except Exception:
             payload["sidecar"] = sidecar_path.as_posix()
         return payload
+
+    @staticmethod
+    def _normalise_tags(tags: Iterable[Any]) -> List[str]:
+        seen: set[str] = set()
+        ordered: List[str] = []
+        for tag in tags:
+            text = str(tag).strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(text)
+        return ordered
+
+    def _save_asset_meta(
+        self, asset: Dict[str, Any], meta_payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        meta_json = self.dumps(meta_payload)
+        with self.connection() as conn:
+            conn.execute(
+                f"UPDATE {self.TABLE} SET meta = ? WHERE project_id = ? AND uid = ?",
+                (meta_json, self.project_id, asset["uid"]),
+            )
+
+        payload: Dict[str, Any] = {
+            "uid": asset["uid"],
+            "id": asset["uid"],
+            "type": asset.get("type"),
+            "path": asset["path"],
+            "hash": asset.get("hash"),
+            "bytes": asset.get("bytes"),
+            "meta": meta_payload,
+        }
+        license_tag = meta_payload.get("license")
+        if license_tag:
+            payload["license"] = license_tag
+        thumb_rel = asset.get("thumb")
+        if thumb_rel:
+            kind = (
+                "waveform" if str(thumb_rel).lower().endswith(".json") else "thumbnail"
+            )
+            payload["preview"] = {"path": thumb_rel, "kind": kind}
+        rel_path = Path(asset["path"])
+        self._write_sidecar(rel_path, payload)
+        sidecar_path = self._sidecar_path(rel_path)
+        try:
+            sidecar_rel = sidecar_path.relative_to(self.ASSETS_ROOT).as_posix()
+        except ValueError:
+            sidecar_rel = sidecar_path.as_posix()
+        self._emit_hook(
+            self.HOOK_ASSET_META_UPDATED,
+            {
+                "uid": asset["uid"],
+                "type": asset.get("type"),
+                "meta": meta_payload,
+                "path": asset["path"],
+                "sidecar": sidecar_rel,
+            },
+        )
+        return meta_payload
 
     @classmethod
     def _get_thumbnail_executor(cls) -> ThreadPoolExecutor:

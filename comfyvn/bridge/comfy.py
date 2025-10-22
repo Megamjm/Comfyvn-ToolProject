@@ -6,9 +6,23 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 import httpx
+
+if TYPE_CHECKING:
+    from comfyvn.bridge.comfy_stream import PreviewCollector
 
 LOGGER = logging.getLogger(__name__)
 
@@ -234,6 +248,7 @@ class ComfyUIBridge:
         poll_interval: float = 1.5,
         timeout: float = 300.0,
         terminal_statuses: Optional[Sequence[str]] = None,
+        preview_collector: Optional["PreviewCollector"] = None,
     ) -> RenderResult:
         """Poll history until the prompt completes or fails."""
         deadline = time.monotonic() + timeout
@@ -243,11 +258,22 @@ class ComfyUIBridge:
             for status in (terminal_statuses or ("completed", "success", "finished"))
         }
         failure_states = {"failed", "error", "cancelled", "canceled"}
+        client = await self._ensure_client()
 
         while time.monotonic() < deadline:
             payload = await self.fetch_history(job.prompt_id)
             record = self._extract_history_record(payload, job.prompt_id)
             if record:
+                if preview_collector:
+                    try:
+                        await preview_collector.collect(
+                            client,
+                            record,
+                            prompt_id=job.prompt_id,
+                            base_url=self.base_url,
+                        )
+                    except Exception:  # pragma: no cover - defensive
+                        LOGGER.debug("Preview collection failed", exc_info=True)
                 status = str(record.get("status") or "").lower()
                 if status in desired:
                     artifacts = self._collect_artifacts(job.prompt_id, record)
@@ -270,14 +296,40 @@ class ComfyUIBridge:
         poll_interval: float = 1.5,
         timeout: float = 300.0,
         download_dir: Optional[Path] = None,
+        preview_dir: Optional[Path] = None,
+        preview_callback: Optional[
+            Callable[[Dict[str, Any]], Optional[Awaitable[None]]]
+        ] = None,
     ) -> RenderResult:
         """Submit, wait, and optionally download artifacts for a workflow."""
         job = await self.queue_prompt(workflow, context=context)
+        preview_collector: Optional["PreviewCollector"] = None
+        if preview_dir is not None:
+            try:
+                from comfyvn.bridge.comfy_stream import PreviewCollector
+            except Exception:  # pragma: no cover - optional path
+                PreviewCollector = None  # type: ignore
+            if PreviewCollector is not None:
+                try:
+                    base = preview_dir.expanduser().resolve()
+                except Exception:
+                    base = preview_dir
+                preview_collector = PreviewCollector(
+                    base / job.prompt_id, notifier=preview_callback
+                )
         result = await self.wait_for_result(
-            job, poll_interval=poll_interval, timeout=timeout
+            job,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            preview_collector=preview_collector,
         )
         if download_dir:
             await self.download_artifacts(result, download_dir)
+        if preview_collector:
+            try:
+                preview_collector.finalize(result)
+            except Exception:  # pragma: no cover - defensive
+                LOGGER.debug("Preview collector finalize failed", exc_info=True)
         return result
 
     async def download_artifacts(

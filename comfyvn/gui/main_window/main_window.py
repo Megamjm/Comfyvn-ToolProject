@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comfyvn.accessibility import accessibility_manager
 from comfyvn.config import runtime_paths
 from comfyvn.core.extensions_discovery import ExtensionMetadata, load_extension_metadata
 
@@ -32,6 +33,9 @@ from comfyvn.core.menu_runtime_bridge import menu_registry, reload_from_extensio
 from comfyvn.core.notifier import notifier
 from comfyvn.core.shortcut_registry import load_shortcuts_from_folder, shortcut_registry
 from comfyvn.core.theme_manager import apply_theme
+
+# Central space
+from comfyvn.gui.central import CenterRouter, VNChatPanel
 from comfyvn.gui.core.dock_manager import DockManager
 from comfyvn.gui.core.workspace_controller import WorkspaceController
 
@@ -46,10 +50,9 @@ from comfyvn.gui.main_window.recent_projects import load_recent, touch_recent
 from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
 from comfyvn.gui.panels.asset_browser import AssetBrowser
 from comfyvn.gui.panels.audio_panel import AudioPanel
-
-# Central space
-from comfyvn.gui.panels.central_space import CentralSpace
 from comfyvn.gui.panels.characters_panel import CharactersPanel
+from comfyvn.gui.panels.debug_integrations import DebugIntegrationsPanel
+from comfyvn.gui.panels.diffmerge_graph_panel import DiffmergeGraphPanel
 from comfyvn.gui.panels.imports_panel import ImportsPanel
 from comfyvn.gui.panels.notify_overlay import NotifyOverlay
 from comfyvn.gui.panels.player_persona_panel import PlayerPersonaPanel
@@ -98,6 +101,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         super().__init__()
         self.setWindowTitle("ComfyVN Studio")
         self.resize(1280, 800)
+        accessibility_manager.ensure_applied()
 
         # Services & controllers
         self.bridge = ServerBridge()
@@ -116,13 +120,19 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._timeline_registry = TimelineRegistry()
         self._extension_metadata: list[ExtensionMetadata] = []
 
-        # Central canvas (assets & editors dock around it)
-        self.central = CentralSpace(
+        # Central canvas — view-state router for viewer & designer
+        self.central_router = CenterRouter(
+            bridge=self.bridge,
+            character_registry=self._character_registry,
             open_assets=self.open_asset_browser,
             open_timeline=self.open_timeline,
             open_logs=self.open_log_hub,
+            parent=self,
         )
-        self.setCentralWidget(self.central)
+        self.setCentralWidget(self.central_router)
+        self.central_viewer = self.central_router.viewer_widget()
+        self.character_designer = self.central_router.designer_widget()
+        self.central_router.set_project_context(None)
 
         # Status bar (bottom, best practice) with server + script status
         self._status = QStatusBar()
@@ -278,6 +288,12 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         if isinstance(widget, CharactersPanel):
             widget.set_registry(self._character_registry)
 
+    def open_character_designer(self):
+        if hasattr(self, "central_router"):
+            self.central_router.activate("Character Designer")
+        if hasattr(self, "character_designer"):
+            self.character_designer.refresh()
+
     def open_player_persona_panel(self):
         dock = getattr(self, "_player_persona_panel", None)
         if dock is None:
@@ -334,6 +350,16 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock.setVisible(True)
         dock.raise_()
 
+    def open_vn_chat_panel(self):
+        dock = getattr(self, "_vn_chat_panel", None)
+        if dock is None:
+            panel = VNChatPanel(self.bridge, self)
+            dock = self.dockman.dock(panel, "VN Chat")
+            self._vn_chat_panel = dock
+            logger.debug("VN chat panel created")
+        dock.setVisible(True)
+        dock.raise_()
+
     def open_sprite_panel(self):
         dock = getattr(self, "_sprite_panel", None)
         if dock is None:
@@ -359,6 +385,20 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock.setVisible(True)
         dock.raise_()
 
+    def open_diffmerge_graph(self):
+        dock = getattr(self, "_diffmerge_graph", None)
+        if dock is None:
+            panel = DiffmergeGraphPanel(self.bridge.base_url, self)
+            dock = self.dockman.dock(panel, "Worldline Graph")
+            self._diffmerge_graph = dock
+            logger.debug("DiffMerge Graph panel created")
+        else:
+            widget = dock.widget()
+            if isinstance(widget, DiffmergeGraphPanel):
+                widget._load_worlds()
+        dock.setVisible(True)
+        dock.raise_()
+
     def open_telemetry(self):
         dock = getattr(self, "_telemetry_dock", None)
         if dock is None:
@@ -378,6 +418,19 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             logger.debug("Log Hub module created")
         dock.setVisible(True)
         dock.raise_()
+
+    def open_debug_integrations(self):
+        dock = getattr(self, "_debug_integrations", None)
+        if dock is None:
+            panel = DebugIntegrationsPanel(self.bridge.base)
+            dock = self.dockman.dock(panel, "Debug Integrations")
+            self._debug_integrations = dock
+            logger.debug("Debug Integrations panel created")
+        dock.setVisible(True)
+        dock.raise_()
+        widget = dock.widget()
+        if isinstance(widget, DebugIntegrationsPanel):
+            widget.refresh()
 
     def open_settings_panel(self):
         dock = getattr(self, "_settings_panel", None)
@@ -442,9 +495,13 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         logger.info("Closing project %s", self._current_project_path)
         self._current_project_path = None
         self._initialize_registries("default")
-        self._info_label.setText(
-            "Project closed. Use File → New or Recent to open another project."
-        )
+        if hasattr(self, "central_router"):
+            self.central_router.set_project_context(None)
+        if hasattr(self, "central_viewer"):
+            self.central_viewer.stop_viewer()
+            self.central_viewer.show_message(
+                "Project closed. Use File → New or Recent to open another project."
+            )
 
     def open_recent_projects(self) -> None:
         logger.info("Opening recent project list")
@@ -482,7 +539,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
 
         touch_recent(str(project_path))
         self._recent_projects = load_recent()
-        self._info_label.setText(f"Opened project: {project_id}")
+        if hasattr(self, "central_router"):
+            self.central_router.set_project_context(project_path, project_id=project_id)
+        if hasattr(self, "central_viewer"):
+            self.central_viewer.show_message(f"Opened project: {project_id}")
         self._refresh_project_panels()
 
     def _initialize_registries(self, project_id: str) -> None:
@@ -819,9 +879,13 @@ def main():
             return
         logger.info("Closing project %s", self._current_project_path)
         self._current_project_path = None
-        self._info_label.setText(
-            "Project closed. Use File → New or Recent to open another project."
-        )
+        if hasattr(self, "central_router"):
+            self.central_router.set_project_context(None)
+        if hasattr(self, "central_viewer"):
+            self.central_viewer.stop_viewer()
+            self.central_viewer.show_message(
+                "Project closed. Use File → New or Recent to open another project."
+            )
 
     def open_recent_projects(self):
         logger.info("Opening recent project list")
@@ -857,4 +921,9 @@ def main():
         touch_recent(str(project_path))
         self._recent_projects = load_recent()
         self._current_project_path = project_path
-        self._info_label.setText(f"Opened project: {project_path}")
+        if hasattr(self, "central_router"):
+            self.central_router.set_project_context(
+                project_path, project_id=project_path.name
+            )
+        if hasattr(self, "central_viewer"):
+            self.central_viewer.show_message(f"Opened project: {project_path}")

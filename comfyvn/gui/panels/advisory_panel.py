@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Dict, List, Optional
 
 import requests
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFormLayout,
     QGroupBox,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -23,306 +22,329 @@ from PySide6.QtWidgets import (
 
 from comfyvn.config.baseurl_authority import default_base_url
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("comfyvn.gui.advisory")
+
+
+_LEVEL_COLORS = {
+    "block": QColor("#f8d7da"),
+    "warn": QColor("#fff3cd"),
+    "info": QColor("#d1ecf1"),
+}
 
 
 class AdvisoryPanel(QWidget):
-    """Displays advisory, policy gate, and filter status."""
+    """Settings panel for liability acknowledgement and advisory pre-flight checks."""
 
     def __init__(self, base: str | None = None) -> None:
         super().__init__()
         self.base = (base or default_base_url()).rstrip("/")
+        self._findings_cache: List[Dict] = []
 
-        # Advisory log controls
-        self.filter_box = QComboBox(self)
-        self.filter_box.addItems(["All", "Unresolved", "Resolved"])
-        self.filter_box.currentIndexChanged.connect(self.refresh)
+        root = QVBoxLayout(self)
+        root.addWidget(self._build_gate_group())
+        root.addWidget(self._build_preflight_group(), 1)
+        root.addStretch(1)
 
-        refresh_btn = QPushButton("Refresh Logs", self)
-        refresh_btn.clicked.connect(self.refresh)
+        self._load_gate_status()
+        self._refresh_findings(fetch=True)
 
-        controls = QHBoxLayout()
-        controls.addWidget(self.filter_box)
-        controls.addWidget(refresh_btn)
-        controls.addStretch(1)
+    # ------------------------------------------------------------------
+    # Gate group
+    # ------------------------------------------------------------------
+    def _build_gate_group(self) -> QGroupBox:
+        self.gate_status_label = QLabel("Loading gate status…", self)
+        self.gate_status_label.setWordWrap(True)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(
-            ["ID", "Target", "Severity", "Message", "Resolved"]
-        )
-        self.table.horizontalHeader().setStretchLastSection(True)
-
-        self.status_label = QLabel("Advisory scans", self)
-        self.status_label.setWordWrap(True)
-
-        # Policy gate controls
-        self.policy_status_label = QLabel("Policy status unknown", self)
-        self.policy_status_label.setWordWrap(True)
-
-        self.override_checkbox = QCheckBox(
-            "Request override when evaluating exports", self
+        self.override_checkbox = QCheckBox("Request override during evaluation", self)
+        self.override_checkbox.setToolTip(
+            "When checked, the evaluation request records an override intent."
         )
 
         ack_button = QPushButton("Acknowledge Legal Terms…", self)
         ack_button.clicked.connect(self._acknowledge)
 
-        evaluate_button = QPushButton("Evaluate Export Action", self)
-        evaluate_button.clicked.connect(self._evaluate_export)
+        evaluate_button = QPushButton("Evaluate Selected Action", self)
+        evaluate_button.clicked.connect(self._evaluate_action)
 
-        policy_layout = QVBoxLayout()
-        policy_layout.addWidget(self.policy_status_label)
-        policy_layout.addWidget(self.override_checkbox)
-        policy_row = QHBoxLayout()
-        policy_row.addWidget(ack_button)
-        policy_row.addWidget(evaluate_button)
-        policy_row.addStretch(1)
-        policy_layout.addLayout(policy_row)
+        status_layout = QVBoxLayout()
+        status_layout.addWidget(self.gate_status_label)
+        status_layout.addWidget(self.override_checkbox)
 
-        policy_box = QGroupBox("Liability Gate")
-        policy_box.setLayout(policy_layout)
+        controls = QHBoxLayout()
+        controls.addWidget(ack_button)
+        controls.addWidget(evaluate_button)
+        controls.addStretch(1)
 
-        # Filter controls
-        self.filter_mode_box = QComboBox(self)
-        self.filter_mode_box.addItems(["sfw", "warn", "unrestricted"])
-        self.filter_mode_box.currentTextChanged.connect(self._set_filter_mode)
+        status_layout.addLayout(controls)
 
-        self.preview_tags_input = QLineEdit(self)
-        self.preview_tags_input.setPlaceholderText(
-            "Comma-separated tags (e.g. nsfw,violence)"
+        box = QGroupBox("Liability Gate", self)
+        box.setLayout(status_layout)
+        return box
+
+    # ------------------------------------------------------------------
+    # Pre-flight group
+    # ------------------------------------------------------------------
+    def _build_preflight_group(self) -> QGroupBox:
+        self.action_combo = QComboBox(self)
+        self.action_combo.addItem("Export Bundle", "export.bundle")
+        self.action_combo.addItem("Import Bundle", "import.bundle")
+        self.action_combo.addItem("Import Archive", "import.archive")
+        self.action_combo.currentIndexChanged.connect(
+            lambda _: self._refresh_findings(fetch=False)
         )
 
-        self.preview_nsfw_checkbox = QCheckBox("Mark sample as NSFW", self)
+        refresh_button = QPushButton("Refresh Findings", self)
+        refresh_button.clicked.connect(lambda: self._refresh_findings(fetch=True))
 
-        preview_button = QPushButton("Preview Filter Response", self)
-        preview_button.clicked.connect(self._preview_filter)
+        header_row = QHBoxLayout()
+        header_row.addWidget(QLabel("Action:", self))
+        header_row.addWidget(self.action_combo)
+        header_row.addStretch(1)
+        header_row.addWidget(refresh_button)
 
-        self.preview_result_label = QLabel("", self)
-        self.preview_result_label.setWordWrap(True)
+        self.findings_table = QTableWidget(0, 4, self)
+        self.findings_table.setHorizontalHeaderLabels(
+            ["Level", "Kind", "Message", "Target"]
+        )
+        self.findings_table.horizontalHeader().setStretchLastSection(True)
+        self.findings_table.setSelectionBehavior(QTableWidget.SelectRows)
 
-        filter_form = QFormLayout()
-        filter_form.addRow("Mode", self.filter_mode_box)
-        filter_form.addRow("Sample tags", self.preview_tags_input)
-        filter_form.addRow("", self.preview_nsfw_checkbox)
-        filter_form.addRow("", preview_button)
+        self.preflight_status_label = QLabel("No advisory findings loaded yet.", self)
+        self.preflight_status_label.setWordWrap(True)
 
-        filter_layout = QVBoxLayout()
-        filter_layout.addLayout(filter_form)
-        filter_layout.addWidget(self.preview_result_label)
+        layout = QVBoxLayout()
+        layout.addLayout(header_row)
+        layout.addWidget(self.findings_table, 1)
+        layout.addWidget(self.preflight_status_label)
 
-        filter_box = QGroupBox("Content Filters")
-        filter_box.setLayout(filter_layout)
+        box = QGroupBox("Import/Export Pre-flight", self)
+        box.setLayout(layout)
+        return box
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(policy_box)
-        layout.addWidget(filter_box)
-        layout.addLayout(controls)
-        layout.addWidget(self.table, 1)
-        layout.addWidget(self.status_label)
-
-        self._load_filter_mode()
-        self._load_policy_status()
-        self.refresh()
-
-    # ── Advisory logs ──────────────────────────────────────────────
-    def _get_logs(self, resolved: Optional[bool]) -> dict:
-        params = {}
-        if resolved is not None:
-            params["resolved"] = "true" if resolved else "false"
-        try:
-            resp = requests.get(
-                self.base + "/api/advisory/logs", params=params, timeout=3
-            )
-            if resp.status_code < 400:
-                return resp.json()
-            LOGGER.warning(
-                "Advisory logs request failed: %s %s", resp.status_code, resp.text
-            )
-        except Exception as exc:
-            LOGGER.error("Advisory logs request error: %s", exc)
-        return {}
-
-    def refresh(self) -> None:
-        index = self.filter_box.currentIndex()
-        resolved_filter = None
-        if index == 1:
-            resolved_filter = False
-        elif index == 2:
-            resolved_filter = True
-
-        payload = self._get_logs(resolved_filter)
-        items = payload.get("items") or []
-        self.table.setRowCount(len(items))
-        for row, item in enumerate(items):
-            self.table.setItem(row, 0, QTableWidgetItem(item.get("issue_id", "")))
-            self.table.setItem(row, 1, QTableWidgetItem(item.get("target_id", "")))
-            self.table.setItem(row, 2, QTableWidgetItem(item.get("severity", "")))
-            self.table.setItem(row, 3, QTableWidgetItem(item.get("message", "")))
-            self.table.setItem(
-                row, 4, QTableWidgetItem(str(item.get("resolved", False)))
-            )
-
-        self.status_label.setText(f"Advisory entries: {len(items)}")
-        self._load_policy_status()
-
-    # ── Policy gate hooks ──────────────────────────────────────────
-    def _load_policy_status(self) -> None:
+    # ------------------------------------------------------------------
+    # Gate handlers
+    # ------------------------------------------------------------------
+    def _load_gate_status(self) -> None:
         try:
             resp = requests.get(self.base + "/api/policy/status", timeout=3)
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - GUI runtime
             LOGGER.error("Policy status request failed: %s", exc)
-            self.policy_status_label.setText(f"Policy status unavailable: {exc}")
+            self.gate_status_label.setText(f"Policy status unavailable: {exc}")
             return
 
         if resp.status_code >= 400:
-            self.policy_status_label.setText(
+            LOGGER.warning("Policy status failed: %s %s", resp.status_code, resp.text)
+            self.gate_status_label.setText(
                 f"Policy status error: {resp.status_code} {resp.text}"
             )
-            LOGGER.warning("Policy status failed: %s %s", resp.status_code, resp.text)
             return
 
         data = resp.json()
         status = data.get("status", {})
-        requires_ack = status.get("requires_ack", False)
+        requires_ack = bool(status.get("requires_ack"))
         timestamp = status.get("ack_timestamp")
-        message = data.get("message", "")
+        override_enabled = bool(status.get("warn_override_enabled", True))
+        message = data.get("message") or (
+            "Legal acknowledgement required before continuing."
+            if requires_ack
+            else "Legal acknowledgement recorded; continue responsibly."
+        )
 
-        details = f"Requires acknowledgement: {'yes' if requires_ack else 'no'}"
-        if timestamp:
-            details += f" • acknowledged at {timestamp}"
-        self.policy_status_label.setText(f"{message}\n{details}")
+        summary = f"Requires acknowledgement: {'yes' if requires_ack else 'no'}" + (
+            f" • acknowledged at {timestamp}" if timestamp else ""
+        )
+        self.override_checkbox.setEnabled(override_enabled)
+        self.override_checkbox.setChecked(False)
+        self.gate_status_label.setText(f"{message}\n{summary}")
 
     def _acknowledge(self) -> None:
+        from PySide6.QtWidgets import (
+            QInputDialog,
+        )  # local import to avoid heavy startup
+
         user, ok = QInputDialog.getText(
-            self, "Acknowledge Legal Terms", "Enter your name or initials:"
+            self,
+            "Acknowledge Legal Terms",
+            "Enter your name or initials:",
         )
         if not ok:
             return
-        notes, _ = QInputDialog.getText(
-            self, "Optional Notes", "Add acknowledgement notes (optional):"
+        notes, ok_notes = QInputDialog.getText(
+            self,
+            "Optional Notes",
+            "Add acknowledgement notes (optional):",
         )
-        payload = {"user": user.strip() or "anonymous"}
-        if notes.strip():
+        payload: Dict[str, str] = {"user": user.strip() or "anonymous"}
+        if ok_notes and notes.strip():
             payload["notes"] = notes.strip()
         try:
             resp = requests.post(self.base + "/api/policy/ack", json=payload, timeout=5)
-        except Exception as exc:
-            LOGGER.error("Policy ack failed: %s", exc)
-            QMessageBox.warning(self, "Policy Gate", f"Acknowledgement failed: {exc}")
-            return
-        if resp.status_code >= 400:
+        except Exception as exc:  # pragma: no cover - GUI runtime
+            LOGGER.error("Policy acknowledgement failed: %s", exc)
             QMessageBox.warning(
                 self,
-                "Policy Gate",
-                f"Acknowledgement error: {resp.status_code} {resp.text}",
-            )
-            LOGGER.warning(
-                "Policy ack returned error %s: %s", resp.status_code, resp.text
+                "Liability Gate",
+                f"Acknowledgement failed: {exc}",
             )
             return
-        self._load_policy_status()
-        QMessageBox.information(self, "Policy Gate", "Acknowledgement recorded.")
+        if resp.status_code >= 400:
+            LOGGER.warning(
+                "Policy acknowledgement error %s: %s", resp.status_code, resp.text
+            )
+            QMessageBox.warning(
+                self,
+                "Liability Gate",
+                f"Acknowledgement error: {resp.status_code} {resp.text}",
+            )
+            return
+        QMessageBox.information(
+            self,
+            "Liability Gate",
+            "Acknowledgement recorded. Thank you.",
+        )
+        self._load_gate_status()
 
-    def _evaluate_export(self) -> None:
+    def _evaluate_action(self) -> None:
+        action = self.action_combo.currentData()
         payload = {
-            "action": "export.bundle",
+            "action": action or "export.bundle",
             "override": self.override_checkbox.isChecked(),
         }
         try:
             resp = requests.post(
                 self.base + "/api/policy/evaluate", json=payload, timeout=4
             )
-        except Exception as exc:
-            LOGGER.error("Policy evaluate failed: %s", exc)
-            QMessageBox.warning(self, "Policy Gate", f"Evaluation failed: {exc}")
-            return
-        if resp.status_code >= 400:
+        except Exception as exc:  # pragma: no cover - GUI runtime
+            LOGGER.error("Policy evaluation failed: %s", exc)
             QMessageBox.warning(
-                self, "Policy Gate", f"Evaluation error: {resp.status_code} {resp.text}"
-            )
-            LOGGER.warning(
-                "Policy evaluate returned error %s: %s", resp.status_code, resp.text
+                self,
+                "Liability Gate",
+                f"Evaluation failed: {exc}",
             )
             return
-        data = resp.json()
-        warnings = data.get("warnings") or []
-        allow = data.get("allow")
+        if resp.status_code >= 400:
+            LOGGER.warning(
+                "Policy evaluation error %s: %s", resp.status_code, resp.text
+            )
+            QMessageBox.warning(
+                self,
+                "Liability Gate",
+                f"Evaluation error: {resp.status_code} {resp.text}",
+            )
+            return
+        payload = resp.json()
+        warnings = payload.get("warnings") or []
+        allow = payload.get("allow")
         message = "\n".join(warnings) if warnings else "No warnings reported."
-        message = f"Allow: {allow}\n{message}"
-        QMessageBox.information(self, "Policy Gate Evaluation", message)
-
-    # ── Filter controls ────────────────────────────────────────────
-    def _set_filter_mode(self, mode: str) -> None:
-        if not mode:
-            return
-        try:
-            resp = requests.post(
-                self.base + "/api/policy/filters", json={"mode": mode}, timeout=4
-            )
-        except Exception as exc:
-            LOGGER.error("Set filter mode failed: %s", exc)
-            self.preview_result_label.setText(f"Failed to set mode: {exc}")
-            return
-        if resp.status_code >= 400:
-            LOGGER.warning(
-                "Filter mode change error %s: %s", resp.status_code, resp.text
-            )
-            self.preview_result_label.setText(
-                f"Filter mode error: {resp.status_code} {resp.text}"
-            )
-            return
-        self.preview_result_label.setText(f"Filter mode set to {mode}")
-
-    def _preview_filter(self) -> None:
-        tags = [
-            t.strip() for t in self.preview_tags_input.text().split(",") if t.strip()
-        ]
-        item = {
-            "id": "sample",
-            "meta": {
-                "tags": tags,
-            },
-        }
-        if self.preview_nsfw_checkbox.isChecked():
-            item["meta"]["nsfw"] = True
-        payload = {"items": [item], "mode": self.filter_mode_box.currentText()}
-        try:
-            resp = requests.post(
-                self.base + "/api/policy/filter-preview", json=payload, timeout=4
-            )
-        except Exception as exc:
-            LOGGER.error("Filter preview failed: %s", exc)
-            self.preview_result_label.setText(f"Filter preview error: {exc}")
-            return
-        if resp.status_code >= 400:
-            LOGGER.warning(
-                "Filter preview returned error %s: %s", resp.status_code, resp.text
-            )
-            self.preview_result_label.setText(
-                f"Filter preview error: {resp.status_code} {resp.text}"
-            )
-            return
-        data = resp.json()
-        warnings = data.get("warnings") or []
-        flagged = data.get("flagged") or []
-        self.preview_result_label.setText(
-            f"Allowed: {len(data.get('allowed') or [])}, Flagged: {len(flagged)}, Warnings: {warnings}"
+        QMessageBox.information(
+            self,
+            "Liability Gate Evaluation",
+            f"Allow: {allow}\n{message}",
         )
 
-    def _load_filter_mode(self) -> None:
+    # ------------------------------------------------------------------
+    # Findings helpers
+    # ------------------------------------------------------------------
+    def _refresh_findings(self, *, fetch: bool) -> None:
+        if fetch:
+            self._findings_cache = self._load_findings()
+        filtered = self._filter_findings(self._findings_cache)
+        self._populate_table(filtered)
+        self._update_status_label(filtered)
+
+    def _load_findings(self) -> List[Dict]:
         try:
-            resp = requests.get(self.base + "/api/policy/filters", timeout=3)
-        except Exception as exc:
-            LOGGER.error("Fetch filter mode failed: %s", exc)
-            return
+            resp = requests.get(self.base + "/api/advisory/logs", timeout=4)
+        except Exception as exc:  # pragma: no cover - GUI runtime
+            LOGGER.error("Advisory logs request failed: %s", exc)
+            self.preflight_status_label.setText(
+                f"Failed to refresh advisory logs: {exc}"
+            )
+            return []
         if resp.status_code >= 400:
-            LOGGER.warning(
-                "Fetch filter mode error %s: %s", resp.status_code, resp.text
+            LOGGER.warning("Advisory logs error %s: %s", resp.status_code, resp.text)
+            self.preflight_status_label.setText(
+                f"Advisory logs error: {resp.status_code} {resp.text}"
+            )
+            return []
+        payload = resp.json()
+        return list(payload.get("items") or [])
+
+    def _filter_findings(self, items: List[Dict]) -> List[Dict]:
+        scope = self.action_combo.currentData() or ""
+        if not scope:
+            return items
+        filtered: List[Dict] = []
+        for item in items:
+            detail = item.get("detail") if isinstance(item.get("detail"), dict) else {}
+            source = str(detail.get("source") or "").lower()
+            if scope.lower() in source:
+                filtered.append(item)
+                continue
+            target = str(item.get("target_id") or "").lower()
+            if scope.startswith("export") and "export" in source:
+                filtered.append(item)
+                continue
+            if scope.startswith("import") and "import" in source:
+                filtered.append(item)
+                continue
+            if scope.startswith("import") and "import" in target:
+                filtered.append(item)
+                continue
+            if scope.startswith("export") and "export" in target:
+                filtered.append(item)
+        return filtered
+
+    def _populate_table(self, findings: List[Dict]) -> None:
+        self.findings_table.setRowCount(len(findings))
+        for row, item in enumerate(findings):
+            level = self._to_level(item.get("severity"))
+            self._set_item(row, 0, level.upper())
+            self._set_item(row, 1, item.get("kind") or "")
+            self._set_item(row, 2, item.get("message") or "")
+            self._set_item(row, 3, item.get("target_id") or "")
+            self._color_row(row, level)
+
+    def _set_item(self, row: int, column: int, value: str) -> None:
+        item = QTableWidgetItem(str(value or ""))
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        self.findings_table.setItem(row, column, item)
+
+    def _color_row(self, row: int, level: str) -> None:
+        color = _LEVEL_COLORS.get(level)
+        if not color:
+            return
+        for col in range(self.findings_table.columnCount()):
+            cell = self.findings_table.item(row, col)
+            if cell:
+                cell.setBackground(color)
+
+    def _update_status_label(self, findings: List[Dict]) -> None:
+        if not findings:
+            self.preflight_status_label.setText(
+                "No advisory findings recorded for this action."
             )
             return
-        data = resp.json()
-        mode = (data.get("mode") or "sfw").lower()
-        idx = self.filter_mode_box.findText(mode)
-        if idx >= 0:
-            self.filter_mode_box.blockSignals(True)
-            self.filter_mode_box.setCurrentIndex(idx)
-            self.filter_mode_box.blockSignals(False)
+        blockers = [f for f in findings if self._to_level(f.get("severity")) == "block"]
+        warnings = [f for f in findings if self._to_level(f.get("severity")) == "warn"]
+        if blockers:
+            self.preflight_status_label.setText(
+                f"Export blocked until blockers are resolved ({len(blockers)} finding(s))."
+            )
+        elif warnings:
+            self.preflight_status_label.setText(
+                f"Warnings present ({len(warnings)} finding(s)); review before continuing."
+            )
+        else:
+            self.preflight_status_label.setText(
+                "Only informational advisory entries recorded."
+            )
+
+    @staticmethod
+    def _to_level(severity: Optional[str]) -> str:
+        sev = (severity or "").lower()
+        if sev in {"error", "critical", "block"}:
+            return "block"
+        if sev == "warn":
+            return "warn"
+        return "info"

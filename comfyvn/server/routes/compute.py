@@ -4,22 +4,17 @@ from __future__ import annotations
 
 import platform
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Request
 
 from comfyvn.compute.advisor import choose_device
-from comfyvn.compute.providers import ProviderRegistry, load_seed_from_config
+from comfyvn.compute.providers import get_default_registry
 from comfyvn.server.system_metrics import collect_system_metrics
 
 router = APIRouter(prefix="/api", tags=["Compute"])
 
-_STORAGE_PATH = Path("config/compute_providers.json")
-_REGISTRY = ProviderRegistry(
-    storage_path=_STORAGE_PATH,
-    seed=load_seed_from_config(),
-)
+_REGISTRY = get_default_registry()
 
 
 def _cpu_entry(metrics: Dict[str, Any]) -> Dict[str, Any]:

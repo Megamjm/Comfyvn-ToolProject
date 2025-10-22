@@ -16,9 +16,12 @@ from typing import Dict, Iterable, List, Optional
 from comfyvn.core.file_importer import FileImporter, log_license_issues
 from comfyvn.core.normalizer import NormalizerResult, normalize_tree
 from comfyvn.importers import ALL_IMPORTERS, get_importer
+from comfyvn.policy.enforcer import policy_enforcer
 from comfyvn.server.core.external_extractors import extractor_manager
-from comfyvn.server.core.translation_pipeline import (build_translation_bundle,
-                                                      plan_remix_tasks)
+from comfyvn.server.core.translation_pipeline import (
+    build_translation_bundle,
+    plan_remix_tasks,
+)
 
 logger = logging.getLogger(__name__)
 _ALLOWED_ROOTS = {"scenes", "characters", "assets", "timelines", "licenses"}
@@ -52,6 +55,7 @@ class ImportSummary:
     translation: Dict[str, object] = field(default_factory=dict)
     remix: Dict[str, object] = field(default_factory=dict)
     advisories: List[Dict[str, object]] = field(default_factory=list)
+    policy_enforcement: Dict[str, object] = field(default_factory=dict)
     raw_path: Optional[str] = None
     extracted_path: Optional[str] = None
     converted_path: Optional[str] = None
@@ -78,6 +82,7 @@ class ImportSummary:
             "translation": self.translation,
             "remix": self.remix,
             "advisories": self.advisories,
+            "policy_enforcement": self.policy_enforcement,
             "raw_path": self.raw_path,
             "extracted_path": self.extracted_path,
             "converted_path": self.converted_path,
@@ -548,6 +553,70 @@ def import_vn_package(
         summary.licenses,
         import_kind="vn",
     )
+
+    scenes_payload: Dict[str, Dict[str, object]] = {}
+    scene_sources: Dict[str, str] = {}
+    for scene_id in summary.scenes:
+        path = scenes_dir / f"{scene_id}.json"
+        if path.exists():
+            try:
+                scenes_payload[scene_id] = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            scene_sources[scene_id] = path.as_posix()
+
+    characters_payload: Dict[str, Dict[str, object]] = {}
+    for char_id in summary.characters:
+        path = characters_dir / f"{char_id}.json"
+        if path.exists():
+            try:
+                characters_payload[char_id] = json.loads(
+                    path.read_text(encoding="utf-8")
+                )
+            except json.JSONDecodeError:
+                continue
+
+    assets_payload: List[Dict[str, object]] = []
+    for rel_path in summary.assets:
+        asset_path = assets_dir / rel_path
+        assets_payload.append(
+            {
+                "path": rel_path,
+                "source": asset_path.as_posix(),
+                "exists": asset_path.exists(),
+            }
+        )
+
+    project_id = None
+    if summary.manifest and isinstance(summary.manifest, dict):
+        project_id = summary.manifest.get("project_id") or summary.manifest.get(
+            "project"
+        )
+
+    bundle_payload = {
+        "project_id": project_id,
+        "timeline_id": summary.timelines[0] if summary.timelines else None,
+        "scenes": scenes_payload,
+        "scene_sources": scene_sources,
+        "characters": characters_payload,
+        "licenses": summary.licenses,
+        "assets": assets_payload,
+        "metadata": {
+            "source": "import.vn",
+            "import_id": summary.import_id,
+            "adapter": summary.adapter,
+            "extractor": summary.extractor,
+        },
+    }
+    enforcement = policy_enforcer.enforce(
+        "import.vn", bundle_payload, source="import.vn"
+    )
+    if not enforcement.allow:
+        raise VNImportError(
+            "policy enforcement blocked: "
+            + "; ".join(item.get("message", "") for item in enforcement.blocked)
+        )
+    summary.policy_enforcement = enforcement.to_dict()
 
     summary_path = session.summary_path
     summary.summary_path = summary_path.as_posix()

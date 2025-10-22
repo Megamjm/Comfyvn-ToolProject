@@ -194,6 +194,7 @@ class HardenedComfyBridge:
         self._registry = lora_registry or CharacterLoRARegistry()
         self._config: Dict[str, Any] = {}
         self._feature_enabled = False
+        self._preview_enabled = False
         self._output_dir = self.DEFAULT_OUTPUT_DIR
         self.reload()
 
@@ -204,6 +205,7 @@ class HardenedComfyBridge:
         self._feature_enabled = bool(
             features.get("enable_comfy_bridge_hardening", False)
         )
+        self._preview_enabled = bool(features.get("enable_comfy_preview_stream", False))
         integrations = self._config.get("integrations") or {}
         output_dir = integrations.get("comfyui_output_dir")
         if output_dir:
@@ -218,6 +220,21 @@ class HardenedComfyBridge:
     def enabled(self) -> bool:
         return self._feature_enabled
 
+    def character_loras(self, characters: Sequence[str]) -> List[LoRAEntry]:
+        """Return deduplicated LoRA entries for the provided characters."""
+        self.reload()
+        entries: List[LoRAEntry] = []
+        for character_id in characters:
+            if not character_id:
+                continue
+            entries.extend(self._registry.load(character_id))
+        return _dedupe_loras(entries)
+
+    def build_overrides(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Expose override collection for callers that need to inspect the payload."""
+        self.reload()
+        return self._collect_overrides(payload)
+
     def submit(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Submit a workflow with overrides applied, returning the hardened payload."""
         self.reload()
@@ -231,6 +248,24 @@ class HardenedComfyBridge:
         workflow = _apply_overrides(workflow_spec, overrides)
 
         bridge_payload = self._build_bridge_payload(payload, workflow, overrides)
+        if self._preview_enabled:
+            preview_dir = payload.get("preview_dir") or self._preview_root()
+            bridge_payload["preview_stream"] = True
+            bridge_payload["preview_dir"] = str(preview_dir)
+            if "resume_on_error" in payload:
+                bridge_payload["resume_on_error"] = bool(payload["resume_on_error"])
+            else:
+                bridge_payload["resume_on_error"] = True
+            if "resume_attempts" in payload:
+                try:
+                    bridge_payload["resume_attempts"] = int(payload["resume_attempts"])
+                except (TypeError, ValueError):
+                    bridge_payload["resume_attempts"] = 2
+            else:
+                bridge_payload.setdefault("resume_attempts", 2)
+        else:
+            bridge_payload.pop("preview_stream", None)
+            bridge_payload.pop("preview_dir", None)
         try:
             result = self._core.submit(bridge_payload)
         except ComfyBridgeError as exc:
@@ -307,6 +342,16 @@ class HardenedComfyBridge:
             seen.add(resolved)
             deduped.append(resolved)
         return deduped
+
+    def _preview_root(self) -> Path:
+        integrations = self._config.get("integrations") or {}
+        preview_dir = integrations.get("comfy_preview_dir")
+        if preview_dir:
+            try:
+                return Path(preview_dir).expanduser()
+            except Exception:  # pragma: no cover - defensive
+                return Path(preview_dir)
+        return Path("data/cache/comfy_previews")
 
     def _collect_overrides(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         overrides: Dict[str, Any] = {}

@@ -1,0 +1,29 @@
+{
+  "generated": "2024-10-21T00:00:00Z",
+  "items": [
+    {
+      "id": "render_manager",
+      "name": "Render Manager",
+      "summary": "Advanced render pipeline controls for batch renders.",
+      "version": "0.2.0",
+      "trust": "verified",
+      "tags": ["rendering", "pipeline"],
+      "permissions": ["ui.panels"],
+      "hooks": ["on_scene_enter"],
+      "manifest": "../extensions/render_manager/manifest.json",
+      "authors": ["ComfyVN Core Team"]
+    },
+    {
+      "id": "debug_toolkit",
+      "name": "Debug Toolkit",
+      "summary": "Community toolkit for inspecting assets and modder hooks.",
+      "version": "0.1.0",
+      "trust": "unverified",
+      "tags": ["debugging", "modder"],
+      "permissions": ["assets.read", "hooks.listen"],
+      "hooks": ["on_asset_saved", "on_scene_enter"],
+      "authors": ["Community"],
+      "package": null
+    }
+  ]
+}

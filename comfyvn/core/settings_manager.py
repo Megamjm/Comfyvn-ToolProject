@@ -18,6 +18,9 @@ DEFAULTS = {
     "developer": {"verbose": True, "toasts": True, "file_only": False},
     "ui": {"menu_sort_mode": "load_order"},
     "server": {"local_port": 8001},
+    "features": {
+        "silly_compat_offload": False,
+    },
     "integrations": {
         "sillytavern": {
             "base_url": "http://127.0.0.1:8000",
@@ -31,6 +34,44 @@ DEFAULTS = {
         "ack_legal_v1": False,
         "ack_timestamp": None,
         "warn_override_enabled": True,
+    },
+    "accessibility": {
+        "font_scale": 1.0,
+        "color_filter": "none",
+        "high_contrast": False,
+        "subtitles_enabled": True,
+    },
+    "input_map": {
+        "bindings": {
+            "viewer.advance": {
+                "label": "Advance / Continue",
+                "primary": "Space",
+                "secondary": "Right",
+                "gamepad": "button_a",
+                "category": "viewer",
+            },
+            "viewer.back": {
+                "label": "Backlog / Previous",
+                "primary": "Backspace",
+                "secondary": "Left",
+                "gamepad": "button_b",
+                "category": "viewer",
+            },
+            "viewer.skip": {
+                "label": "Toggle Skip",
+                "primary": "Ctrl+F",
+                "secondary": None,
+                "gamepad": "button_x",
+                "category": "viewer",
+            },
+            "viewer.menu": {
+                "label": "Viewer Menu",
+                "primary": "Escape",
+                "secondary": None,
+                "gamepad": "button_start",
+                "category": "viewer",
+            },
+        }
     },
     "filters": {
         "content_mode": "sfw",  # sfw | warn | unrestricted

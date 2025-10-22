@@ -1,0 +1,43 @@
+{
+  "providers": [
+    {
+      "id": "local",
+      "name": "Local ComfyUI",
+      "kind": "local",
+      "service": "comfyui",
+      "base_url": "http://127.0.0.1:8188",
+      "active": true,
+      "priority": 0,
+      "meta": {
+        "min_vram_gb": null,
+        "cost": {
+          "hourly_usd": 0.0,
+          "billing_increment_minutes": 0
+        },
+        "supports_large_assets": true,
+        "supports_persistent_storage": true,
+        "supports_long_running": true,
+        "supports_short_burst": true,
+        "cost_tier": 0,
+        "gpu": "auto",
+        "auth_fields": [],
+        "policy_hints": {
+          "voice_synthesis": "Use local GPU when latency sensitive and VRAM requirements fit available hardware.",
+          "cg_batch": "Validate local VRAM/utilization before committing long CG batches.",
+          "translation": "Local CPU fallback acceptable for translation-only pipelines."
+        },
+        "preferred_workloads": [
+          "voice_synthesis",
+          "translation"
+        ]
+      },
+      "config": {},
+      "last_health": {
+        "ok": true,
+        "ts": null
+      },
+      "created_at": null,
+      "updated_at": null
+    }
+  ]
+}

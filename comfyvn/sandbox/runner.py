@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 import os
 import signal
 import sys
@@ -12,14 +11,47 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtGui import QAction
 
+from comfyvn.config import feature_flags
+from comfyvn.security.sandbox import apply_network_policy
+
 DEFAULTS = {
     "cpu_secs": int(os.getenv("SANDBOX_CPU_SECS", "10")),
     "wall_secs": int(os.getenv("SANDBOX_WALL_SECS", "15")),
     "mem_mb": int(os.getenv("SANDBOX_MEM_MB", "512")),
     "network": os.getenv("SANDBOX_NETWORK", "0") == "1",
+    "network_allow": tuple(
+        item.strip()
+        for item in os.getenv("SANDBOX_NETWORK_ALLOW", "").split(",")
+        if item.strip()
+    ),
     "fs_roots": os.getenv("SANDBOX_FS_ROOTS", "./exports,./data/assets").split(","),
     "env_allow": os.getenv("SANDBOX_ENV_ALLOW", "PATH,HOME").split(","),
 }
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _normalize_allowlist(value: Any) -> List[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        cand = value.strip()
+        return [cand] if cand else []
+    if isinstance(value, (list, tuple, set)):
+        out = []
+        for entry in value:
+            cand = str(entry).strip()
+            if cand:
+                out.append(cand)
+        return out
+    cand = str(value).strip()
+    return [cand] if cand else []
 
 
 def _apply_limits(cpu_secs: int, wall_secs: int, mem_mb: int):
@@ -41,19 +73,6 @@ def _apply_limits(cpu_secs: int, wall_secs: int, mem_mb: int):
         signal.alarm(max(1, int(wall_secs)))
     except Exception:
         pass
-
-
-def _patch_network(enable: bool):
-    if enable:
-        return
-    import socket
-
-    def _block(*a, **kw):
-        raise RuntimeError("network disabled by sandbox")
-
-    socket.socket = _block  # type: ignore
-    socket.create_connection = _block  # type: ignore
-    socket.getaddrinfo = _block  # type: ignore
 
 
 def _patch_subprocess():
@@ -107,12 +126,19 @@ def run(
     cpu = int(p.get("cpu_secs", DEFAULTS["cpu_secs"]))
     wall = int(p.get("wall_secs", DEFAULTS["wall_secs"]))
     mem = int(p.get("mem_mb", DEFAULTS["mem_mb"]))
-    net = bool(p.get("network", DEFAULTS["network"]))
+    net = _as_bool(p.get("network", DEFAULTS["network"]))
+    net_allow = _normalize_allowlist(p.get("network_allow", DEFAULTS["network_allow"]))
     roots = list(p.get("fs_roots", DEFAULTS["fs_roots"]))
     env_allow = list(p.get("env_allow", DEFAULTS["env_allow"]))
 
     _apply_limits(cpu, wall, mem)
-    _patch_network(net)
+    guard_enabled = feature_flags.is_enabled(
+        "enable_security_sandbox_guard", default=True
+    )
+    if guard_enabled:
+        apply_network_policy(net, net_allow)
+    else:
+        apply_network_policy(net, ["*"] if net else [])
     _patch_subprocess()
     _patch_open(roots)
     _scrub_env(env_allow)

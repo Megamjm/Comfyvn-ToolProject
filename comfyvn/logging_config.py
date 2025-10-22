@@ -69,5 +69,23 @@ def init_logging(
     stream_handler.setFormatter(formatter)
     root_logger.addHandler(stream_handler)
 
+    security_logger = logging.getLogger("comfyvn.security")
+    security_logger.setLevel(logging.INFO)
+    security_logger.propagate = False
+    security_path = base / "security.log"
+    if not any(
+        getattr(h, "_comfyvn_security", False) for h in security_logger.handlers
+    ):
+        security_handler = RotatingFileHandler(
+            str(security_path),
+            maxBytes=1_000_000,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        security_handler.setFormatter(logging.Formatter("%(message)s"))
+        security_handler._comfyvn_security = True  # type: ignore[attr-defined]
+        security_logger.addHandler(security_handler)
+
+    os.environ.setdefault("COMFYVN_SECURITY_LOG_FILE", str(security_path))
     os.environ.setdefault("COMFYVN_LOG_FILE", str(log_path))
     return log_path

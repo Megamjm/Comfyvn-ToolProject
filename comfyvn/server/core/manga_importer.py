@@ -11,10 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from comfyvn.core.advisory_hooks import BundleContext
-from comfyvn.core.advisory_hooks import scan as scan_bundle
-from comfyvn.core.file_importer import (FileImporter, ImportSession,
-                                        log_license_issues)
+from comfyvn.core.file_importer import FileImporter, ImportSession, log_license_issues
+from comfyvn.policy.enforcer import policy_enforcer
 from comfyvn.server.core.translation_pipeline import build_translation_bundle
 
 LOGGER = logging.getLogger(__name__)
@@ -268,17 +266,27 @@ def import_manga_archive(
     asset_pairs: List[Tuple[str, Optional[Path]]] = [
         (rel_path, assets_root / Path(rel_path)) for rel_path in summary.assets
     ]
-    scan_bundle(
-        BundleContext(
-            project_id=project_id,
-            timeline_id=summary.timelines[0] if summary.timelines else None,
-            scenes=scenes_for_scan,
-            scene_sources=scene_sources,
-            licenses=summary.licenses,
-            assets=asset_pairs,
-            metadata={"source": "import.manga", "import_id": summary.import_id},
-        )
+    bundle_payload = {
+        "project_id": project_id,
+        "timeline_id": summary.timelines[0] if summary.timelines else None,
+        "scenes": scenes_for_scan,
+        "scene_sources": {key: path.as_posix() for key, path in scene_sources.items()},
+        "licenses": summary.licenses,
+        "assets": [
+            {"path": rel, "source": src.as_posix() if src else None}
+            for rel, src in asset_pairs
+        ],
+        "metadata": {"source": "import.manga", "import_id": summary.import_id},
+    }
+    enforcement = policy_enforcer.enforce(
+        "import.manga", bundle_payload, source="import.manga"
     )
+    if not enforcement.allow:
+        raise MangaImportError(
+            "policy enforcement blocked: "
+            + "; ".join(item.get("message", "") for item in enforcement.blocked)
+        )
+    summary.metadata["policy_enforcement"] = enforcement.to_dict()
 
     summary_path = session.summary_path
     summary.summary_path = summary_path.as_posix()

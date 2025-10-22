@@ -1,0 +1,26 @@
+{
+  "id": "sample-hello",
+  "name": "Sample Hello",
+  "version": "0.1.0",
+  "description": "Demonstration extension that exposes a hello API and Studio panel.",
+  "enabled": true,
+  "routes": [
+    {
+      "path": "/hello",
+      "methods": ["GET"],
+      "entry": "backend.py",
+      "callable": "hello",
+      "summary": "Return a greeting from the sample extension.",
+      "expose": "global"
+    }
+  ],
+  "ui": {
+    "panels": [
+      {
+        "slot": "studio.sidebar.right",
+        "label": "Hello Panel",
+        "path": "ui/panel.js"
+      }
+    ]
+  }
+}

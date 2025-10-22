@@ -1,33 +1,31 @@
 from __future__ import annotations
 
-import json
-import logging
-from typing import Any, Optional
+from typing import Dict, Iterable, List, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
+    QMessageBox,
     QPushButton,
-    QTextEdit,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+from comfyvn.gui.debug.runner_panel import RunnerPanel
+from comfyvn.gui.editors.node_editor import NodeEditor
+from comfyvn.gui.editors.timeline_editor import TimelineEditor
+from comfyvn.gui.services.collab_client import CollabClient, SceneCollabAdapter
 from comfyvn.gui.services.server_bridge import ServerBridge
-
-LOGGER = logging.getLogger(__name__)
 
 
 class TimelineView(QWidget):
     """
-    Read-only timeline browser that inspects payloads from `/api/timelines`.
+    Integrated scenario authoring workspace.
 
-    Lists timelines by name and renders the raw JSON of the selected entry in
-    the inspector. Provides a mock fallback when the endpoint is missing so the
-    GUI maintains parity with the other Studio views during development.
+    Combines the node editor, multi-track timeline editor, and the scenario runner
+    stepper into a single Studio view.
     """
 
     def __init__(
@@ -36,144 +34,145 @@ class TimelineView(QWidget):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.api = api_client or ServerBridge()
-        self._items: list[dict[str, Any]] = []
+        self.bridge = api_client or ServerBridge()
+        self.collab_client = CollabClient()
+        self.collab_adapter = None
+        self._timeline_cache: List[Dict[str, object]] = []
+        self._scene_cache: Optional[Dict[str, object]] = None
 
-        self.list_widget = QListWidget(self)
-        self.list_widget.setSelectionMode(QListWidget.SingleSelection)
-        self.list_widget.currentRowChanged.connect(self._on_selection_changed)
+        self.node_editor = NodeEditor(self)
+        self.timeline_editor = TimelineEditor(self)
+        self.runner_panel = RunnerPanel(self.bridge, self)
+        # Collab adapter will be initialised after UI widgets are created
+        self.runner_panel.set_scene_provider(self.node_editor.scene)
 
-        self.detail = QTextEdit(self)
-        self.detail.setObjectName("timelineDetailInspector")
-        self.detail.setReadOnly(True)
-        self.detail.setLineWrapMode(QTextEdit.NoWrap)
+        self._build_ui()
+        self._connect_signals()
 
-        self.status_label = QLabel(self)
-        self.status_label.setWordWrap(True)
-
-        self._refresh_button = QPushButton("Refresh", self)
-        self._refresh_button.clicked.connect(self.refresh)
-
-        actions_row = QHBoxLayout()
-        actions_row.addStretch(1)
-        actions_row.addWidget(self._refresh_button)
-
+    # ------------------------------------------------------------------
+    def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addLayout(actions_row)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        split_row = QHBoxLayout()
-        split_row.addWidget(self.list_widget, 1)
-        split_row.addWidget(self.detail, 2)
-        layout.addLayout(split_row, 1)
+        header = QHBoxLayout()
+        title = QLabel("Scenario Workshop — Nodes · Timeline · Runner", self)
+        title.setStyleSheet("font-weight: 600;")
+        header.addWidget(title)
+        header.addStretch(1)
+        self.collab_label = QLabel("Collab: idle", self)
+        self.collab_label.setObjectName("collabStatusLabel")
+        self.collab_label.setStyleSheet("color: #666; font-size: 11px;")
+        header.addWidget(self.collab_label)
+        self.btn_refresh_nodes = QPushButton("Sync Runner", self)
+        header.addWidget(self.btn_refresh_nodes)
+        layout.addLayout(header)
+
+        self.collab_adapter = SceneCollabAdapter(
+            self.node_editor,
+            self.collab_client,
+            status_label=self.collab_label,
+            parent=self,
+        )
+
+        splitter = QSplitter(Qt.Vertical, self)
+        top_split = QSplitter(Qt.Horizontal, splitter)
+        top_split.addWidget(self.node_editor)
+        top_split.addWidget(self.timeline_editor)
+        top_split.setStretchFactor(0, 3)
+        top_split.setStretchFactor(1, 2)
+
+        splitter.addWidget(top_split)
+        splitter.addWidget(self.runner_panel)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+
+        layout.addWidget(splitter, 1)
+
+        self.status_label = QLabel(
+            "Add nodes to begin building a scene. Import/export from each panel as needed.",
+            self,
+        )
         layout.addWidget(self.status_label)
 
-        self.refresh()
+    def _connect_signals(self) -> None:
+        self.node_editor.sceneChanged.connect(self._on_scene_changed)
+        self.node_editor.selectionChanged.connect(self._on_node_selected)
+        self.timeline_editor.timelineChanged.connect(self._on_timeline_changed)
+        self.timeline_editor.scrubChanged.connect(self._on_scrub_position)
+        self.runner_panel.nodeFocused.connect(self._focus_node_from_runner)
+        self.btn_refresh_nodes.clicked.connect(self._sync_runner_scene)
 
     # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-    def refresh(self) -> None:
-        """Reload timelines from the backend or use mock data."""
-        self._refresh_button.setEnabled(False)
-        try:
-            items, source = self._load_items()
-        finally:
-            self._refresh_button.setEnabled(True)
-
-        self._items = items
-        self.list_widget.clear()
-        for index, item in enumerate(items):
-            label = self._format_label(item, index)
-            widget_item = QListWidgetItem(label)
-            widget_item.setData(Qt.UserRole, item)
-            self.list_widget.addItem(widget_item)
-
-        if items:
-            self.list_widget.setCurrentRow(0)
-            self.status_label.setText(f"Loaded {len(items)} timeline(s) from {source}.")
-        else:
-            self.detail.setPlainText("No timelines available.")
-            self.status_label.setText("No timelines available.")
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-    def _load_items(self) -> tuple[list[dict[str, Any]], str]:
-        try:
-            response = self.api.get_json("/api/timelines", timeout=4.0, default=None)
-        except Exception as exc:  # pragma: no cover - defensive
-            LOGGER.error("TimelineView API error: %s", exc)
-            return self._mock_items(), "mock data"
-
-        if not isinstance(response, dict):
-            return self._mock_items(), "mock data"
-
-        status = response.get("status")
-        if status == 404:
-            return self._mock_items(), "mock data"
-
-        payload = response.get("data")
-        items = self._extract_items(payload or response)
-        if response.get("ok") and items is not None:
-            return items, "server"
-
-        if items is None:
-            if response.get("ok"):
-                return [], "server"
-            return self._mock_items(), "mock data"
-        return items, "server"
-
-    def _extract_items(self, payload: Any) -> Optional[list[dict[str, Any]]]:
-        if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
-        if isinstance(payload, dict):
-            for key in ("items", "data", "results", "rows", "timelines"):
-                value = payload.get(key)
-                if isinstance(value, list):
-                    return [item for item in value if isinstance(item, dict)]
-            values = list(payload.values())
-            if values and all(isinstance(it, dict) for it in values):
-                return [it for it in values if isinstance(it, dict)]
-        return None
-
-    def _mock_items(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "id": "timeline-main",
-                "name": "Main Narrative",
-                "scene_order": [
-                    {"scene_id": "scene-prologue", "title": "Prologue"},
-                    {"scene_id": "scene-market", "title": "Morning at the Bazaar"},
-                    {"scene_id": "scene-confrontation", "title": "Courtyard Clash"},
-                ],
-                "meta": {"branching": "A/B/C"},
-            },
-            {
-                "id": "timeline-side",
-                "name": "Character Spotlight — Rin",
-                "scene_order": [
-                    {"scene_id": "scene-rin-01", "title": "Rin's Resolve"},
-                    {"scene_id": "scene-rin-02", "title": "Echoes in the Alley"},
-                ],
-            },
-        ]
-
-    def _format_label(self, item: dict[str, Any], index: int) -> str:
-        name = (
-            str(item.get("name"))
-            or str(item.get("title"))
-            or str(item.get("id"))
-            or f"Timeline {index + 1}"
+    def _on_scene_changed(self, scene: Dict[str, object]) -> None:
+        self._scene_cache = scene
+        node_ids = self._extract_node_ids(scene.get("nodes"))
+        self.timeline_editor.set_node_catalog(node_ids)
+        self.runner_panel.set_node_catalog(node_ids)
+        self.status_label.setText(
+            f"Scene nodes: {len(node_ids)} · Start: {scene.get('start') or '<unset>'}"
         )
-        scene_count = len(item.get("scene_order") or [])
-        if scene_count:
-            return f"{name} — {scene_count} scene(s)"
-        return name
 
-    def _on_selection_changed(self, index: int) -> None:
-        if index < 0 or index >= len(self._items):
-            self.detail.setPlainText("Select a timeline to inspect its JSON payload.")
+    def _on_node_selected(self, node_id: str) -> None:
+        if not node_id:
             return
-        item = self._items[index]
-        serialized = json.dumps(item, indent=2, sort_keys=True)
-        self.detail.setPlainText(serialized)
+        # Jump timeline scrubber to matching dialogue event if present
+        for index, event in enumerate(self._timeline_cache):
+            if event.get("track") == "dialogue" and event.get("node_id") == node_id:
+                seconds = float(event.get("time") or 0.0)
+                self.timeline_editor.scrub_slider.setValue(int(seconds * 10))
+                break
+
+    def _on_timeline_changed(self, events: List[Dict[str, object]]) -> None:
+        self._timeline_cache = events
+        dialogue_count = sum(1 for ev in events if ev.get("track") == "dialogue")
+        self.status_label.setText(
+            f"Scene nodes: {len(self.node_editor.node_ids())} · Timeline events: {len(events)} (dialogue {dialogue_count})"
+        )
+
+    def _on_scrub_position(self, seconds: float) -> None:
+        node_id = None
+        for event in self._timeline_cache:
+            if event.get("track") != "dialogue":
+                continue
+            try:
+                time_value = float(event.get("time"))
+            except (TypeError, ValueError):
+                continue
+            if time_value <= seconds + 1e-6:
+                node_id = str(event.get("node_id") or "")
+            else:
+                break
+        if node_id:
+            self.node_editor.focus_node(node_id)
+
+    def _focus_node_from_runner(self, node_id: str) -> None:
+        self.node_editor.focus_node(node_id)
+
+    def _sync_runner_scene(self) -> None:
+        if not self._scene_cache:
+            QMessageBox.information(
+                self,
+                "Scenario Workshop",
+                "Create a scene first before syncing to the runner.",
+            )
+            return
+        self.runner_panel.set_scene(self._scene_cache)
+        self.status_label.setText("Runner synced with current scene.")
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_node_ids(nodes: Optional[Iterable[object]]) -> List[str]:
+        output: List[str] = []
+        if not nodes:
+            return output
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = node.get("id")
+            if isinstance(node_id, str):
+                output.append(node_id)
+        return sorted(output)
+
+
+__all__ = ["TimelineView"]

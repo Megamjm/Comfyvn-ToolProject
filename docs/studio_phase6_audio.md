@@ -14,6 +14,11 @@ Subsystem Components
 
 API Hooks
 ---------
+`POST /api/tts/speak`
+  - Request: `{character?, text, style?, model?, seed?, lipsync?}`
+  - Response: `{ok, data{path, sidecar, alignment[], alignment_path, lipsync_path?, cache_key}}`
+  - Side effects: writes `alignment.json` and optional `lipsync.json` alongside the cached WAV under `data/audio/tts/<cache_key>/`.
+
 `POST /api/tts/synthesize`
   - Request: `{text, voice?, scene_id?, character_id?, lang?, metadata?}`
   - Response: `{ok, artifact, sidecar, cached, voice, lang, style, info.metadata}`
@@ -27,6 +32,11 @@ API Hooks
 
 `POST /voice/speak`
   - Mirrors `synthesize` but keeps backwards compatibility with the GUI voice panel.
+
+`POST /api/audio/mix`
+  - Request: `{tracks:[{path, role?, gain?, gain_db?, offset?}], ducking?, sample_rate?, metadata?}`
+  - Response: `{ok, data{path, sidecar, cache_key, duration, sample_rate, tracks[], ducking?, cached}}`
+  - Deterministically caches mixes under `data/audio/mixes/<cache_key>/` so repeat calls reuse renders.
 
 `POST /api/music/remix`
   - Request: `{scene_id, target_style, source_track?, seed?, mood_tags?[]}`
@@ -42,6 +52,8 @@ Data & Cache Flow
 5. The audio cache manager (`comfyvn/core/audio_cache.py`) checks `cache/audio_cache.json` to reuse prior renders.
 5. JSON sidecars describe inputs (`scene_id`, `character_id`, language, style). Asset registration consumes artifact + sidecar.
 6. Music remix requests follow the same artifact + sidecar pattern under `exports/music/`.
+7. Alignment payloads are injected into the TTS sidecar, and when `lipsync=true` the frame-indexed lipsync JSON is stored and referenced for rig integration.
+8. Mixer requests hash the normalized track list, ducking envelope, and sample rate to produce `data/audio/mixes/<cache_key>/mix.wav` plus a `mix.json` sidecar carrying render diagnostics.
 
 Logging & Debugging
 -------------------
@@ -52,7 +64,9 @@ Logging & Debugging
 2. Inspect `exports/tts/<voice>_<hash>.wav` and `<voice>_<hash>.json` for matching metadata. When ComfyUI is active, the sidecar includes `provider`, `source_file`, and `workflow` fields for traceability.
   3. Tail `system.log` in the user log directory and confirm INFO lines show `cached=True` on the second request.
   4. For cache inspection, view `cache/audio_cache.json` and confirm the `key` matches `{voice|text_hash|lang|character|style|model_hash}`.
-  5. Test music remix with `curl -X POST http://localhost:8000/api/music/remix -H 'Content-Type: application/json' -d '{"scene_id":"scene.demo","target_style":"lofi","mood_tags":["calm"]}'` and check `exports/music/` for the rendered `.wav` plus sidecar. With ComfyUI enabled the sidecar will include `provider=comfyui_local` and a `source_file` pointing at the workflow output.
+  5. Test `/api/tts/speak` with `{"text":"Hello","character":"demo","lipsync":true}` and verify `alignment.json` + `lipsync.json` land beside the cached WAV under `data/audio/tts/<cache_key>/`.
+  6. Test music remix with `curl -X POST http://localhost:8000/api/music/remix -H 'Content-Type: application/json' -d '{"scene_id":"scene.demo","target_style":"lofi","mood_tags":["calm"]}'` and check `exports/music/` for the rendered `.wav` plus sidecar. With ComfyUI enabled the sidecar will include `provider=comfyui_local` and a `source_file` pointing at the workflow output.
+  7. Exercise `/api/audio/mix` using two local WAVs (`voice`, `bgm`) and confirm `mix.json` records the track gains, offsets, ducking envelope stats, and the cache key.
 
 Audio Provider Settings
 -----------------------

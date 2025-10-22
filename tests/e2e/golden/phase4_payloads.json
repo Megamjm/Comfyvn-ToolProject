@@ -1,0 +1,384 @@
+{
+  "export_bundle": {
+    "bundle": "<repo>/exports/bundles/<bundle>.zip",
+    "findings": [
+      {
+        "created_at": "<timestamp>",
+        "detail": {
+          "assets_without_license": 1,
+          "origin": "export.bundle",
+          "source": "export.bundle",
+          "timeline_id": "main"
+        },
+        "issue_id": "<issue-id>",
+        "kind": "policy",
+        "message": "Assets present without accompanying license metadata.",
+        "notes": [],
+        "resolved": false,
+        "severity": "warn",
+        "target_id": "project:phase4:assets",
+        "timestamp": "<timestamp>"
+      }
+    ],
+    "gate": {
+      "action": "export.bundle",
+      "allow": true,
+      "gate": "export",
+      "override_requested": false,
+      "requires_ack": false,
+      "warnings": []
+    },
+    "generated_at": "<timestamp>",
+    "ok": true,
+    "provenance": {
+      "assets": [
+        {
+          "path": "backgrounds/bg.png",
+          "sha256": "b5d54c39e66671c9731b9f471e585d8262cd4f54963f0c93082d8dcf334d4c78",
+          "size": 4,
+          "source": "<runtime>/data/assets/backgrounds/bg.png"
+        }
+      ],
+      "characters": {
+        "hero": {
+          "sha256": "5d6333fe28126cbd7dfa52a91804d1babeb2f1b3fdca6f5066319cb8694895ec",
+          "source": "<runtime>/data/characters/hero.json"
+        }
+      },
+      "findings": [
+        {
+          "created_at": "<timestamp>",
+          "detail": {
+            "assets_without_license": 1,
+            "origin": "export.bundle",
+            "source": "export.bundle",
+            "timeline_id": "main"
+          },
+          "issue_id": "<issue-id>",
+          "kind": "policy",
+          "message": "Assets present without accompanying license metadata.",
+          "notes": [],
+          "resolved": false,
+          "severity": "warn",
+          "target_id": "project:phase4:assets",
+          "timestamp": "<timestamp>"
+        }
+      ],
+      "generated_at": "<timestamp>",
+      "project": {
+        "id": "phase4",
+        "source": null,
+        "title": "Phase 4"
+      },
+      "renpy_project": {
+        "labels": [
+          {
+            "label": "intro",
+            "scene_id": "intro",
+            "source": "<runtime>/data/scenes/intro.json",
+            "title": "Intro"
+          },
+          {
+            "label": "ending",
+            "scene_id": "ending",
+            "source": "<runtime>/data/scenes/ending.json",
+            "title": "Ending"
+          }
+        ],
+        "root": "<repo>/renpy_project",
+        "script": "<repo>/renpy_project/game/script.rpy",
+        "script_sha256": "<sha256>"
+      },
+      "scenes": {
+        "ending": {
+          "sha256": "8960c55c4494a0edb19eaf50c18e605b3be729540a27119249d2170bd0bf8485",
+          "source": "<runtime>/data/scenes/ending.json"
+        },
+        "intro": {
+          "sha256": "920397652262912e78a2ab9cdbcc2277661d8c62721370ecfdeefdb01525d186",
+          "source": "<runtime>/data/scenes/intro.json"
+        }
+      },
+      "timeline": {
+        "id": "main",
+        "sha256": "72c989dd9f99a4dbc40f820b76f2a7635367ca6fc2952bc76642731fbaaada04",
+        "source": "<runtime>/data/timelines/main.json"
+      },
+      "version": 1
+    }
+  },
+  "export_renpy": {
+    "gate": {
+      "action": "export.renpy",
+      "allow": true,
+      "gate": "export",
+      "override_requested": false,
+      "requires_ack": false,
+      "warnings": []
+    },
+    "generated_at": "<timestamp>",
+    "labels": [
+      {
+        "label": "intro",
+        "scene_id": "intro",
+        "source": "<runtime>/data/scenes/intro.json",
+        "title": "Intro"
+      },
+      {
+        "label": "ending",
+        "scene_id": "ending",
+        "source": "<runtime>/data/scenes/ending.json",
+        "title": "Ending"
+      }
+    ],
+    "ok": true,
+    "renpy_project": "<repo>/renpy_project",
+    "scene_ids": [
+      "intro",
+      "ending"
+    ],
+    "script": "<repo>/renpy_project/game/script.rpy"
+  },
+  "presentation_plan": {
+    "meta": {
+      "count": 6
+    },
+    "node_id": "left_path",
+    "plan": [
+      {
+        "action": "schedule",
+        "channel": "timing",
+        "payload": {
+          "easing": "linear",
+          "enter": 0.2,
+          "exit": 0.1,
+          "hold": 2.0
+        }
+      },
+      {
+        "action": "frame",
+        "channel": "camera",
+        "payload": {
+          "focus": "hero",
+          "shot": "medium"
+        }
+      },
+      {
+        "action": "set",
+        "channel": "portrait",
+        "payload": {
+          "asset": "hero.png",
+          "label": "Hero",
+          "slot": "center"
+        },
+        "target": "hero"
+      },
+      {
+        "action": "set",
+        "channel": "expression",
+        "payload": {
+          "label": "Hero",
+          "value": "smile"
+        },
+        "target": "hero"
+      },
+      {
+        "action": "set",
+        "channel": "pose",
+        "payload": {
+          "label": "Hero"
+        },
+        "target": "hero"
+      },
+      {
+        "action": "play",
+        "channel": "sfx",
+        "payload": {
+          "clip": "chime"
+        }
+      }
+    ]
+  },
+  "save_list": {
+    "ok": true,
+    "slots": [
+      {
+        "saved_at": "<timestamp>",
+        "saved_at_iso": "<timestamp>",
+        "size_bytes": "<size>",
+        "slot": "phase4"
+      }
+    ]
+  },
+  "save_load": {
+    "ok": true,
+    "save": {
+      "node_pointer": "ending",
+      "pov": "narrator",
+      "saved_at": "<timestamp>",
+      "saved_at_iso": "<timestamp>",
+      "seed": 7,
+      "slot": "phase4",
+      "vars": {
+        "score": 3.0
+      }
+    }
+  },
+  "save_store": {
+    "ok": true,
+    "save": {
+      "node_pointer": "ending",
+      "pov": "narrator",
+      "saved_at": "<timestamp>",
+      "saved_at_iso": "<timestamp>",
+      "seed": 7,
+      "slot": "phase4",
+      "vars": {
+        "score": 3.0
+      }
+    }
+  },
+  "scenario_step_1": {
+    "choices": [
+      {
+        "actions": [
+          {
+            "amount": 2,
+            "key": "score",
+            "type": "increment"
+          }
+        ],
+        "id": "finish_left",
+        "label": "Finish",
+        "target": "ending"
+      }
+    ],
+    "finished": false,
+    "node": {
+      "choices": [
+        {
+          "actions": [
+            {
+              "amount": 2,
+              "key": "score",
+              "type": "increment"
+            }
+          ],
+          "id": "finish_left",
+          "label": "Finish",
+          "target": "ending"
+        }
+      ],
+      "id": "left_path",
+      "text": "Left it is",
+      "type": "dialogue"
+    },
+    "ok": true,
+    "state": {
+      "current_node": "left_path",
+      "finished": false,
+      "history": [
+        {
+          "choice": null,
+          "node": "intro"
+        },
+        {
+          "choice": "path_left",
+          "node": "intro"
+        }
+      ],
+      "pov": "narrator",
+      "rng": {
+        "seed": 7,
+        "uses": 1,
+        "value": 1025555898
+      },
+      "scene_id": "phase4-demo",
+      "variables": {
+        "score": 1
+      }
+    }
+  },
+  "scenario_step_2": {
+    "choices": [],
+    "finished": true,
+    "node": {
+      "end": true,
+      "id": "ending",
+      "text": "The end",
+      "type": "dialogue"
+    },
+    "ok": true,
+    "state": {
+      "current_node": "ending",
+      "finished": true,
+      "history": [
+        {
+          "choice": null,
+          "node": "intro"
+        },
+        {
+          "choice": "path_left",
+          "node": "intro"
+        },
+        {
+          "choice": "finish_left",
+          "node": "left_path"
+        }
+      ],
+      "pov": "narrator",
+      "rng": {
+        "seed": 7,
+        "uses": 1,
+        "value": 1025555898
+      },
+      "scene_id": "phase4-demo",
+      "variables": {
+        "score": 3.0
+      }
+    }
+  },
+  "scenario_step_3": {
+    "choices": [],
+    "finished": true,
+    "node": {
+      "end": true,
+      "id": "ending",
+      "text": "The end",
+      "type": "dialogue"
+    },
+    "ok": true,
+    "state": {
+      "current_node": "ending",
+      "finished": true,
+      "history": [
+        {
+          "choice": null,
+          "node": "intro"
+        },
+        {
+          "choice": "path_left",
+          "node": "intro"
+        },
+        {
+          "choice": "finish_left",
+          "node": "left_path"
+        }
+      ],
+      "pov": "narrator",
+      "rng": {
+        "seed": 7,
+        "uses": 1,
+        "value": 1025555898
+      },
+      "scene_id": "phase4-demo",
+      "variables": {
+        "score": 3.0
+      }
+    }
+  },
+  "scenario_validate": {
+    "errors": [],
+    "valid": true
+  }
+}

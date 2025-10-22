@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Coroutine, Dict, Optional
+from typing import Any, Coroutine, Dict, List, Optional
 
 from comfyvn.bridge.comfy import ComfyBridgeError, ComfyUIBridge, RenderContext
 
@@ -49,31 +50,89 @@ class ComfyBridge:
             download_dir = Path(payload["download_dir"]).expanduser()
             download_dir.mkdir(parents=True, exist_ok=True)
 
+        enable_preview = bool(payload.get("preview_stream", False))
+        preview_root = payload.get("preview_dir") or "data/cache/comfy_previews"
+        base_preview_dir: Optional[Path] = None
+        if enable_preview:
+            try:
+                base_preview_dir = Path(preview_root).expanduser() / context.workflow_id
+            except Exception:  # pragma: no cover - defensive
+                base_preview_dir = Path(preview_root) / context.workflow_id
+
+        enable_resume = bool(payload.get("resume_on_error", enable_preview))
+        max_attempts = int(payload.get("resume_attempts", 2 if enable_resume else 1))
+        if max_attempts < 1:
+            max_attempts = 1
+
         downloaded: Optional[list[str]] = None
-        try:
-            result = await self._bridge.run_workflow(
-                workflow,
-                context=context,
-                poll_interval=poll_interval,
-                timeout=timeout,
-                download_dir=None,
-            )
-            if download_dir:
-                paths = await self._bridge.download_artifacts(result, download_dir)
-                downloaded = [str(path) for path in paths]
-        except ComfyBridgeError as exc:
-            LOGGER.error("Comfy workflow failed: %s", exc)
-            return {
-                "ok": False,
-                "error": str(exc),
-                "workflow_id": context.workflow_id,
-            }
+        resume_attempts: List[Dict[str, Any]] = []
+        result = None
+        attempt_index = 0
+        last_error: Optional[ComfyBridgeError] = None
+
+        while attempt_index < max_attempts:
+            attempt_index += 1
+            attempt_preview_dir: Optional[Path] = None
+            if base_preview_dir is not None:
+                attempt_preview_dir = base_preview_dir / f"attempt_{attempt_index}"
+            try:
+                result = await self._bridge.run_workflow(
+                    workflow,
+                    context=context,
+                    poll_interval=poll_interval,
+                    timeout=timeout,
+                    download_dir=None,
+                    preview_dir=attempt_preview_dir,
+                )
+                break
+            except ComfyBridgeError as exc:
+                last_error = exc
+                resume_attempts.append(
+                    {
+                        "attempt": attempt_index,
+                        "error": str(exc),
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                if not enable_resume or attempt_index >= max_attempts:
+                    LOGGER.error("Comfy workflow failed: %s", exc)
+                    return {
+                        "ok": False,
+                        "error": str(exc),
+                        "workflow_id": context.workflow_id,
+                        "resume": {
+                            "attempts": resume_attempts,
+                            "recovered": False,
+                        },
+                    }
+                LOGGER.warning(
+                    "Comfy workflow failed (%s); retrying (%d/%d)",
+                    exc,
+                    attempt_index + 1,
+                    max_attempts,
+                )
+                await asyncio.sleep(min(5.0, poll_interval * 2))
+
+        if result is None:
+            if last_error is not None:
+                raise last_error
+            raise ComfyBridgeError("Comfy workflow did not produce a result")
+
+        if download_dir:
+            paths = await self._bridge.download_artifacts(result, download_dir)
+            downloaded = [str(path) for path in paths]
 
         payload = result.to_dict()
         payload["ok"] = True
         payload["base"] = self.base_url
         if download_dir:
             payload["downloaded"] = downloaded or []
+        if resume_attempts:
+            payload["resume"] = {
+                "attempts": resume_attempts,
+                "recovered": True,
+                "total_attempts": attempt_index,
+            }
         return payload
 
     # ------------------------------------------------------------------

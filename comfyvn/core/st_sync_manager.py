@@ -14,8 +14,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from comfyvn.integrations.sillytavern_bridge import (SillyTavernBridge,
-                                                     SillyTavernBridgeError)
+from comfyvn.config import feature_flags
+from comfyvn.integrations.sillytavern_bridge import (
+    SillyTavernBridge,
+    SillyTavernBridgeError,
+)
 
 SYNC_DIR = "./data/st_sync"
 ARCHIVE_DIR = os.path.join(SYNC_DIR, "archive")
@@ -60,10 +63,13 @@ class STSyncManager:
         self.meta = (
             _load_meta()
         )  # e.g. {"worlds": {key: hash,...}, "characters": {...}}
-        self.bridge = SillyTavernBridge(base_url=self.base_url, user_id=user_id)
-        self._bridge_available = True
+        self.bridge: SillyTavernBridge | None = None
+        self._bridge_available = False
         self._bridge_checked = False
         self._fallback_warned = False
+        self._disabled_reason = ""
+        self._feature_enabled = False
+        self._refresh_feature_flag()
 
     def _pull_asset(
         self, asset_type: str, key: str, endpoint_suffix: str
@@ -72,6 +78,9 @@ class STSyncManager:
         Pull JSON from ST for a given asset.
         endpoint_suffix is like "world/export" or "character/export".
         """
+        self._refresh_feature_flag()
+        if not self._feature_enabled:
+            return {"status": "disabled", "error": self._disabled_reason}
         if self._bridge_available:
             if not self._bridge_checked:
                 try:
@@ -120,7 +129,10 @@ class STSyncManager:
         Returns dict with keys: status: ("unchanged","updated","new","error"), details.
         """
         pull = self._pull_asset(asset_type, key, endpoint_suffix)
-        if pull.get("status") != "ok":
+        status = pull.get("status")
+        if status == "disabled":
+            return {"status": "error", "error": pull.get("error")}
+        if status != "ok":
             return {"status": "error", "error": pull.get("error")}
 
         data = pull["data"]
@@ -189,3 +201,28 @@ class STSyncManager:
         for k in keys:
             results[k] = self.sync_asset(asset_type, k, endpoint_suffix)
         return results
+
+    def _refresh_feature_flag(self) -> None:
+        enabled = feature_flags.is_enabled("enable_sillytavern_bridge")
+        if enabled and not self._feature_enabled:
+            try:
+                self.bridge = SillyTavernBridge(
+                    base_url=self.base_url, user_id=self.user_id
+                )
+                self._feature_enabled = True
+                self._bridge_available = True
+                self._bridge_checked = False
+                self._disabled_reason = ""
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("SillyTavern bridge unavailable: %s", exc)
+                self.bridge = None
+                self._feature_enabled = False
+                self._bridge_available = False
+                self._bridge_checked = True
+                self._disabled_reason = f"SillyTavern bridge unavailable: {exc}"
+        elif not enabled and self._feature_enabled:
+            self._feature_enabled = False
+            self._bridge_available = False
+            self._bridge_checked = True
+            self.bridge = None
+            self._disabled_reason = "SillyTavern bridge disabled via feature flag."

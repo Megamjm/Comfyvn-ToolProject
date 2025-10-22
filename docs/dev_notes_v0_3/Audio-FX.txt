@@ -7,3 +7,5 @@ Environmental Audio Zones: Volume/filters change when scene camera moves (e.g., 
 Adaptive Music: Background tracks shift with emotion tone or dialogue sentiment.
 
 SFX Chaining: Combine multiple sound layers (e.g., footsteps + echo + prop movement) for realism.
+Alignment Sidecars: `/api/tts/speak` now emits `alignment.json` + optional `lipsync.json` alongside cached WAVs for lip rigs.
+Mixer Cache Hooks: `/api/audio/mix` accepts per-track gain/duck settings and stores `mix.json` diagnostics for modders to tweak stems before final exports.

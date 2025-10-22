@@ -13,9 +13,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, Query
 
 from comfyvn.config.runtime_paths import data_dir
-from comfyvn.core.advisory_hooks import BundleContext
-from comfyvn.core.advisory_hooks import scan as scan_bundle
 from comfyvn.core.policy_gate import policy_gate
+from comfyvn.policy.enforcer import policy_enforcer
 
 router = APIRouter()
 
@@ -567,19 +566,30 @@ def _build_bundle_archive(
             }
         )
 
-    findings = scan_bundle(
-        BundleContext(
-            project_id=project_id,
-            timeline_id=timeline_id,
-            scenes=scenes,
-            scene_sources=scene_sources,
-            characters=characters,
-            licenses=manifest["licenses"],
-            assets=assets,
-            metadata={"source": "export.bundle", "bundle_path": bundle_path.as_posix()},
-        )
+    bundle_payload = {
+        "project_id": project_id,
+        "timeline_id": timeline_id,
+        "scenes": scenes,
+        "scene_sources": {key: path.as_posix() for key, path in scene_sources.items()},
+        "characters": characters,
+        "licenses": manifest["licenses"],
+        "assets": [
+            {"path": rel, "source": source.as_posix()} for rel, source in assets
+        ],
+        "metadata": {"source": "export.bundle", "bundle_path": bundle_path.as_posix()},
+    }
+    enforcement = policy_enforcer.enforce(
+        "export.bundle", bundle_payload, source="export.bundle"
     )
-    provenance["findings"] = findings
+    if not enforcement.allow:
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "message": "policy enforcement blocked",
+                "result": enforcement.to_dict(),
+            },
+        )
+    provenance["findings"] = [entry.get("raw", entry) for entry in enforcement.findings]
 
     with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -624,7 +634,7 @@ def _build_bundle_archive(
         if license_path.exists():
             archive.write(license_path, "LICENSE.txt")
 
-    return bundle_path, provenance, findings
+    return bundle_path, provenance, enforcement
 
 
 # ---------------------------------------------------------------------------
@@ -661,17 +671,35 @@ def export_renpy(
         assets = _collect_assets(project_data.get("assets") or [])
         licenses = list(project_data.get("licenses") or [])
 
-    scan_bundle(
-        BundleContext(
-            project_id=project_id,
-            timeline_id=timeline_id,
-            scenes=renpy_info.get("scenes") or {},
-            scene_sources=renpy_info.get("scene_sources") or {},
-            licenses=licenses,
-            assets=assets,
-            metadata={"source": "export.renpy"},
-        )
+    bundle_payload = {
+        "project_id": project_id,
+        "timeline_id": timeline_id,
+        "scenes": renpy_info.get("scenes") or {},
+        "scene_sources": {
+            key: path.as_posix()
+            for key, path in (renpy_info.get("scene_sources") or {}).items()
+        },
+        "licenses": licenses,
+        "assets": [
+            {
+                "path": rel,
+                "source": src.as_posix() if hasattr(src, "as_posix") else str(src),
+            }
+            for rel, src in assets
+        ],
+        "metadata": {"source": "export.renpy"},
+    }
+    enforcement = policy_enforcer.enforce(
+        "export.renpy", bundle_payload, source="export.renpy"
     )
+    if not enforcement.allow:
+        raise HTTPException(
+            status_code=423,
+            detail={
+                "message": "policy enforcement blocked",
+                "result": enforcement.to_dict(),
+            },
+        )
 
     return {
         "ok": True,
@@ -681,6 +709,7 @@ def export_renpy(
         "scene_ids": renpy_info["scene_ids"],
         "generated_at": renpy_info["generated_at"],
         "gate": gate,
+        "enforcement": enforcement.to_dict(),
     }
 
 
@@ -707,7 +736,7 @@ def export_bundle(
         project_data=project_data,
     )
 
-    bundle_path, provenance, findings = _build_bundle_archive(
+    bundle_path, provenance, enforcement = _build_bundle_archive(
         project_id=project_id,
         project_data=project_data,
         timeline_id=resolved_timeline_id,
@@ -715,12 +744,14 @@ def export_bundle(
         timeline_path=timeline_path,
         renpy_info=renpy_info,
     )
+    enforcement_payload = enforcement.to_dict()
 
     return {
         "ok": True,
         "bundle": bundle_path.as_posix(),
         "provenance": provenance,
-        "findings": findings,
+        "findings": enforcement_payload.get("findings"),
         "generated_at": renpy_info["generated_at"],
         "gate": gate,
+        "enforcement": enforcement_payload,
     }

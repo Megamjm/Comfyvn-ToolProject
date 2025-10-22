@@ -160,3 +160,19 @@ def load_seed_from_config(
             if isinstance(entry, dict):
                 seeds.append(entry)
     return seeds
+
+
+DEFAULT_STORAGE_PATH = Path("config/compute_providers.json")
+_DEFAULT_REGISTRY: ProviderRegistry | None = None
+
+
+def get_default_registry() -> ProviderRegistry:
+    """Return a process-wide provider registry backed by the default storage path."""
+
+    global _DEFAULT_REGISTRY
+    if _DEFAULT_REGISTRY is None:
+        _DEFAULT_REGISTRY = ProviderRegistry(
+            storage_path=DEFAULT_STORAGE_PATH,
+            seed=load_seed_from_config(),
+        )
+    return _DEFAULT_REGISTRY

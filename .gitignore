@@ -57,6 +57,8 @@ assets/sprites/
 .venv
 venv/
 .venv/
+config/comfyvn.secrets.json
+config/comfyvn.secrets.key
 
 # --- Local configs that shouldn’t ship ---
 comfyvn/*.local.json

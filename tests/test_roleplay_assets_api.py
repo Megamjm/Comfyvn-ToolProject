@@ -189,6 +189,24 @@ def test_assets_upload_and_delete(client: TestClient, tmp_path: Path):
     assert detail_resp.status_code == 200
     assert detail_resp.json()["asset"]["meta"]["license"] == "cc0"
 
+    sidecar_resp = client.get(f"/assets/{uploaded['uid']}/sidecar")
+    assert sidecar_resp.status_code == 200, sidecar_resp.text
+    sidecar_json = sidecar_resp.json()
+    assert sidecar_json["uid"] == uploaded["uid"]
+    assert sidecar_json["sidecar"]["uid"] == uploaded["uid"]
+    assert sidecar_json["path"].endswith(".asset.json")
+
+    hooks_resp = client.get("/assets/debug/hooks")
+    assert hooks_resp.status_code == 200, hooks_resp.text
+    hooks_payload = hooks_resp.json()
+    assert hooks_payload["registry_hooks"]
+    assert any(
+        event_spec["name"] == "on_asset_saved"
+        for event_spec in hooks_payload["modder_hooks"]["events"]
+    )
+    # we just uploaded an asset, so history should contain at least one entry.
+    assert hooks_payload["modder_hooks"]["history"]
+
     download_resp = client.get(f"/assets/{uploaded['uid']}/download")
     assert download_resp.status_code == 200
     assert download_resp.content == b"hi there"
@@ -199,3 +217,6 @@ def test_assets_upload_and_delete(client: TestClient, tmp_path: Path):
 
     missing_resp = client.get(f"/assets/{uploaded['uid']}")
     assert missing_resp.status_code == 404
+
+    missing_sidecar = client.get(f"/assets/{uploaded['uid']}/sidecar")
+    assert missing_sidecar.status_code == 404

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import pathlib
 from logging.handlers import RotatingFileHandler
 from typing import Tuple
@@ -39,6 +40,26 @@ def init_logging(run_tag: str = "session") -> Tuple[pathlib.Path, str]:
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     root.addHandler(console_handler)
+
+    security_logger = logging.getLogger("comfyvn.security")
+    security_logger.setLevel(logging.INFO)
+    security_logger.propagate = False
+    if not any(
+        getattr(h, "_comfyvn_security", False) for h in security_logger.handlers
+    ):
+        security_handler = RotatingFileHandler(
+            run_dir / "security.log",
+            maxBytes=500_000,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        security_handler.setFormatter(logging.Formatter("%(message)s"))
+        security_handler._comfyvn_security = True  # type: ignore[attr-defined]
+        security_logger.addHandler(security_handler)
+
+    os.environ.setdefault("COMFYVN_SECURITY_LOG_FILE", str(run_dir / "security.log"))
+
+    logging.getLogger("comfyvn.security.secrets").setLevel(logging.INFO)
 
     logging.getLogger(__name__).info(
         "Logging initialized (run_id=%s, tag=%s)", run_id, run_tag

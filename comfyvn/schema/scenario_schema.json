@@ -87,6 +87,11 @@
             "$ref": "#/$defs/Choice"
           }
         },
+        "narrator_rules": {
+          "type": "object",
+          "description": "Optional narrator directives keyed by POV id.",
+          "additionalProperties": true
+        },
         "end": {
           "type": "boolean",
           "description": "Explicitly mark node as terminal (no outgoing choices).",
@@ -136,6 +141,14 @@
           "description": "Actions executed when this choice is taken.",
           "items": {
             "$ref": "#/$defs/Action"
+          }
+        },
+        "visible_to": {
+          "type": "array",
+          "description": "Restrict choice visibility to the listed POV identifiers.",
+          "items": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "metadata": {

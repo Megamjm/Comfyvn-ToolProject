@@ -14,9 +14,12 @@ import os
 import shutil
 from pathlib import Path
 
+from comfyvn.config import feature_flags
 from comfyvn.config.runtime_paths import data_dir
-from comfyvn.integrations.sillytavern_bridge import (SillyTavernBridge,
-                                                     SillyTavernBridgeError)
+from comfyvn.integrations.sillytavern_bridge import (
+    SillyTavernBridge,
+    SillyTavernBridgeError,
+)
 
 
 class WorldLoader:
@@ -27,7 +30,8 @@ class WorldLoader:
         self.data_path = resolved_path
         self.cache = {}
         self.active_world = "default_world.json"
-        self.bridge = SillyTavernBridge()
+        self.bridge: SillyTavernBridge | None = None
+        self._ensure_bridge()
         os.makedirs(self.data_path, exist_ok=True)
         self._ensure_default_world()
 
@@ -93,6 +97,11 @@ class WorldLoader:
         persist: bool = False,
     ) -> None:
         """Update the SillyTavern bridge endpoint."""
+        if not self._ensure_bridge():
+            logger.info(
+                "Skipping SillyTavern remote configuration; bridge disabled via feature flag."
+            )
+            return
         self.bridge.set_endpoint(
             base_url=base_url,
             plugin_base=plugin_base,
@@ -122,12 +131,34 @@ class WorldLoader:
     # -----------------------------------------------------
     # Clean-State Sync (enhanced)
     # -----------------------------------------------------
+    def save_world(self, name: str, data: dict) -> str:
+        """
+        Persist a world JSON payload into the configured data directory.
+
+        Returns the filename (sans path) that was written.
+        """
+        if not name:
+            raise ValueError("World name is required")
+        safe_name = Path(name).stem or "world"
+        filename = f"{safe_name}.json"
+        target = Path(self.data_path) / filename
+        self._write_json(str(target), data or {})
+        self.cache[filename] = data or {}
+        self.active_world = filename
+        return filename
+
     def sync_from_sillytavern(self, *, user_id: str | None = None) -> dict:
         """
         Pull and compare world data from SillyTavern.
         Returns:
           {"status": "success" | "no_change" | "fail", "updated": [...], "message": str}
         """
+        if not self._ensure_bridge():
+            return {
+                "status": "disabled",
+                "updated": [],
+                "message": "SillyTavern bridge disabled via feature flag.",
+            }
         try:
             remote_worlds = self.bridge.fetch_worlds(user_id=user_id)
             if not remote_worlds:
@@ -177,6 +208,20 @@ class WorldLoader:
             logger.exception("WorldLoader encountered an unexpected error during sync")
             return {"status": "fail", "updated": [], "message": str(e)}
 
+    def _ensure_bridge(self) -> bool:
+        """Ensure the SillyTavern bridge helper is available and enabled."""
+        if not feature_flags.is_enabled("enable_sillytavern_bridge"):
+            self.bridge = None
+            return False
+        if self.bridge is None:
+            try:
+                self.bridge = SillyTavernBridge()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("SillyTavern bridge init failure: %s", exc)
+                self.bridge = None
+                return False
+        return True
+
     # -----------------------------------------------------
     # Optional: Outdated Check (timestamp fallback)
     # -----------------------------------------------------
@@ -186,16 +231,3 @@ class WorldLoader:
             return local.get("updated_at") != remote.get("updated_at")
         except Exception:
             return True
-
-
-def save_world(self, name: str, data: dict):
-    """Save a world JSON file into data/worlds."""
-    import json
-    import os
-
-    os.makedirs(self.data_path, exist_ok=True)
-    file_path = os.path.join(self.data_path, f"{name}.json")
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    self.cache[name] = data
-    print(f"[WorldLoader] Saved world: {name}")
