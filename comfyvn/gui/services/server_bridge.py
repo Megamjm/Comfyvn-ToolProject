@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
+from comfyvn.config import feature_flags
 from comfyvn.config.baseurl_authority import current_authority, default_base_url
 
 _AUTHORITY = current_authority()
@@ -53,6 +54,11 @@ class ServerBridge(QObject):
         self._latest: Dict[str, Any] = {}
         self._warnings: list[Dict[str, Any]] = []
         self._seen_warning_ids: set[str] = set()
+        self._health_debug_enabled = feature_flags.is_enabled(
+            "debug_health_checks", default=False
+        )
+        self._last_status_ok = True
+        self._last_failure_detail: str | None = None
 
     # ─────────────────────────────
     # Async polling loop (non-blocking)
@@ -62,40 +68,57 @@ class ServerBridge(QObject):
             logger.debug("Polling skipped: previous request still in flight")
             return
         try:
+            debug_enabled = feature_flags.is_enabled(
+                "debug_health_checks", default=False
+            )
+            self._health_debug_enabled = debug_enabled
+
             async with httpx.AsyncClient(timeout=3.0) as cli:
                 metrics_payload, metrics_ok = await self._fetch_metrics(cli)
-                health_payload = await self._fetch_health(cli)
-
-                combined: Dict[str, Any] = dict(metrics_payload)
                 overall_ok = bool(metrics_payload.get("ok"))
-                if health_payload is not None:
-                    combined["health"] = health_payload
-                    if not overall_ok:
-                        overall_ok = bool(health_payload.get("ok"))
-                success = bool(metrics_ok)
+                combined: Dict[str, Any] = dict(metrics_payload)
+
+                health_payload: Optional[Dict[str, Any]] = None
+                if not metrics_ok or not overall_ok or debug_enabled:
+                    health_payload = await self._fetch_health(cli)
+                    if health_payload is not None:
+                        combined["health"] = health_payload
+                        if not overall_ok:
+                            overall_ok = bool(health_payload.get("ok"))
+
+                if health_payload is None:
+                    combined["health"] = {
+                        "ok": overall_ok,
+                        "status": 200 if overall_ok else 503,
+                        "data": {"status": "Healthy" if overall_ok else "Unavailable"},
+                        "source": "cached",
+                    }
+
                 combined["ok"] = overall_ok
 
-                if success:
+                if metrics_ok:
                     self._backoff_step = 0
                     self._current_interval = self._base_interval
                 else:
                     if self._backoff_step < len(self._backoff_schedule) - 1:
                         self._backoff_step += 1
                     self._current_interval = self._backoff_schedule[self._backoff_step]
+
                 combined["retry_in"] = self._current_interval
+                combined["state"] = "online" if overall_ok else "waiting"
+                combined["poll_interval"] = self._current_interval
+                combined["backoff_step"] = self._backoff_step
+                combined["actions"] = self._build_actions(overall_ok)
+                combined["timestamp"] = time.time()
 
-            combined["state"] = "online" if success else "waiting"
-            combined["poll_interval"] = self._current_interval
-            combined["backoff_step"] = self._backoff_step
-            combined["actions"] = self._build_actions(success)
-            combined["timestamp"] = time.time()
+                self._latest = combined
+                self._log_status_change(
+                    overall_ok, combined, debug_enabled=debug_enabled
+                )
+                self.status_updated.emit(dict(combined))
 
-            self._latest = combined
-            logger.debug("Metrics poll -> %s", combined)
-            self.status_updated.emit(dict(combined))
-
-            if success:
-                await self._process_warnings(cli)
+                if metrics_ok and overall_ok:
+                    await self._process_warnings(cli)
         except Exception as exc:
             logger.error("Metrics polling error: %s", exc, exc_info=True)
             if self._backoff_step < len(self._backoff_schedule) - 1:
@@ -110,6 +133,7 @@ class ServerBridge(QObject):
                 "actions": self._build_actions(False),
                 "timestamp": time.time(),
             }
+            self._log_status_change(False, self._latest, debug_enabled=False)
             self.status_updated.emit(dict(self._latest))
         finally:
             self._poll_lock.release()
@@ -208,6 +232,57 @@ class ServerBridge(QObject):
             self._warnings.extend(new_warnings)
             self._warnings = self._warnings[-50:]
             self.warnings_updated.emit(new_warnings)
+
+    def _log_status_change(
+        self, ok: bool, payload: Dict[str, Any], *, debug_enabled: bool
+    ) -> None:
+        if debug_enabled:
+            logger.debug("Metrics poll -> %s", payload)
+            self._last_status_ok = ok
+            if not ok:
+                detail = self._compose_failure_message(payload)
+                if detail:
+                    self._last_failure_detail = detail
+            return
+
+        if ok:
+            if not self._last_status_ok:
+                logger.info("Metrics/health recovered")
+            self._last_failure_detail = None
+        else:
+            detail = self._compose_failure_message(payload)
+            if detail != self._last_failure_detail:
+                logger.warning("Metrics degraded: %s", detail or "unknown issue")
+                self._last_failure_detail = detail
+        self._last_status_ok = ok
+
+    @staticmethod
+    def _compose_failure_message(payload: Dict[str, Any]) -> str | None:
+        if not isinstance(payload, dict):
+            return None
+        detail: Any = payload.get("error")
+        status_code: Any = payload.get("status")
+        health = payload.get("health")
+        if isinstance(health, dict):
+            status_code = health.get("status") or status_code
+            detail = detail or health.get("error")
+            data = health.get("data")
+            if isinstance(data, dict):
+                detail = detail or data.get("error") or data.get("detail")
+            elif isinstance(data, str) and not detail:
+                detail = data
+        data_payload = payload.get("data")
+        if not detail and isinstance(data_payload, dict):
+            detail = data_payload.get("error") or data_payload.get("detail")
+
+        message_parts = []
+        if detail:
+            message_parts.append(str(detail))
+        if status_code:
+            message_parts.append(f"HTTP {status_code}")
+        if not message_parts:
+            return None
+        return " — ".join(message_parts)
 
     def start_polling(self) -> None:
         if self._thread and self._thread.is_alive():

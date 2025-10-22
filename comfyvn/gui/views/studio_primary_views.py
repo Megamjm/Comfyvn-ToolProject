@@ -5,10 +5,20 @@ from typing import Dict, Iterable, List, Optional
 
 import requests
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QLabel,
-                               QListWidget, QListWidgetItem, QPlainTextEdit,
-                               QPushButton, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from comfyvn.gui.services.job_stream import JobStreamClient
 from comfyvn.studio.core.asset_registry import AssetRegistry
@@ -184,14 +194,18 @@ class ImportsJobsView(QWidget):
         self.base_url = base_url.rstrip("/")
         self.jobs: Dict[str, dict] = {}
 
-        self.status_label = QLabel("Imports — connecting…", self)
+        self.status_label = QLabel("Import Processing — connecting…", self)
         self.status_label.setWordWrap(True)
 
-        self.queued_list = self._make_bucket_list("Queued", "Imports waiting to run.")
-        self.active_list = self._make_bucket_list(
-            "Active", "Imports currently in progress."
+        self.queued_list = self._make_bucket_list(
+            "Queued", "Import jobs queued for processing."
         )
-        self.done_list = self._make_bucket_list("Done", "Completed or failed imports.")
+        self.active_list = self._make_bucket_list(
+            "Active", "Import jobs currently in progress."
+        )
+        self.done_list = self._make_bucket_list(
+            "Done", "Completed or failed import jobs."
+        )
 
         buckets_row = QHBoxLayout()
         buckets_row.addWidget(self.queued_list["frame"], 1)
@@ -232,7 +246,7 @@ class ImportsJobsView(QWidget):
         try:
             response = requests.get(f"{self.base_url}/jobs/all", timeout=3)
         except Exception as exc:
-            LOGGER.debug("Imports snapshot request failed: %s", exc)
+            LOGGER.debug("Import Processing snapshot request failed: %s", exc)
             return
         if response.status_code >= 400:
             return
@@ -249,16 +263,16 @@ class ImportsJobsView(QWidget):
     # ------------------------------------------------------------------
     def _set_state(self, state: str) -> None:
         if state == "connected":
-            self.status_label.setText("Imports — live updates")
-            LOGGER.info("Imports job stream connected")
+            self.status_label.setText("Import Processing — live updates")
+            LOGGER.info("Import Processing job stream connected")
         elif state.startswith("error"):
-            self.status_label.setText("Imports — reconnecting…")
-            LOGGER.warning("Imports job stream error: %s", state)
+            self.status_label.setText("Import Processing — reconnecting…")
+            LOGGER.warning("Import Processing job stream error: %s", state)
         elif state == "disconnected":
-            self.status_label.setText("Imports — disconnected, retrying…")
-            LOGGER.info("Imports job stream disconnected")
+            self.status_label.setText("Import Processing — disconnected, retrying…")
+            LOGGER.info("Import Processing job stream disconnected")
         elif state == "connecting":
-            self.status_label.setText("Imports — connecting…")
+            self.status_label.setText("Import Processing — connecting…")
 
     def _handle_event(self, payload: dict) -> None:
         typ = payload.get("type")

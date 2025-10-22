@@ -546,9 +546,11 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         dock = getattr(self, "_imports_panel", None)
         if dock is None:
             panel = ImportsPanel(self.bridge.base)
-            dock = self.dockman.dock(panel, "Imports", area=Qt.BottomDockWidgetArea)
+            dock = self.dockman.dock(
+                panel, "Import Processing", area=Qt.BottomDockWidgetArea
+            )
             self._imports_panel = dock
-            logger.debug("Imports panel created")
+            logger.debug("Import Processing panel created")
         dock.setVisible(True)
         dock.raise_()
 

@@ -147,7 +147,7 @@ def write_ack(): set_ack(True); return {"ack": True}
 
 ## C) Wire menu actions & panels
 
-### C-1. Tools → Import Assets / Ren’Py Exporter / External Tools
+### C-1. Tools → Import Processing / Ren’Py Exporter / External Tools
 
 **File:** `comfyvn/gui/menu/tools_menu.py` (or equivalent)
 
@@ -170,11 +170,11 @@ def build_tools_menu(self, menu):  # chat: LiveFix
 
     menu.addSeparator()
     for label, panel in [
-        ("Import → SillyTavern Chat", "ImportSillyTavernPanel"),
-        ("Import → Character/Persona", "PersonaImporterPanel"),
-        ("Import → Lore/World", "LoreImporterPanel"),
-        ("Import → FurAffinity Images (upload)", "FurAffinityImporterPanel"),
-        ("Import → Roleplay (txt/json)", "RoleplayImporterPanel"),
+        ("Import Processing → SillyTavern Chat", "ImportSillyTavernPanel"),
+        ("Import Processing → Character/Persona", "PersonaImporterPanel"),
+        ("Import Processing → Lore/World", "LoreImporterPanel"),
+        ("Import Processing → FurAffinity Images (upload)", "FurAffinityImporterPanel"),
+        ("Import Processing → Roleplay (txt/json)", "RoleplayImporterPanel"),
     ]:
         a = QAction(label, self)
         a.triggered.connect(lambda _, p=panel: self.open_panel_name(p))

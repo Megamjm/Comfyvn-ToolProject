@@ -405,6 +405,11 @@
 - Documentation sweep: README Phase 6 wiring, `ARCHITECTURE.md`, `architecture_updates.md`, `docs/LLM_RECOMMENDATIONS.md`, and new `docs/development/emulation_and_llm.md` cover feature flags, prompt packs, adapter tuning, and debug hooks for contributors.
 
 ## 2025-10-31 — SillyTavern Compat & Session Sync (Parts A/B)
+
+### 2025-10-22 — Import Processing & Health Debug toggle
+- Renamed the Studio “Imports” view, dock, and menu entries to **Import Processing** so the label reflects the broader job aggregator role (VN chat, roleplay, persona runs). Updated Studio docs and user guides accordingly.
+- Refined the SillyTavern bridge surface: `/st/import` now responds to `OPTIONS` preflight requests and keeps status polling gated by `features.enable_st_importer`, aligning with the extension’s browser calls.
+- Added a `debug_health_checks` feature flag. When enabled, Studio logs every health probe and surfaces verbose details; when disabled (default) the UI still reports failure causes without spamming logs.
 - `comfyvn/bridge/st_bridge/extension_sync.collect_extension_status` now records plugin bundle/destination manifests, reports `plugin_needs_sync`, and retains the historical extension fields so existing automation keeps working. Watch paths now include plugin package files to surface missing installs.
 - `comfyvn/bridge/st_bridge/health.probe_health` merges ping status with the new version summaries (`versions.extension`, `versions.plugin`), emits `alerts` on manifest mismatches, and downgrades the overall status to `degraded` when bundle ↔ install versions diverge.
 - Added `comfyvn/bridge/st_bridge/session_sync.py` plus the `POST /st/session/sync` API. The endpoint accepts VN scene/P OV/variable context, trims transcripts, forwards the payload to comfyvn-data-exporter, and returns a panel-ready reply (`panel_reply`, `reply_text`) with measured latency. Dry-run mode keeps modder tooling from requiring a live SillyTavern instance.

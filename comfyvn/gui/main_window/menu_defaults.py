@@ -47,7 +47,7 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
     )
     registry.add("VN Chat", "open_vn_chat_panel", section="Modules", order=65)
     registry.add(
-        "Imports",
+        "Import Processing",
         "open_imports_panel",
         section="Modules",
         separator_before=True,

@@ -3,9 +3,18 @@ from __future__ import annotations
 from typing import Iterable, Mapping
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QListWidget, QListWidgetItem, QProgressBar,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class MetricsDashboard(QWidget):
@@ -97,7 +106,7 @@ class MetricsDashboard(QWidget):
         """Update the status badge based on /health response."""
         ok = fallback_ok
         status_text = "Disconnected"
-        detail = ""
+        detail_parts: list[str] = []
 
         if info and isinstance(info, Mapping):
             ok = bool(info.get("ok", False))
@@ -106,15 +115,29 @@ class MetricsDashboard(QWidget):
                 status_text = str(
                     data.get("status") or data.get("state") or ("OK" if ok else "Issue")
                 )
+                reason = data.get("error") or data.get("detail")
             elif isinstance(data, str):
                 status_text = data
+                reason = data if not ok else ""
             elif ok:
                 status_text = "Online"
+                reason = ""
+            else:
+                reason = None
+            info_error = info.get("error")
+            if not reason and isinstance(info_error, str):
+                reason = info_error
             status_code = info.get("status")
             if status_code:
-                detail = f"HTTP {status_code}"
+                detail_parts.append(f"HTTP {status_code}")
+            if reason:
+                detail_parts.append(str(reason))
         elif fallback_ok:
             status_text = "Online"
+
+        detail = " — ".join(part for part in detail_parts if part)
+        if not ok and not detail:
+            detail = "unknown issue"
 
         message = status_text if not detail else f"{status_text} ({detail})"
         self._status_label.setText(self._format_status(ok, message))

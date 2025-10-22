@@ -35,18 +35,22 @@ health payload to help operators enforce compliance.
 | Endpoint | Purpose | Notes |
 | -------- | ------- | ----- |
 | `GET /st/health` | Combined health report covering connectivity, plugin version parity, and token checks. | Accepts optional `base_url` and `plugin_base` overrides. |
-| `POST /st/import` | Imports SillyTavern exports (personas, worlds, chats). | Submit payloads with `{ "type": "...", "data": [...] }`. |
+| `POST /st/import`<br>`OPTIONS /st/import` | Imports SillyTavern exports (personas, worlds, chats). | Submit payloads with `{ "type": "...", "data": [...] }`. The `OPTIONS` preflight now responds with permissive CORS headers so the bundled browser extension can post without custom proxies. |
 | `POST /st/extension/sync` | Copies the bundled ComfyVN extension into the detected SillyTavern install. | Supports `{ "dry_run": true }` to preview actions. |
 | `POST /st/session/sync` | Pushes active VN state to the bridge and pulls the live reply. | Respects the configured host/port/base URL combination. |
 
-All utilities used by the GUI (`Tools → Import` submenu, Import Manager presets,
+All utilities used by the GUI (`Tools → Import Processing` submenu, Import Manager presets,
 and the Help menu launchers) call these endpoints and therefore inherit the host
 and port defined in settings.
 
 ## Offline Fallback
 
 When a live SillyTavern instance is unavailable you can still queue imports by
-selecting **Tools → Import → From File…** and providing JSON exports. The GUI
+selecting **Tools → Import Processing → From File…** and providing JSON exports. The GUI
 asks how to process list payloads and replays them through the same REST
 pipeline, making it easy for modders to stage assets before reconnecting to a
 bridge.
+
+Remember that the dedicated importer API (`/api/import/st/*`) stays gated behind
+`features.enable_st_importer`; the status endpoint now checks the flag as well,
+so disable it when you want to keep SillyTavern traffic offline during tests.

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Tuple
 
 from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from comfyvn.assets.persona_manager import PersonaManager
@@ -335,3 +336,13 @@ async def import_from_st(request: ImportRequest = Body(...)) -> dict[str, Any]:
     raise HTTPException(
         status_code=400, detail=f"Unsupported import type '{request.type}'"
     )
+
+
+@router.options("/import", summary="CORS preflight handler for SillyTavern imports")
+async def import_options() -> JSONResponse:
+    response = JSONResponse({"ok": True})
+    response.headers["Allow"] = "OPTIONS, POST"
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response

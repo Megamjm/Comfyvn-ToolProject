@@ -8,10 +8,10 @@ Studio highlights for this drop:
 
 - Detached server launches now shell out to `python -m uvicorn comfyvn.app:app`, inheriting the unified base authority (`config/baseurl_authority.py`) so Windows launches stop failing with `ModuleNotFoundError: comfyvn`.
 - Panel catalogue gains a **VN Loader** dock (`comfyvn/gui/panels/vn_loader_panel.py`) that pulls `/api/vn/projects`, rebuilds compiled story bundles, surfaces scene metadata, and pipes the payload into the Mini-VN fallback or a full Ren'Py launch without leaving Studio.
-- Tools menu now exposes an Import submenu with an OS file picker, SillyTavern presets, and the existing Import Manager panels (`comfyvn/gui/panels/json_endpoint_panel.py`). Quick presets cover persona/lore/chat payloads, FurAffinity drops, and remote installer plans for modders.
+- Tools menu now exposes an **Import Processing** submenu with an OS file picker, SillyTavern presets, and the existing Import Manager panels (`comfyvn/gui/panels/json_endpoint_panel.py`). Quick presets cover persona/lore/chat payloads, FurAffinity drops, roleplay archives, and now link directly to the External Tool Installer dock for remote module plans.
 - Dock widgets now expose a shared context menu (Close / Move to Dock Area) and stable workspace save-state naming; see `docs/DOCKING_AND_LAYOUT.md` for workflow tips.
 - Settings is available as a modal dialog (Tools → Settings Window) while the legacy dock stays for advanced workflows.
-- SillyTavern bridge settings now expose host, port, and plugin base controls in Studio Basics; `/st/health` and import flows honour the configured base URL.
+- SillyTavern bridge settings now expose host, port, and plugin base controls in Studio Basics; `/st/health` and import flows honour the configured base URL, and `/st/import` responds to browser preflights so the bundled extension can post payloads without extra configuration.
 - CLI helpers (`tools/check_current_system.py`, `tools/doctor_phase_all.py`) reuse the new `discover_base()` helper so scripted diagnostics honour the same rollover order (CLI override → env → public base → configured ports → fallback).
 
 Highlights:
@@ -838,3 +838,4 @@ See `docs/MARKETPLACE.md` for marketplace workflow details (manifest schema snap
 ## World Lore
 
 - Sample world data lives in `defaults/worlds/auroragate.json` (AuroraGate Transit Station). Pair it with `docs/world_prompt_notes.md` and `comfyvn/core/world_prompt.py` to translate lore into ComfyUI prompt strings.
+- New `features.debug_health_checks` flag lets Studio emit verbose health probe logs only when you need to diagnose backend startups—default off to keep console noise low while still surfacing failure reasons in the dashboard.

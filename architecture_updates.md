@@ -106,7 +106,7 @@ Recent Changes Observed
 - Import observability expanded with `/roleplay/imports` listing and `/roleplay/imports/{job_id}/log` streaming so Studio panels can surface queues + logs without touching disk.
 - Studio `RoleplayImportView` now binds to the importer endpoints, auto-refreshing every 10s and offering inline log viewing for rapid debugging.
 - Studio main window now persists geometry/layout via `QSettings`, and File menu includes New/Close/Recent project actions above the folder shortcuts.
-- Scenes/Characters/Imports/Audio/Advisory panels dockable via Modules menu, backed by registry/table endpoints for Phase 4 readiness.
+- Scenes/Characters/Import Processing/Audio/Advisory panels dockable via Modules menu, backed by registry/table endpoints for Phase 4 readiness (renamed from “Imports” to emphasise the aggregated job flow).
 - Assets router rebuilt: `/assets/*` delegates to `AssetRegistry` for list/detail/upload/register/delete, enforces metadata validation, and reuses thumbnail/sidecar helpers.
 - Asset provenance pipeline added: `AssetRegistry.register_file` records provenance rows, stamps PNG metadata, returns ledger details, and honours license metadata; tests (`tests/test_asset_provenance.py`) and docs (`docs/studio_assets.md`) describe verification steps.
 - Phase 0 scaffolding added: `setup/apply_phase06_rebuild.py`, `comfyvn/studio/core/*`, and `docs/studio_phase0.md`, moving toward Phase 2 “Data layer & registries”.

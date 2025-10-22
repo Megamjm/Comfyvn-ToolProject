@@ -9,7 +9,7 @@ This document is the single source of truth for how ComfyVN is structured and de
 
 1) Guiding principles
 
-Studio-first: A single, integrated desktop “studio” with views for Scenes, Characters, Assets, Imports, Compute, Audio, Advisory, Export, and Logs.
+Studio-first: A single, integrated desktop “studio” with views for Scenes, Characters, Assets, Import Processing, Compute, Audio, Advisory, Export, and Logs.
 
 Remixable by design: Anything imported (chats, VN packs, manga) is editable, remixable, and exportable.
 
@@ -512,7 +512,7 @@ Grid/list with thumbnails, tags, provenance; quick open in finder
 Acceptance: Clicking any asset opens inspector; provenance “Show lineage” works.
 
 Progress:
-- ✅ 2025-10-21 — Imports, Audio, and Advisory panels wired to backend `/jobs`, `/api/tts`, and `/api/advisory` endpoints for live monitoring; asset inspector remains TODO.
+- ✅ 2025-10-21 — Import Processing, Audio, and Advisory panels wired to backend `/jobs`, `/api/tts`, and `/api/advisory` endpoints for live monitoring; asset inspector remains TODO.
 
 Phase 5 — Compute & scheduling
 
@@ -1061,7 +1061,7 @@ DB migrations create all tables; asset registry + thumbnails + sidecars working.
 
 Roleplay/VN/Manga importers produce Scenes/Characters/Assets with advisory findings where needed.
 
-Studio views (Scenes, Characters, Timeline, Assets, Imports, Compute, Audio, Advisory, Export, Logs) switch cleanly and persist.
+Studio views (Scenes, Characters, Timeline, Assets, Import Processing, Compute, Audio, Advisory, Export, Logs) switch cleanly and persist.
 
 Compute advisor and GPU policy annotate jobs; remote provider can be registered and health-checked.
 

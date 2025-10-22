@@ -33,7 +33,7 @@ BEST_PRACTICE_SECTION_ITEMS = {
         "Assets",
         "Playground",
         "Timeline",
-        "Imports",
+        "Import Processing",
         "Audio",
         "Advisory",
         "System Status",
@@ -42,6 +42,7 @@ BEST_PRACTICE_SECTION_ITEMS = {
     "Tools": [
         "Reload Menus",
         "Launch Detached Server",
+        "External Tool Installer",
         "Install Base Scripts",
     ],
     "Extensions": [

@@ -513,6 +513,7 @@ async def st_import_start(
 
 @router.get("/status/{run_id}")
 async def st_import_status(run_id: str) -> Dict[str, Any]:
+    _require_feature_enabled()
     run_dir = IMPORT_ROOT / run_id
     if not run_dir.exists():
         raise HTTPException(status_code=404, detail="Import run not found.")

@@ -9,7 +9,7 @@ Updated: 2025-10-21
 
 ## Panel Overview (`comfyvn/gui/panels/vn_loader_panel.py`)
 - **Project selector** calls `GET /api/vn/projects` to enumerate build targets. Each entry carries `id`, `title`, `project_path` and raw metadata so automation can persist additional attributes.
-- **Build from Imports** posts to `POST /api/vn/build` with `{ "projectId": "...", "sources": [] }`, mirroring the CLI importer rebuild flow.
+- **Build from Import Processing** posts to `POST /api/vn/build` with `{ "projectId": "...", "sources": [] }`, mirroring the CLI importer rebuild flow.
 - **Rebuild Timeline** reuses `/api/vn/build` with `{ "projectId": "...", "rebuild": true }` to force a refresh when the compiled scene graph drifts from source imports.
 - **Scenes list** retrieves `GET /api/vn/scenes?projectId=...` and caches the raw payload for downstream hooks (e.g., export scripts, debug overlays).
 - **Play from Here** opens an inline Mini-VN dialog that iterates the selected scene’s dialogue blocks, rendering speakers, narration, and choice nodes for quick validation.

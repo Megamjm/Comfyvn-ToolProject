@@ -9,8 +9,8 @@
 - Dockable list (`CharactersPanel`) showing registry entries with origin metadata.
 - Updates path automatically when project context changes.
 
-## Imports
-- Uses `/jobs/all` and `/vn/import/{id}` to show VN/roleplay job progress.
+## Import Processing
+- Uses `/jobs/all` and `/vn/import/{id}` to show VN/roleplay job progress. The view was renamed from “Imports” to signal that it monitors every import job type, not just SillyTavern payloads.
 - “Open Summary” button launches generated summary file when available.
 
 ## Audio

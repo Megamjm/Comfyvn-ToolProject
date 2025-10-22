@@ -148,12 +148,13 @@ class StudioWindow(QMainWindow):
         self.setCentralWidget(container)
 
     def _build_views(self) -> None:
+        imports_label = "Import Processing"
         icons = {
             "Scenes": QStyle.SP_FileIcon,
             "Characters": QStyle.SP_FileDialogContentsView,
             "Timeline": QStyle.SP_DirOpenIcon,
             "Assets": QStyle.SP_DriveHDIcon,
-            "Imports": QStyle.SP_BrowserReload,
+            imports_label: QStyle.SP_BrowserReload,
         }
 
         self._scene_view = ScenesView(self.bridge, self)
@@ -167,7 +168,7 @@ class StudioWindow(QMainWindow):
             "Characters": self._characters_view,
             "Timeline": self._timeline_view,
             "Assets": self._asset_view,
-            "Imports": self._imports_view,
+            imports_label: self._imports_view,
         }
         self._view_order = list(self._view_map.keys())
 

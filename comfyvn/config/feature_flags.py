@@ -25,6 +25,7 @@ FEATURE_DEFAULTS: Dict[str, bool] = {
     "enable_public_translate": False,
     "enable_public_llm": False,
     "enable_observability": False,
+    "debug_health_checks": False,
     "enable_privacy_telemetry": False,  # legacy alias kept for backward compatibility
     "enable_audio_lab": False,
     "enable_crash_uploader": False,

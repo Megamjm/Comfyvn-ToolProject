@@ -7,7 +7,7 @@ Owners: Project Integration • Audience: Docs/QA channel
 1. Confirm feature defaults are **off**:
    - `jq '.features.enable_observability' config/comfyvn.json` → `false`
    - `jq '.features.enable_perf' config/comfyvn.json` → `false`
-2. Hit `/api/telemetry/health` and `/api/perf/health` on a fresh boot. Expect `feature_flag=false`, no consent, empty queues.
+2. Hit `/api/telemetry/health` and `/api/perf/health` on a fresh boot. Expect `feature_flag=false`, no consent, empty queues. If you need verbose Studio-side probes, flip `features.debug_health_checks` before launching the GUI so the bridge logs every poll; leave it off during normal runs to avoid console spam.
 3. Run `python tools/check_current_system.py --profile p3_ops_obs_perf --base http://127.0.0.1:8001` — verifies flags, routes, and doc presence (`docs/OBS_TELEMETRY.md`, `docs/PERF_BUDGETS.md`).
 
 ## Enabling for Local QA

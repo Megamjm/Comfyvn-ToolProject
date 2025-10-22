@@ -26,6 +26,7 @@
     "enable_public_translate": false,
     "enable_public_llm": false,
     "enable_observability": false,
+    "debug_health_checks": false,
     "enable_mini_vn": true,
     "enable_privacy_telemetry": false,
     "enable_audio_lab": false,

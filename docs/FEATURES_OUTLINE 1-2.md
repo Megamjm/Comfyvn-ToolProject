@@ -8,7 +8,7 @@ _Last updated: 2025-10-21_
 ## 1) Core Platform
 
 ### 1.1 Studio Shell (multi-view UI)
-**Intent:** Single app with dedicated views: Project Hub, Scenes, Characters, Timeline, Assets, Imports/Jobs, Compute, Audio, Advisory, Export, Logs.  
+**Intent:** Single app with dedicated views: Project Hub, Scenes, Characters, Timeline, Assets, Import Processing/Jobs, Compute, Audio, Advisory, Export, Logs.  
 **Status:** In-Progress (GUI loads, menu duplication + metrics wiring outstanding).
 
 ### 1.2 Server Core (FastAPI + WS)
@@ -159,7 +159,7 @@ _Last updated: 2025-10-21_
 **Intent:** Node editor with undo/redo; drag-drop timeline; preview runner.  
 **Status:** Planned.
 
-### 11.2 Imports/Jobs Dashboard
+### 11.2 Import Processing/Jobs Dashboard
 **Intent:** Background queue with WS updates; logs; retries; status filter.  
 **Status:** In-Progress (jobs hub exists; UI to wire).
 
@@ -191,7 +191,7 @@ Migrations for v0.6 tables; asset sidecars + thumbnails; rebuild registry from d
 Roleplay importer hardening → VN pack importer → Manga pipeline + fix-up UI.
 
 **Phase 4: Studio Views**  
-Scenes, Characters, Timeline, Assets, Imports; unify switching & inspectors.
+Scenes, Characters, Timeline, Assets, Import Processing; unify switching & inspectors.
 
 **Phase 5: Compute**  
 GPU manager + policy; remote provider registry; compute advisor; process swapper UI.

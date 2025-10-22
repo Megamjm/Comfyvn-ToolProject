@@ -30,7 +30,7 @@ class ImportsPanel(QWidget):
         super().__init__()
         self.base = (base or default_base_url()).rstrip("/")
 
-        self.status_label = QLabel("Imports — loading", self)
+        self.status_label = QLabel("Import Processing — loading", self)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
             ["ID", "Kind", "Status", "Progress", "Message"]
@@ -66,7 +66,7 @@ class ImportsPanel(QWidget):
             if response.status_code < 400:
                 return response.json()
         except Exception as exc:
-            LOGGER.warning("ImportsPanel request failed: %s", exc)
+            LOGGER.warning("ImportProcessingPanel request failed: %s", exc)
         return {}
 
     def refresh(self) -> None:
@@ -98,9 +98,11 @@ class ImportsPanel(QWidget):
             self.table.setItem(row, 4, QTableWidgetItem(job.get("message", "")))
 
         if self.jobs:
-            self.status_label.setText(f"Imports — tracking {len(self.jobs)} job(s)")
+            self.status_label.setText(
+                f"Import Processing — tracking {len(self.jobs)} job(s)"
+            )
         else:
-            self.status_label.setText("Imports — idle")
+            self.status_label.setText("Import Processing — idle")
 
     def open_summary(self) -> None:
         current_row = self.table.currentRow()
