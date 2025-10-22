@@ -252,11 +252,14 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 break
         if tools_menu is not None and not isValid(tools_menu):
             tools_menu = None
-        if tools_menu is None:
+        if tools_menu is None or not isValid(tools_menu):
             return
         previous_action = getattr(self, "_tools_import_menu_action", None)
         if previous_action is not None and isValid(previous_action):
-            tools_menu.removeAction(previous_action)
+            try:
+                tools_menu.removeAction(previous_action)
+            except RuntimeError:
+                logger.debug("Previous import menu action already removed by Qt")
             self._tools_import_menu_action = None
 
         import_menu = QMenu("Import", tools_menu)
@@ -281,10 +284,17 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 break
         if insert_index is not None and insert_index < len(actions):
             before_action = actions[insert_index]
-            if isValid(before_action):
-                tools_menu.insertMenu(before_action, import_menu)
-            else:
+            if before_action is None or not isValid(before_action):
                 tools_menu.addMenu(import_menu)
+            else:
+                try:
+                    tools_menu.insertMenu(before_action, import_menu)
+                except RuntimeError:
+                    logger.debug(
+                        "Tools menu insertMenu failed; falling back to addMenu",
+                        exc_info=True,
+                    )
+                    tools_menu.addMenu(import_menu)
         else:
             tools_menu.addMenu(import_menu)
         self._tools_import_menu_action = import_menu.menuAction()
