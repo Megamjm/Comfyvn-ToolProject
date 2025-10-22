@@ -673,3 +673,11 @@ End of Change Log for ComfyVN v0.2
 - Packaging (`comfyvn/market/packaging.py`) writes fully deterministic `.cvnext` archives (fixed timestamps/permissions) and verifies manifest SHA-256 digests when `trust.signature` is supplied, surfacing both package + manifest hashes in the build result.
 - FastAPI router `comfyvn/server/routes/market.py` replaces the legacy catalog/installed surfaces with `/api/market/list` (catalog + installed state, permission glossary, modder hook catalogue) and `/api/market/health` (trust breakdown + last error) while keeping install/uninstall flows consistent and feature-gated via `enable_marketplace`.
 - Documentation sweep: fresh `docs/MARKETPLACE.md` walks manifest fields, trust levels, signature policy, sandbox rules, debug hooks, and curl examples; `README.md`, `architecture.md`, and `docs/dev_notes_marketplace.md` reference the new endpoints, flags, and verification checklist.
+
+### 2025-10-22 — Live Sweep: docks/menu/import/ST
+- Fix `QMainWindow::saveState()` warnings by assigning `objectName` to all docks before save/restore.
+- Docks now closable/movable/floatable with right-click "Close / Move to Dock X".
+- Quick Access toolbar disabled by default (feature flag `enable_quick_toolbar`).
+- Tools → Import submenu (From File, SillyTavern Chat, Persona JSON, Lore JSON, FA upload, Roleplay txt/json).
+- Settings exposes SillyTavern host/port/base; bridge honors these.
+- Help menu opens Import Guide, ST Bridge, Legal & Liability, Docking & Layout.

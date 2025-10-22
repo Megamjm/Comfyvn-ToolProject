@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -63,6 +64,33 @@ def _ping(url: str, *, timeout: float) -> dict[str, object]:
             "latency_ms": round(latency, 2),
             "url": url,
         }
+
+
+def _build_base_from_host(
+    host: Optional[str], port: Optional[int | str]
+) -> Optional[str]:
+    if not host:
+        return None
+    raw = str(host).strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw if "://" in raw else f"http://{raw}")
+    scheme = parsed.scheme or "http"
+    hostname = parsed.hostname or parsed.path or ""
+    if not hostname:
+        return None
+    effective_port: Optional[int]
+    if parsed.port:
+        effective_port = parsed.port
+    else:
+        try:
+            effective_port = int(port) if port else None
+        except (TypeError, ValueError):
+            effective_port = None
+    netloc = hostname
+    if effective_port:
+        netloc = f"{hostname}:{effective_port}"
+    return f"{scheme}://{netloc}".rstrip("/")
 
 
 def _load_bridge(
@@ -167,17 +195,22 @@ def probe_health(
             "alerts": ["feature_disabled"],
         }
     config_base_hint = paths.config.get("base_url") or paths.config.get("base") or None
+    host_hint = paths.config.get("host")
+    port_hint = paths.config.get("port")
+    computed_base = config_base_hint or _build_base_from_host(host_hint, port_hint)
     config_plugin_hint = paths.config.get("plugin_base")
 
     bridge, bridge_config = _load_bridge(
         settings=settings_manager,
-        base_url=base_url or (str(config_base_hint) if config_base_hint else None),
+        base_url=base_url or (str(computed_base) if computed_base else None),
         plugin_base=plugin_base
         or (str(config_plugin_hint) if config_plugin_hint else None),
         timeout=timeout,
     )
 
     effective_base = bridge.base_url if bridge else bridge_config.get("base_url", "")
+    if not effective_base and computed_base:
+        effective_base = str(computed_base)
     ping_result: dict[str, object] | None = None
 
     if effective_base:

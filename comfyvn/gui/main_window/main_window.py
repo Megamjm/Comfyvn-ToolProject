@@ -3,20 +3,24 @@
 # -------------------------------------------------------------
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+import requests
 from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStatusBar,
@@ -101,6 +105,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             except AttributeError:
                 logger.debug("ServerBridge stub missing status_updated signal")
         self.dockman = DockManager(self)
+        self._tools_import_menu_action = None
         workspace_store = runtime_paths.workspace_dir()
         self.workspace = WorkspaceController(self, workspace_store)
         self._recent_projects = load_recent()
@@ -217,6 +222,7 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             try:
                 menubar = self.menuBar()
                 rebuild_menus_from_registry(self, menu_registry)
+                self._inject_import_submenu()
                 self._populate_extensions_menu()
                 self._menus_built = True
                 logger.debug("Menus rebuilt with %d items", len(menu_registry.items))
@@ -231,6 +237,189 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             print("[Shortcuts] load error:", e)
         # QuickAccessToolbarMixin expects items on self via registry
         self.build_quick_access_toolbar(shortcut_registry.iter_actions())
+
+    def _inject_import_submenu(self) -> None:
+        menubar = self.menuBar()
+        if menubar is None:
+            return
+        tools_menu = None
+        for action in menubar.actions():
+            if action.text().replace("&", "") == "Tools":
+                tools_menu = action.menu()
+                break
+        if tools_menu is None:
+            return
+        previous_action = getattr(self, "_tools_import_menu_action", None)
+        if previous_action is not None:
+            tools_menu.removeAction(previous_action)
+            self._tools_import_menu_action = None
+
+        import_menu = QMenu("Import", tools_menu)
+        import_menu.setObjectName("tools_import_submenu")
+
+        from_file_action = import_menu.addAction("From File…")
+        from_file_action.triggered.connect(self.import_from_file)
+        import_menu.addSeparator()
+        import_menu.addAction("SillyTavern Chat…", self.open_import_sillytavern_chat)
+        import_menu.addAction("Persona JSON…", self.open_import_persona)
+        import_menu.addAction("Lore JSON…", self.open_import_lore)
+        import_menu.addAction("FurAffinity Export…", self.open_import_furaffinity)
+        import_menu.addAction("Roleplay Transcript…", self.open_import_roleplay)
+
+        actions = tools_menu.actions()
+        insert_index = None
+        for idx, action in enumerate(actions):
+            if str(action.property("_sourceLabel") or "") == "Import Assets":
+                insert_index = idx + 1
+                break
+        if insert_index is not None and insert_index < len(actions):
+            before_action = actions[insert_index]
+            tools_menu.insertMenu(before_action, import_menu)
+        else:
+            tools_menu.addMenu(import_menu)
+        self._tools_import_menu_action = import_menu.menuAction()
+
+    def import_from_file(self) -> None:
+        caption = "Select Import Payload"
+        filters = (
+            "Bundle Files (*.json *.jsonl *.zip *.stbundle *.txt);;"
+            "JSON Files (*.json *.jsonl);;"
+            "Archive Files (*.zip *.stbundle);;"
+            "All Files (*)"
+        )
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, caption, str(Path.home()), filters
+        )
+        if not file_path:
+            return
+
+        path = Path(file_path)
+        focus_action: str | None = None
+        try:
+            if path.suffix.lower() in {".zip", ".stbundle"}:
+                self._import_vnpack_bundle(path)
+            else:
+                focus_action = self._import_json_payload(path)
+        except RuntimeError as exc:
+            notifier.toast("warn", str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - GUI safeguard
+            notifier.toast("error", f"Import failed: {exc}")
+            logger.exception("Import from file failed: %s", exc)
+            return
+
+        notifier.toast("success", f"Queued import for {path.name}")
+        if focus_action:
+            self.open_import_manager(focus_action)
+        self.open_imports_panel()
+
+    def _import_json_payload(self, path: Path) -> str | None:
+        with path.open("r", encoding="utf-8") as handle:
+            try:
+                data = json.load(handle)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"Invalid JSON payload: {exc}") from exc
+
+        route = "/st/import"
+        payload: dict[str, Any]
+        focus_action: str | None = None
+
+        if isinstance(data, dict):
+            if {"type", "data"} <= data.keys():
+                payload = {"type": data["type"], "data": data["data"]}
+            elif "personas" in data:
+                payload = {"type": "personas", "data": data["personas"]}
+            elif "worlds" in data:
+                payload = {"type": "worlds", "data": data["worlds"]}
+            elif "chats" in data:
+                payload = {"type": "chats", "data": data["chats"]}
+            elif "entries" in data:
+                route = "/api/imports/roleplay"
+                payload = {"entries": data["entries"]}
+                focus_action = "Import Roleplay Archive"
+            elif "collection" in data:
+                route = "/api/imports/furaffinity"
+                payload = {"collection": data["collection"]}
+                focus_action = "Import FurAffinity Gallery"
+            else:
+                raise RuntimeError(
+                    "Unsupported JSON payload shape – add type/data keys."
+                )
+        elif isinstance(data, list):
+            route, payload, focus_action = self._prompt_list_import(data)
+        else:
+            raise RuntimeError("Unsupported JSON payload structure.")
+
+        if route == "/st/import":
+            payload_type = str(payload.get("type", "")).lower()
+            focus_action = {
+                "personas": "Import Persona Bundle",
+                "worlds": "Import Lore Library",
+                "chats": "Import Chat Transcript",
+            }.get(payload_type, focus_action)
+
+        response = self.bridge.post_json(route, payload, timeout=15.0)
+        if not isinstance(response, dict) or not response.get("ok"):
+            detail = ""
+            if isinstance(response, dict):
+                detail = str(response.get("data") or response.get("error") or "")
+            raise RuntimeError(f"Server rejected payload. {detail}".strip())
+        return focus_action
+
+    def _prompt_list_import(
+        self, data: list[Any]
+    ) -> tuple[str, dict[str, Any], str | None]:
+        options = [
+            ("Persona JSON", "/st/import", "personas", "Import Persona Bundle"),
+            ("Lore JSON", "/st/import", "worlds", "Import Lore Library"),
+            (
+                "SillyTavern Chat Transcript",
+                "/st/import",
+                "chats",
+                "Import Chat Transcript",
+            ),
+            (
+                "Roleplay Transcript",
+                "/api/imports/roleplay",
+                None,
+                "Import Roleplay Archive",
+            ),
+        ]
+        labels = [label for label, *_ in options]
+        choice, ok = QInputDialog.getItem(
+            self,
+            "Select Import Type",
+            "Detected JSON array. Choose how to import these records:",
+            labels,
+            0,
+            False,
+        )
+        if not ok:
+            raise RuntimeError("Import cancelled.")
+        for label, route, import_type, focus_action in options:
+            if label == choice:
+                if import_type:
+                    return route, {"type": import_type, "data": data}, focus_action
+                return route, {"entries": data}, focus_action
+        raise RuntimeError("Unsupported import selection.")
+
+    def _import_vnpack_bundle(self, path: Path) -> None:
+        base_url = self._resolve_base_url().rstrip("/")
+        url = f"{base_url}/import/vnpack/extract"
+        with path.open("rb") as handle:
+            response = requests.post(
+                url,
+                files={"file": (path.name, handle)},
+                timeout=60,
+            )
+        if response.status_code >= 400:
+            try:
+                detail = response.json()
+            except Exception:  # pragma: no cover - text fallback
+                detail = response.text
+            raise RuntimeError(
+                f"VN pack import failed ({response.status_code}): {detail}"
+            )
 
     # --------------------
     # Panel openers (lazy)

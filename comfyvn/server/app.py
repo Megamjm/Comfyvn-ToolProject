@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
 from comfyvn.config import ports as ports_config
+from comfyvn.config.baseurl_authority import find_open_port
 from comfyvn.core.warning_bus import warning_bus
 from comfyvn.logging_config import init_logging
 from comfyvn.obs.crash_reporter import install_sys_hook
@@ -125,6 +126,18 @@ def _resolve_server_base(
             active_port = None
     if active_port is None:
         active_port = candidates[0]
+    connect_host = _connect_host(host)
+    if connect_host in {"127.0.0.1", "localhost"}:
+        try:
+            resolved = find_open_port(connect_host, active_port)
+            if resolved != active_port:
+                active_port = resolved
+        except Exception:  # pragma: no cover - defensive fallback
+            LOGGER.debug("find_open_port failed for %s:%s", connect_host, active_port)
+    if active_port not in candidates:
+        candidates.insert(0, active_port)
+    elif candidates and candidates[0] != active_port:
+        candidates = [active_port, *[p for p in candidates if p != active_port]]
     base_override = os.getenv("COMFYVN_SERVER_BASE") or os.getenv("COMFYVN_BASE_URL")
     public_base = port_config.get("public_base")
     if base_override:
@@ -132,7 +145,7 @@ def _resolve_server_base(
     elif public_base:
         base_url = str(public_base).rstrip("/")
     else:
-        base_url = f"http://{_connect_host(host)}:{active_port}"
+        base_url = f"http://{connect_host}:{active_port}"
     return base_url, candidates, active_port, host
 
 
@@ -286,14 +299,6 @@ def create_app(
             port_candidates,
         )
         _LOGGED_BASE = True
-
-    ports_config.record_runtime_state(
-        host=bind_host,
-        ports=port_candidates,
-        active_port=active_port,
-        base_url=base_url,
-        public_base=str(public_base_value) if public_base_value else None,
-    )
 
     if enable_cors:
         origins = _resolve_cors_origins(allowed_origins)

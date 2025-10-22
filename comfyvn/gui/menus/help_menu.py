@@ -10,13 +10,16 @@ from comfyvn.gui.menus.menu_utils import make_action
 
 logger = logging.getLogger(__name__)
 
-DOCS = {
-    "Getting Started": "README.md",
-    "Theme Kits": "docs/THEME_KITS.md",
-    "Importers & Extractors": "docs/EXTRACTORS.md",
-    "Persona Importers": "docs/PERSONA_IMPORTERS.md",
-    "Liability Gate": "docs/ADVISORY_EXPORT.md",
-}
+DOCS = [
+    ("Import Guide", "docs/IMPORTS_USER_GUIDE.md"),
+    ("SillyTavern Bridge", "docs/SILLYTAVERN_BRIDGE.md"),
+    ("Legal & Liability", "docs/LEGAL_LIABILITY.md"),
+    ("Docking & Layout", "docs/DOCKING_AND_LAYOUT.md"),
+    ("Getting Started", "README.md"),
+    ("Theme Kits", "docs/THEME_KITS.md"),
+    ("Importers & Extractors", "docs/EXTRACTORS.md"),
+    ("Persona Importers", "docs/PERSONA_IMPORTERS.md"),
+]
 
 
 def _open_local(path: Path) -> None:
@@ -28,7 +31,7 @@ def _open_local(path: Path) -> None:
 
 def register_menu(window, menubar):
     menu = menubar.addMenu("Help")
-    for label, rel in DOCS.items():
+    for label, rel in DOCS:
         path = Path(rel)
         act = QAction(f"📚 {label}", window)
         act.triggered.connect(lambda _, p=path: _open_local(p))

@@ -1,12 +1,15 @@
 {
-  "ts": 1761148936.4899468,
+  "ts": 1761162282.1359284,
   "base_requested": "",
   "base": "",
   "tried": [
     "http://127.0.0.1:8001",
     "http://127.0.0.1:8000"
   ],
-  "warnings": [],
+  "warnings": [
+    "config.ports[8001] not responding: http://127.0.0.1:8001",
+    "config.ports[8000] not responding: http://127.0.0.1:8000"
+  ],
   "profiles": [
     "p1_worldlines",
     "p1_extractors",

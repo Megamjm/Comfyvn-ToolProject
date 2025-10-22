@@ -1,10 +1,4 @@
 {
-  "demo_importer": {
-    "enabled": false
-  },
-  "demo_tool": {
-    "enabled": false
-  },
   "import_manager": {
     "enabled": false
   },
@@ -12,9 +6,6 @@
     "enabled": false
   },
   "renpy_exporter": {
-    "enabled": false
-  },
-  "sample-hello": {
     "enabled": false
   },
   "sillytavern_bridge": {

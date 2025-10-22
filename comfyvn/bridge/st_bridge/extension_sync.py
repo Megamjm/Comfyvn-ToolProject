@@ -159,6 +159,13 @@ def _sanitize_config(raw: dict[str, object]) -> dict[str, object]:
         view["base_url"] = raw["base_url"]
     if "plugin_base" in raw and raw["plugin_base"]:
         view["plugin_base"] = raw["plugin_base"]
+    if "host" in raw and raw["host"]:
+        view["host"] = raw["host"]
+    if "port" in raw:
+        try:
+            view["port"] = int(raw["port"])
+        except (TypeError, ValueError):
+            pass
     if "extensions_path" in raw and raw["extensions_path"]:
         view["extensions_path"] = raw["extensions_path"]
     if "extensions_dir" in raw and raw["extensions_dir"]:

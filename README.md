@@ -7,8 +7,10 @@ This update transforms ComfyVN from a static scene exporter into a multi-layer, 
 Studio highlights for this drop:
 
 - Detached server launches now shell out to `python -m uvicorn comfyvn.app:app`, inheriting the unified base authority (`config/baseurl_authority.py`) so Windows launches stop failing with `ModuleNotFoundError: comfyvn`.
-- Tools → Import Assets / Ren'Py Exporter / External Tool Installer ship interactive panels backed by live API testers (`comfyvn/gui/panels/json_endpoint_panel.py`). Quick presets cover SillyTavern persona/lore/chat imports, FurAffinity drops, and remote installer plans for modders.
+- Tools menu now exposes an Import submenu with an OS file picker, SillyTavern presets, and the existing Import Manager panels (`comfyvn/gui/panels/json_endpoint_panel.py`). Quick presets cover persona/lore/chat payloads, FurAffinity drops, and remote installer plans for modders.
+- Dock widgets now expose a shared context menu (Close / Move to Dock Area) and stable workspace save-state naming; see `docs/DOCKING_AND_LAYOUT.md` for workflow tips.
 - Settings is available as a modal dialog (Tools → Settings Window) while the legacy dock stays for advanced workflows.
+- SillyTavern bridge settings now expose host, port, and plugin base controls in Studio Basics; `/st/health` and import flows honour the configured base URL.
 - CLI helpers (`tools/check_current_system.py`, `tools/doctor_phase_all.py`) reuse the new `discover_base()` helper so scripted diagnostics honour the same rollover order (CLI override → env → public base → configured ports → fallback).
 
 Highlights:

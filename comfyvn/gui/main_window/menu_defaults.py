@@ -89,36 +89,6 @@ def register_core_menu_items(registry: MenuRegistry) -> None:
         order=40,
     )
     registry.add(
-        "Import → SillyTavern Chat",
-        "open_import_sillytavern_chat",
-        section="Tools",
-        order=50,
-    )
-    registry.add(
-        "Import → Character/Persona",
-        "open_import_persona",
-        section="Tools",
-        order=55,
-    )
-    registry.add(
-        "Import → Lore/World",
-        "open_import_lore",
-        section="Tools",
-        order=60,
-    )
-    registry.add(
-        "Import → FurAffinity Gallery",
-        "open_import_furaffinity",
-        section="Tools",
-        order=65,
-    )
-    registry.add(
-        "Import → Roleplay Archive",
-        "open_import_roleplay",
-        section="Tools",
-        order=70,
-    )
-    registry.add(
         "Install Base Scripts",
         "install_base_scripts",
         section="Tools",

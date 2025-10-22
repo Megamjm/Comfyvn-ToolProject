@@ -637,5 +637,71 @@
       {"path": "comfyvn/server/routes/ingest.py", "required": true},
       {"path": "docs/ASSET_INGEST.md", "required": true}
     ]
+  },
+  "p9_vn_loader_core": {
+    "flags": [],
+    "routes": [
+      {"path": "/api/vn/projects", "method": "GET", "required": true},
+      {"path": "/api/vn/build", "method": "POST", "required": true},
+      {"path": "/api/vn/scenes", "method": "GET", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/vn/loader.py", "required": true},
+      {"path": "comfyvn/vn/schema.py", "required": true},
+      {"path": "comfyvn/server/routes/vn_loader.py", "required": true},
+      {"path": "docs/VN_LOADER.md", "required": true},
+      {"path": "docs/SCENARIO_MAPPING.md", "required": true}
+    ]
+  },
+  "p9_st_import_pipeline": {
+    "flags": [],
+    "routes": [
+      {"path": "/api/import/st/start", "method": "POST", "required": true},
+      {"path": "/api/import/st/status/{id}", "method": "GET", "required": true},
+      {"path": "/api/persona/map", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/importers/st_chat/parser.py", "required": true},
+      {"path": "comfyvn/importers/st_chat/mapper.py", "required": true},
+      {"path": "comfyvn/server/routes/import_st.py", "required": true},
+      {"path": "docs/ST_IMPORTER_GUIDE.md", "required": true}
+    ]
+  },
+  "p9_asset_binding": {
+    "flags": [],
+    "routes": [
+      {"path": "/api/assets/ensure/portrait", "method": "POST", "required": true},
+      {"path": "/api/assets/link_persona", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/vn/binding.py", "required": true},
+      {"path": "comfyvn/server/routes/assets_binding.py", "required": true},
+      {"path": "docs/EXPRESSION_MAPPING.md", "required": true}
+    ]
+  },
+  "p9_viewer_integration": {
+    "flags": [
+      {"key": "enable_mini_vn", "expect": true, "required": false}
+    ],
+    "routes": [
+      {"path": "/api/vn/preview/{scene_id}", "method": "GET", "required": true}
+    ],
+    "files": [
+      {"path": "comfyvn/gui/panels/vn_loader_panel.py", "required": true},
+      {"path": "comfyvn/viewer/minivn/player.py", "required": true},
+      {"path": "docs/VN_VIEWER_GUIDE.md", "required": true}
+    ]
+  },
+  "p9_golden_import_tests": {
+    "flags": [],
+    "routes": [
+      {"path": "/api/playtest/run", "method": "POST", "required": true}
+    ],
+    "files": [
+      {"path": "tests/vn/test_st_loader.py", "required": true},
+      {"path": "qa/goldens/vn_st_sample/trace_mc.json", "required": true},
+      {"path": "qa/goldens/vn_st_sample/trace_antagonist.json", "required": true},
+      {"path": "docs/IMPORT_GOLDENS.md", "required": true}
+    ]
   }
 }

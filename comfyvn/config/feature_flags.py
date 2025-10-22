@@ -52,6 +52,7 @@ FEATURE_DEFAULTS: Dict[str, bool] = {
     "enable_perf": False,  # umbrella flag for budgets/profiler
     "enable_perf_budgets": False,
     "enable_perf_profiler_dashboard": False,
+    "enable_quick_toolbar": False,
     "enable_rating_api": True,
     "enable_rating_modder_stream": False,
     "enable_diffmerge_tools": False,

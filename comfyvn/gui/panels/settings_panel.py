@@ -4,6 +4,7 @@ import os
 import socket
 from pathlib import Path
 from typing import Dict, Mapping, Optional
+from urllib.parse import urlparse
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -118,12 +119,33 @@ class SettingsPanel(QDockWidget):
         port_row_layout.setContentsMargins(0, 0, 0, 0)
         port_row_layout.addWidget(self.local_port)
         port_row_layout.addWidget(self.btn_port_scan)
+        st_cfg = dict(cfg_snapshot.get("integrations", {}).get("sillytavern", {}))
+        self.st_host = QLineEdit(st_cfg.get("host", "127.0.0.1"))
+        st_port_value = 8000
+        try:
+            st_port_value = int(st_cfg.get("port", st_port_value))
+        except (TypeError, ValueError):
+            st_port_value = 8000
+        self.st_port = QSpinBox()
+        self.st_port.setRange(1, 65535)
+        self.st_port.setValue(st_port_value)
+        plugin_base = str(
+            st_cfg.get("plugin_base", "/api/plugins/comfyvn-data-exporter")
+        )
+        if plugin_base and not plugin_base.startswith("/"):
+            plugin_base = f"/{plugin_base.lstrip('/')}"
+        self.st_base_path = QLineEdit(
+            plugin_base or "/api/plugins/comfyvn-data-exporter"
+        )
         btn_save = QPushButton("Save UI Settings")
         btn_save.clicked.connect(self._save_settings)
         form.addRow("API Base URL:", self.api)
         form.addRow("Local Backend Port:", port_row_widget)
         form.addRow("Legacy Remote GPU Endpoints:", self.remote_list)
         form.addRow("Menu Sort Order:", self.menu_sort)
+        form.addRow("SillyTavern Host:", self.st_host)
+        form.addRow("SillyTavern Port:", self.st_port)
+        form.addRow("SillyTavern Plugin Base:", self.st_base_path)
         form.addRow(btn_save)
 
         drawer_container = DrawerContainer()
@@ -1151,6 +1173,20 @@ class SettingsPanel(QDockWidget):
     # --------------------
     # UI callbacks
     # --------------------
+    @staticmethod
+    def _build_sillytavern_base(host: str, port: int) -> str:
+        raw = (host or "").strip()
+        if not raw:
+            raw = "127.0.0.1"
+        parsed = urlparse(raw if "://" in raw else f"http://{raw}")
+        scheme = parsed.scheme or "http"
+        hostname = parsed.hostname or parsed.path or "127.0.0.1"
+        effective_port = parsed.port or int(port or 0)
+        netloc = hostname
+        if effective_port:
+            netloc = f"{hostname}:{effective_port}"
+        return f"{scheme}://{netloc}".rstrip("/")
+
     def _save_settings(self) -> None:
         self.bridge.set_host(self.api.text().strip())
         api_base = self.api.text().strip()
@@ -1165,6 +1201,25 @@ class SettingsPanel(QDockWidget):
         server_cfg = cfg.get("server", {})
         server_cfg["local_port"] = self.local_port.value()
         cfg["server"] = server_cfg
+        integrations_cfg = cfg.setdefault("integrations", {})
+        st_cfg = integrations_cfg.setdefault("sillytavern", {})
+        st_host = self.st_host.text().strip() or "127.0.0.1"
+        st_port = int(self.st_port.value())
+        plugin_base = (
+            self.st_base_path.text().strip() or "/api/plugins/comfyvn-data-exporter"
+        )
+        if not plugin_base.startswith("/"):
+            plugin_base = f"/{plugin_base.lstrip('/')}"
+        st_cfg.update(
+            {
+                "host": st_host,
+                "port": st_port,
+                "plugin_base": plugin_base,
+                "base_url": self._build_sillytavern_base(st_host, st_port),
+            }
+        )
+        if "endpoint" not in st_cfg or not st_cfg["endpoint"]:
+            st_cfg["endpoint"] = f"{self.bridge.base_url.rstrip('/')}/st/import"
         self.settings_manager.save(cfg)
         authority = current_authority(refresh=True)
         port_cfg = ports_config.get_config()
@@ -1195,7 +1250,7 @@ class SettingsPanel(QDockWidget):
         ports_config.record_runtime_state(
             host=host,
             ports=[new_port, *normalized_ports],
-            active_port=None,
+            active_port=new_port,
             base_url=None,
             public_base=(
                 str(public_base).strip()

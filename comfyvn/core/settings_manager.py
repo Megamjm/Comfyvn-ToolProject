@@ -23,6 +23,8 @@ DEFAULTS = {
     },
     "integrations": {
         "sillytavern": {
+            "host": "127.0.0.1",
+            "port": 8000,
             "base_url": "http://127.0.0.1:8000",
             "plugin_base": "/api/plugins/comfyvn-data-exporter",
             "endpoint": f"{default_base_url().rstrip('/')}/st/import",
