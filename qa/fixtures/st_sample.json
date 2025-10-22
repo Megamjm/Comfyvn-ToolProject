@@ -1,0 +1,39 @@
+[
+  {
+    "speaker": "MC",
+    "text": "I've tracked you here, villain.",
+    "meta": {
+      "is_user": true
+    }
+  },
+  {
+    "speaker": "Antagonist",
+    "text": "You should not have come alone."
+  },
+  {
+    "speaker": "MC",
+    "text": "Justice answers fear.",
+    "meta": {
+      "is_user": true
+    }
+  },
+  {
+    "speaker": "Narrator",
+    "text": "---"
+  },
+  {
+    "speaker": "Antagonist",
+    "text": "The city already belongs to me."
+  },
+  {
+    "speaker": "MC",
+    "text": "Your rule ends tonight.",
+    "meta": {
+      "is_user": true
+    }
+  },
+  {
+    "speaker": "Antagonist",
+    "text": "[[emotion:rage]] Then fall!"
+  }
+]

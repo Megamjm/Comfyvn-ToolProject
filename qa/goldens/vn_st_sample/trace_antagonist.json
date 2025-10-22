@@ -1,0 +1,241 @@
+{
+  "assets": {},
+  "config": {
+    "dry_run": true,
+    "metadata": {},
+    "persist": false,
+    "pov": "antagonist",
+    "prompt_packs": [],
+    "seed": 1337,
+    "variables": {},
+    "workflow": "default",
+    "worldline": null
+  },
+  "digest": "439a192570f17bcd8caf6094a2127990f7bf672c2f77c889802e5b655f310b1a",
+  "final": {
+    "assets": {},
+    "available_choices": [],
+    "finished": true,
+    "history": [
+      {
+        "choice": null,
+        "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002"
+      },
+      {
+        "choice": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002_auto",
+        "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002"
+      },
+      {
+        "choice": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003_auto",
+        "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003"
+      },
+      {
+        "choice": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004_auto",
+        "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004"
+      }
+    ],
+    "node": {
+      "choices": [],
+      "end": true,
+      "id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_end",
+      "type": "end"
+    },
+    "rng": {
+      "seed": 1337,
+      "uses": 3,
+      "value": 1178942230
+    },
+    "state": {
+      "current_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_end",
+      "finished": true,
+      "history": [
+        {
+          "choice": null,
+          "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002"
+        },
+        {
+          "choice": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002_auto",
+          "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002"
+        },
+        {
+          "choice": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003_auto",
+          "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003"
+        },
+        {
+          "choice": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004_auto",
+          "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004"
+        }
+      ],
+      "pov": "antagonist",
+      "rng": {
+        "seed": 1337,
+        "uses": 3,
+        "value": 1178942230
+      },
+      "scene_id": "vn_st_sample_antagonist_the_city_already_belongs_to_me",
+      "variables": {}
+    },
+    "variables_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "worldline": null
+  },
+  "initial": {
+    "assets": {},
+    "choices": [
+      {
+        "id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002_auto",
+        "label": "The city already belongs to me.",
+        "target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003",
+        "weight": 1.0
+      }
+    ],
+    "finished": false,
+    "history": [
+      {
+        "choice": null,
+        "node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002"
+      }
+    ],
+    "node": {
+      "choices": [
+        {
+          "id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002_auto",
+          "label": "The city already belongs to me.",
+          "target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003",
+          "weight": 1.0
+        }
+      ],
+      "id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002",
+      "speaker": "antagonist",
+      "text": "The city already belongs to me.",
+      "type": "dialogue"
+    },
+    "pov": "antagonist",
+    "rng": {
+      "seed": 1337,
+      "uses": 0,
+      "value": 1337
+    },
+    "variables": {},
+    "variables_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "worldline": null
+  },
+  "meta": {
+    "aborted": false,
+    "comfyvn_version": "1.0.0",
+    "max_steps": 256,
+    "persisted": false,
+    "pov": "antagonist",
+    "prompt_packs": [],
+    "runner": "HeadlessPlaytestRunner",
+    "runner_version": "2025.11",
+    "scene_id": "vn_st_sample_antagonist_the_city_already_belongs_to_me",
+    "seed": 1337,
+    "steps_recorded": 3,
+    "workflow": "default",
+    "worldline": null
+  },
+  "provenance": {
+    "asset_manifest": {},
+    "comfyvn_version": "1.0.0",
+    "digest": "439a192570f17bcd8caf6094a2127990f7bf672c2f77c889802e5b655f310b1a",
+    "pov": "antagonist",
+    "prompt_packs": [],
+    "seed": 1337,
+    "tool": "HeadlessPlaytestRunner",
+    "tool_version": "2025.11",
+    "workflow": "default",
+    "worldline": null
+  },
+  "schema_version": "1.0",
+  "steps": [
+    {
+      "assets": {},
+      "available_choices": [
+        {
+          "id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003_auto",
+          "label": "Your rule ends tonight.",
+          "target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004",
+          "weight": 1.0
+        }
+      ],
+      "choice_id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002_auto",
+      "choice_target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003",
+      "choice_text": "None",
+      "finished": false,
+      "from_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n002",
+      "history_length": 2,
+      "index": 0,
+      "pov": "antagonist",
+      "rng_after": {
+        "seed": 1337,
+        "uses": 1,
+        "value": 3239374148
+      },
+      "rng_before": {
+        "seed": 1337,
+        "uses": 0,
+        "value": 1337
+      },
+      "to_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003",
+      "variables": {},
+      "variables_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "assets": {},
+      "available_choices": [
+        {
+          "id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004_auto",
+          "label": "] Then fall!",
+          "target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_end",
+          "weight": 1.0
+        }
+      ],
+      "choice_id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003_auto",
+      "choice_target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004",
+      "choice_text": "None",
+      "finished": false,
+      "from_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n003",
+      "history_length": 3,
+      "index": 1,
+      "pov": "antagonist",
+      "rng_after": {
+        "seed": 1337,
+        "uses": 2,
+        "value": 2360088531
+      },
+      "rng_before": {
+        "seed": 1337,
+        "uses": 1,
+        "value": 3239374148
+      },
+      "to_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004",
+      "variables": {},
+      "variables_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "assets": {},
+      "available_choices": [],
+      "choice_id": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004_auto",
+      "choice_target": "vn_st_sample_antagonist_the_city_already_belongs_to_me_end",
+      "choice_text": "None",
+      "finished": true,
+      "from_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_n004",
+      "history_length": 4,
+      "index": 2,
+      "pov": "antagonist",
+      "rng_after": {
+        "seed": 1337,
+        "uses": 3,
+        "value": 1178942230
+      },
+      "rng_before": {
+        "seed": 1337,
+        "uses": 2,
+        "value": 2360088531
+      },
+      "to_node": "vn_st_sample_antagonist_the_city_already_belongs_to_me_end",
+      "variables": {},
+      "variables_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    }
+  ]
+}

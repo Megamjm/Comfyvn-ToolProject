@@ -38,6 +38,7 @@ The `docs/` tree is split by delivery lane so every chat knows where to drop sta
 - `docs/development/emulation_and_llm.md` — SillyCompatOffload feature flag, emulation engine payloads, LLM proxy usage, and prompt pack locations.
 - `docs/EDITOR_UX_ADVANCED.md` — blocking assistant + snapshot sheet API contracts, feature flags, hook payloads, and verification checklist (`p6_editor_ux`).
 - `docs/development/dev_notes_editor_blocking.md` — CLI drills, determinism notes, and hook payload reference for the editor blocking assistant and snapshot sheet compositor.
+- `docs/VN_VIEWER_GUIDE.md` — Phase 9 VN Loader and Mini-VN integration guide (GUI workflows, REST hooks, modder debug affordances).
 - `docs/development/dev_notes_cloud_sync.md` — S3/GDrive sync API, secrets vault rotation, manifest layout, provider SDK setup, and modder hook payloads.
 - `docs/dev_notes_playtest_harness.md` — deterministic playtest harness guide (feature flag, API payloads, golden diffs, modder hooks, and debug checklist).
 - `docs/AUDIO_LAB.md` — feature-flagged Audio Lab contracts (voice catalog, TTS cache, alignment JSON, mixer metadata) with hook payloads and filesystem layout.
@@ -48,6 +49,7 @@ The `docs/` tree is split by delivery lane so every chat knows where to drop sta
 - `docs/PROMPT_PACKS/` — reusable prompt templates (POV rewrite, battle narration) with strict JSON schemas for narrative tooling.
 - `docs/development/theme_world_changer.md` — Theme & World Changer REST contracts, checksum guarantees, debug flows, and modder automation tips.
 - `docs/PORTS_ROLLOVER.md` — launcher host/port rollover design, runtime authority resolution, REST probes, and CLI drills teams can script against when deploying Studio alongside modded servers.
+- `docs/ST_IMPORTER_GUIDE.md` — SillyTavern chat importer workflow (export steps, importer API, run artefacts, persona heuristics, modder hooks) with companion development log in `docs/dev_notes_st_importer.md`.
 
 Community connectors (F-List & FurAffinity)
 -------------------------------------------
@@ -57,6 +59,15 @@ Community connectors (F-List & FurAffinity)
 - `comfyvn/server/routes/connectors_persona.py` exposes `/api/connect/flist/consent|import_text`, `/api/connect/furaffinity/upload`, and `/api/connect/persona/map`. All routes require `features.enable_persona_importers`, reuse the shared consent JSON, apply `build_persona_record`, and persist persona/provenance JSON before firing `on_connector_persona_mapped` + `on_persona_imported`.
 - Consent JSON (`data/persona/consent.json`) now gains `connectors.flist` metadata, storing per-connector NSFW allowances, profile URLs, agents, and notes. The checker profile `p7_connectors_flist_fa` validates the routes, flags, and required docs.
 - Modder hooks `on_flist_profile_parsed` and `on_furaffinity_asset_uploaded` broadcast parsed persona payloads and stored asset metadata (hash/path/sidecar) so dashboards or plugins can react without polling REST endpoints.
+
+SillyTavern chat importer
+-------------------------
+
+- `comfyvn/importers/st_chat/parser.py` reads SillyTavern chat exports (`.json` or roleplay `.txt`) and normalises each turn into `{speaker, text, ts, meta}` records. Timestamp heuristics cover ISO strings, epoch seconds, and embedded SillyTavern metadata.
+- `comfyvn/importers/st_chat/mapper.py` segments transcripts by conversation title or long pauses, infers `line`/`choice`/`end` nodes, resolves persona IDs through `PersonaManager`, extracts expressions from `[emote]`, emoji, and `*stage*` cues, and records unresolved speaker warnings in scene metadata.
+- `comfyvn/server/routes/import_st.py` exposes `/api/import/st/start` and `/api/import/st/status/{runId}` behind `features.enable_st_importer`. Runs persist artefacts under `imports/<runId>/`, write generated scenes to `data/scenes/`, append history to `data/projects/<projectId>.json`, and emit the modder hooks `on_st_import_started`, `on_st_import_scene_ready`, `on_st_import_completed`, and `on_st_import_failed`.
+- `comfyvn/server/modules/st_import_api.py` mounts the router via the module auto-loader so the importer routes are available once the flag is enabled.
+- Docs: `docs/ST_IMPORTER_GUIDE.md` (export workflow, API payloads, scene heuristics, run artefacts, troubleshooting) with a companion development log in `docs/dev_notes_st_importer.md`. Checker profile `p9_st_import_pipeline` validates flag defaults, routes, and required docs/tests.
 
 Cloud sync & secrets vault summary
 ---------------------------------

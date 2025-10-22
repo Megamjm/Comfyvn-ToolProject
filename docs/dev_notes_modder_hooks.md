@@ -36,18 +36,33 @@ sidecars that are safe to automate against during the v0.7 run-up.
   logs each copy decision to `logs/server.log`.
 
 ### 1.2 SillyTavern payload imports
-- Endpoint: `POST /st/import` with `{"type": "<worlds|personas|characters|chats>", "data": ...}`.
+- Endpoint: `POST /st/import` with `{"type": "<worlds|personas|characters>", "data": ...}`.
 - Worlds → persisted with `WorldLoader.save_world`, returns `{"filename": "<name>.json"}`.
 - Personas → normalised via `SillyPersonaImporter` (character registry + persona profile),
   returns lists of registered personas/characters plus any errors.
 - Characters → upserts through `CharacterManager.import_character`. Use when persona JSON
   and character JSON are delivered separately.
-- Chats → converted into SceneStore entries under `data/scenes/`, giving Studio instant
-  previews via `/sceneio/list`.
 - Active payloads (`{"type": "active"}`) allow extensions to hint the currently focused
   world; the loader updates `WorldLoader.active_world` for GUI/CLI consumers.
 
-### 1.3 SillyTavern session sync
+### 1.3 ST chat importer pipeline
+- Feature flag `enable_st_importer` (default **false**) gates the importer. Toggle through **Settings → Debug & Feature Flags** or edit `config/comfyvn.json` and call `feature_flags.refresh_cache()`.
+- `POST /api/import/st/start` accepts a multipart form with `projectId` plus one of `file`, `text`, or `url`. SillyTavern `.json` and roleplay `.txt` exports are normalised into canonical turns (`imports/<runId>/turns.json`) and mapped into scenario graphs (`imports/<runId>/scenes.json`). Scenes are written to `data/scenes/<scene>.json` and appended to `data/projects/<projectId>.json` under `imports.st_chat[]`.
+- `GET /api/import/st/status/{runId}` reports `{phase, progress, scenes, warnings, preview}` so dashboards can follow the run. Phases: `initializing → parsed → mapped → completed`; failures populate `error` and leave the run in `failed`.
+- Artefacts:
+  - `imports/<runId>/turns.json` — normalised transcript for debugging/diffing.
+  - `imports/<runId>/scenes.json` — generated scenario payloads (line/choice/end nodes).
+  - `imports/<runId>/preview.json` — summary (`scene_count`, `turn_count`, participants).
+  - `imports/<runId>/status.json` — progress tracker with timestamps, warnings, preview path.
+- Modder hooks fire for automation:
+  - `on_st_import_started` → `{run_id, project_id, source, timestamp}`
+  - `on_st_import_scene_ready` → `{run_id, project_id, scene_id, title, participants, warnings}`
+  - `on_st_import_completed` → `{run_id, project_id, scene_count, warnings, status, preview_path}`
+  - `on_st_import_failed` → `{run_id, project_id, error, timestamp}`
+  Subscribe via `/api/modder/hooks/ws` or `modder_hooks.register_listener()` to mirror progress in CI/dashboard tooling. Structured logs land under `comfyvn.server.routes.import_st` when `COMFYVN_LOG_LEVEL=DEBUG`.
+- Docs: `docs/ST_IMPORTER_GUIDE.md` covers export steps, API payloads, heuristics, and troubleshooting. Companion dev note: `docs/dev_notes_st_importer.md`.
+
+### 1.4 SillyTavern session sync
 - Endpoint: `POST /st/session/sync`
 - Purpose: push the current VN scene ID, POV, variable map, and recent chat turns to
   SillyTavern (via comfyvn-data-exporter) and pull back a reply payload tailored for
@@ -79,14 +94,14 @@ sidecars that are safe to automate against during the v0.7 run-up.
 - Set `"dry_run": true` to preview the payload formatting without contacting
 SillyTavern. Supply `"limit_messages": 0` to forward the entire history.
 
-### 1.4 Bridge feature flags
+### 1.5 Bridge feature flags
 - Flags live under `config/comfyvn.json → features`. Studio exposes toggles in **Settings → Debug & Feature Flags**, and `comfyvn/config/feature_flags.py` offers helpers (`load_feature_flags()`, `is_enabled()`, `refresh_cache()`).
 - `enable_comfy_preview_stream` disables hardened preview polling when false, letting custom render bridges avoid writing manifests in development environments.
 - `enable_sillytavern_bridge` gates every SillyTavern helper (`WorldLoader.sync_from_sillytavern`, `STSyncManager`, `/st/health`). When the flag is off these entry points return `{"status": "disabled"}`, signalling automation to skip bridge calls gracefully.
 - `enable_narrator_mode` toggles the inline VN Chat overlay beneath the viewer; leave it disabled when scripting raw Ren'Py embedding or external narrator dashboards.
 - CLI/scripts should call `feature_flags.refresh_cache()` after mutating `config/comfyvn.json` so long-lived processes pick up flag changes immediately.
 
-### 1.5 Quick CLI tests
+### 1.6 Quick CLI tests
 ```bash
 curl -s http://127.0.0.1:8001/st/health | jq
 curl -s http://127.0.0.1:8001/st/paths | jq '.sync.watch_paths'
@@ -96,12 +111,17 @@ curl -s -X POST http://127.0.0.1:8001/st/extension/sync \
 curl -s -X POST http://127.0.0.1:8001/st/import \
   -H 'Content-Type: application/json' \
   -d @docs/samples/st_personas_sample.json | jq '.personas | length'
+run_id=$(curl -s -X POST http://127.0.0.1:8001/api/import/st/start \
+  -F projectId=demo-import \
+  -F 'text=Aurora: Welcome back!\nYou: Choice: Ask about the relic\nYou: > Leave' | jq -r '.runId')
+echo "run_id=${run_id}"
+curl -s "http://127.0.0.1:8001/api/import/st/status/${run_id}" | jq '{phase, progress, warnings}'
 curl -s -X POST http://127.0.0.1:8001/st/session/sync \
   -H 'Content-Type: application/json' \
   -d '{"scene_id":"demo_scene","messages":[{"role":"narrator","content":"Ping from CLI"}],"dry_run":true}' | jq '.context'
 ```
 
-### 1.6 Persona importer & community connector hooks
+### 1.7 Persona importer & community connector hooks
 - Feature flag `enable_persona_importers` (default **false**) gates `/api/persona/{consent,import/text,import/images,map,preview}`. Without consent, each route returns HTTP 403.
 - Persona mapping emits `on_persona_imported` with `{persona_id, persona, character_dir, sidecar, image_assets, sources, requested_at}` so dashboards/webhooks can mirror persona payloads and provenance sidecars.
 - Community connector routes (`/api/connect/flist/*`, `/api/connect/furaffinity/upload`, `/api/connect/persona/map`) introduce three additional hook payloads:

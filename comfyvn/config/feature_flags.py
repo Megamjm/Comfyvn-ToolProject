@@ -8,6 +8,7 @@ FEATURE_DEFAULTS: Dict[str, bool] = {
     "enable_comfy_bridge_hardening": False,
     "enable_comfy_preview_stream": False,
     "enable_sillytavern_bridge": False,
+    "enable_st_importer": False,
     "enable_narrator_mode": False,
     "enable_narrator": False,
     "enable_llm_role_mapping": False,

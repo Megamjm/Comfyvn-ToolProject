@@ -1,9 +1,16 @@
 # Dev Notes — Viewer Fallback Stack
 
-Updated: 2025-11-04
+Updated: 2025-10-21
+
+## Phase 9 — VN Loader Hooks
+- Panel location: `Panels → VN Loader` (implementation: `comfyvn/gui/panels/vn_loader_panel.py`).
+- Requests fan out through `ServerBridge` to `/api/vn/{projects,build,scenes,preview}` plus `/api/viewer/start`. Keep those routes stable; GUI and automation share the same payloads.
+- `Play from Here` normalises dialogue into `{speaker,text,choices}` for quick QA runs; extend `_extract_lines` when adding richer node types (animations, audio cues, etc.).
+- Mini-VN previews call `MiniVNPlayer.generate_snapshot()` so viewport digests match `/api/viewer/status`. If backend tokens are available, snapshots will pick up thumbnail URLs via `/api/viewer/mini/thumbnail/{token}/{key}` automatically.
+- Debug console captures raw REST responses. When bumping payload fields, update this doc, `docs/VN_VIEWER_GUIDE.md`, and smoke `p9_viewer_integration`.
 
 ## Feature Flags
-- `enable_viewer_webmode` (default: true) — allows `/api/viewer` to serve the web build when native Ren'Py embedding fails.
+- `enable_viewer_webmode` (default: true) — allows `/api/viewer` to serve the web build when native Ren’Py embedding fails.
 - `enable_mini_vn` (default: true) — enables the deterministic Mini-VN preview + thumbnailer.
 - Toggle via Settings → Debug & Feature Flags or edit `config/comfyvn.json` directly.
 

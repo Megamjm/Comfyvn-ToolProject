@@ -5,6 +5,7 @@
     "enable_comfy_preview_stream": false,
     "enable_compute": false,
     "enable_sillytavern_bridge": false,
+    "enable_st_importer": false,
     "enable_st_bridge": false,
     "enable_llm_proxy": false,
     "enable_narrator_mode": false,
