@@ -262,7 +262,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 logger.debug("Previous import menu action already removed by Qt")
             self._tools_import_menu_action = None
 
-        import_menu = QMenu("Import", tools_menu)
+        existing_menu = getattr(self, "_tools_import_menu", None)
+        if existing_menu is not None and isValid(existing_menu):
+            existing_menu.deleteLater()
+        import_menu = QMenu("Import", self)
         import_menu.setObjectName("tools_import_submenu")
 
         from_file_action = import_menu.addAction("From File…")
@@ -294,9 +297,35 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                         "Tools menu insertMenu failed; falling back to addMenu",
                         exc_info=True,
                     )
-                    tools_menu.addMenu(import_menu)
+                    import_menu = QMenu("Import", self)
+                    import_menu.setObjectName("tools_import_submenu")
+                    from_file_action = import_menu.addAction("From File…")
+                    from_file_action.triggered.connect(self.import_from_file)
+                    import_menu.addSeparator()
+                    import_menu.addAction(
+                        "SillyTavern Chat…", self.open_import_sillytavern_chat
+                    )
+                    import_menu.addAction("Persona JSON…", self.open_import_persona)
+                    import_menu.addAction("Lore JSON…", self.open_import_lore)
+                    import_menu.addAction(
+                        "FurAffinity Export…", self.open_import_furaffinity
+                    )
+                    import_menu.addAction(
+                        "Roleplay Transcript…", self.open_import_roleplay
+                    )
+                    try:
+                        tools_menu.addMenu(import_menu)
+                    except RuntimeError:
+                        logger.exception("Failed to add import submenu; aborting")
+                        import_menu.deleteLater()
+                        return
         else:
-            tools_menu.addMenu(import_menu)
+            try:
+                tools_menu.addMenu(import_menu)
+            except RuntimeError:
+                logger.exception("Failed to add import submenu to Tools menu")
+                import_menu.deleteLater()
+                return
         self._tools_import_menu_action = import_menu.menuAction()
         self._tools_import_menu = import_menu
 
