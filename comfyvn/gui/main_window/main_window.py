@@ -255,7 +255,16 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             return
 
         # Remove any previously injected Import submenu safely.
-        for action in list(tools_menu.actions()):
+        try:
+            tools_actions = list(tools_menu.actions())
+        except RuntimeError:
+            logger.debug(
+                "Tools menu unavailable while injecting import submenu; skipping",
+                exc_info=True,
+            )
+            return
+
+        for action in tools_actions:
             if not isValid(action):
                 continue
             menu = action.menu()
@@ -277,7 +286,15 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         import_menu.addAction("FurAffinity Export…", self.open_import_furaffinity)
         import_menu.addAction("Roleplay Transcript…", self.open_import_roleplay)
 
-        actions = [act for act in tools_menu.actions() if isValid(act)]
+        try:
+            actions = [act for act in tools_menu.actions() if isValid(act)]
+        except RuntimeError:
+            logger.debug(
+                "Tools menu actions invalidated during import submenu injection",
+                exc_info=True,
+            )
+            import_menu.deleteLater()
+            return
         before_action = None
         for action in actions:
             if str(action.property("_sourceLabel") or "") == "Import Assets":
