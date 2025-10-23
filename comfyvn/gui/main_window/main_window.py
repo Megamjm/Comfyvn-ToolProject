@@ -144,7 +144,6 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         self._script_status_label.setToolTip("Latest script execution status.")
         self._status.addPermanentWidget(self._script_status_label, 1)
         self._set_script_status(True, "No scripts executed yet.")
-        self._metrics_display.start()
         self._status.showMessage(
             "Start the VN viewer to preview scenes. Tools → Import Processing to ingest assets."
         )
@@ -165,14 +164,10 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         ensure_menu_bar(self)
         self.reload_menus()
 
-        # Background server: start if not reachable
-        self.bridge.start_polling()
-        self._update_server_status({"ok": False, "state": "waiting"})
-        QTimer.singleShot(400, self._ensure_server_online)
-        # Periodic server heartbeat to status bar
-        self._heartbeat = QTimer(self)
-        self._heartbeat.timeout.connect(self._poll_server_status)
-        self._heartbeat.start(2500)
+        # Background server services are activated after the window is shown.
+        self._backend_started = False
+        self._backend_heartbeat: QTimer | None = None
+
         if hasattr(self.bridge, "warnings_updated"):
             try:
                 self.bridge.warnings_updated.connect(self._handle_backend_warnings)
@@ -319,6 +314,23 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
                 return
 
         import_menu.menuAction().setProperty("_sourceLabel", "Import Processing")
+
+    def showEvent(self, event):  # type: ignore[override]
+        super().showEvent(event)
+        if not getattr(self, "_backend_started", False):
+            self._backend_started = True
+            QTimer.singleShot(0, self._activate_backend_services)
+
+    def _activate_backend_services(self) -> None:
+        logger.debug("Activating backend services after GUI show")
+        self.bridge.start_polling()
+        self._metrics_display.start()
+        self._update_server_status({"ok": False, "state": "waiting"})
+        QTimer.singleShot(400, self._ensure_server_online)
+        if self._backend_heartbeat is None:
+            self._backend_heartbeat = QTimer(self)
+            self._backend_heartbeat.timeout.connect(self._poll_server_status)
+            self._backend_heartbeat.start(2500)
 
     def import_from_file(self) -> None:
         caption = "Select Import Payload"

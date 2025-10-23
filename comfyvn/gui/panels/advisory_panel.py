@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 from PySide6.QtCore import Qt
@@ -40,6 +40,7 @@ class AdvisoryPanel(QWidget):
         super().__init__()
         self.base = (base or default_base_url()).rstrip("/")
         self._findings_cache: List[Dict] = []
+        self._gate_snapshot: Dict[str, Any] = {}
 
         root = QVBoxLayout(self)
         root.addWidget(self._build_gate_group())
@@ -141,6 +142,7 @@ class AdvisoryPanel(QWidget):
             return
 
         data = resp.json()
+        self._gate_snapshot = data
         status = data.get("status", {}) or {}
         requires_ack = bool(status.get("requires_ack"))
         acknowledged = bool(data.get("ack") or status.get("ack_legal_v1"))
@@ -191,6 +193,30 @@ class AdvisoryPanel(QWidget):
         )
         display_name = user.strip() or "anonymous"
         payload: Dict[str, str] = {"user": display_name, "name": display_name}
+        waiver_snapshot = getattr(self, "_gate_snapshot", {}) or {}
+        waiver_message = waiver_snapshot.get("message") or (
+            "By acknowledging these terms you accept full responsibility for any "
+            "imported or exported content produced with ComfyVN Studio."
+        )
+        waiver_details = (
+            "<b>Please review before continuing:</b><br>"
+            "<ul>"
+            "<li>Imported chats, personas, and assets may contain third-party IP or personal data.</li>"
+            "<li>You are responsible for verifying distribution rights and consent.</li>"
+            "<li>Exports include provenance records for compliance; share them responsibly.</li>"
+            "</ul>"
+            "<p>Click “Continue” only if you agree to these terms.</p>"
+        )
+        waiver_box = QMessageBox(self)
+        waiver_box.setWindowTitle("Review Liability Terms")
+        waiver_box.setIcon(QMessageBox.Warning)
+        waiver_box.setTextFormat(Qt.RichText)
+        waiver_box.setText(f"{waiver_message}<br><br>{waiver_details}")
+        waiver_box.setStandardButtons(QMessageBox.Cancel | QMessageBox.Ok)
+        waiver_box.setDefaultButton(QMessageBox.Cancel)
+        decision = waiver_box.exec()
+        if decision != QMessageBox.Ok:
+            return
         if ok_notes and notes.strip():
             payload["notes"] = notes.strip()
         try:
