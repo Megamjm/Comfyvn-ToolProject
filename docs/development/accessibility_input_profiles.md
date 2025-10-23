@@ -4,7 +4,7 @@ This note documents the accessibility manager, UI scale controller, input map su
 
 ## Modules & Persistence
 
-- `comfyvn/accessibility/__init__.py` exposes `accessibility_manager`: font scaling, color filters/high-contrast palettes, UI scaling, and subtitle overlays persist to `config/settings/accessibility.json` and write structured entries to `logs/accessibility.log`.
+- `comfyvn/accessibility/__init__.py` exposes `accessibility_manager`: font scaling, color filters/high-contrast palettes, UI scaling, and subtitle overlays persist to `config/settings/accessibility.json` (mirrored to the SQLite `settings` table) and write structured entries to `logs/accessibility.log`.
 - `comfyvn/accessibility/ui_scale.py` owns global/per-view UI scaling. Widgets register via `ui_scale_manager.register_widget(widget, view="viewer")` and receive layout/font adjustments when global or override values change.
 - Colorblind LUT overlays (`FilterOverlay`) live in `comfyvn/accessibility/filters.py`; subtitle overlays (`SubtitleOverlay`) live in `comfyvn/accessibility/subtitles.py`.
 - Controller-aware input bindings are handled by `comfyvn/accessibility/input_map.py`. Bindings default to the values captured in `SettingsManager.DEFAULTS["input_map"]` and can be reset or imported at runtime.
@@ -31,7 +31,7 @@ All responses are JSON and include structured logging extras (see `comfyvn/serve
 
 ## Studio Integration
 
-- Settings → **Accessibility**: slider for font multiplier, UI scale presets (100–200 %), viewer-specific override (optional), color filter combo box, and toggles for high contrast + subtitles. Changes apply immediately and persist to `config/settings/accessibility.json`.
+- Settings → **Accessibility**: slider for font multiplier, UI scale presets (100–200 %), viewer-specific override (optional), color filter combo box, and toggles for high contrast + subtitles. Changes apply immediately and persist to `config/settings/accessibility.json`/SQLite `settings`.
 - Settings → **Input & Controllers**: captures primary/secondary shortcuts via `ShortcutCapture`, assigns controller buttons (QtGamepad when available), and offers per-action + global reset buttons.
 - VN Viewer registers with both systems: UI scale overrides (when set) apply to the viewer container, overlays update without re-rendering, and remapped inputs (keyboard, numeric choices, controller buttons) trigger the viewer callback chain, emit subtitles, and post structured events.
 

@@ -11,8 +11,10 @@ import importlib
 import logging
 import os
 import pkgutil
+import threading
+import weakref
 from pathlib import Path
-from typing import Any, Iterable, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Set, Tuple
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,23 +26,9 @@ from comfyvn.core.warning_bus import warning_bus
 from comfyvn.logging_config import init_logging
 from comfyvn.obs.crash_reporter import install_sys_hook
 from comfyvn.obs.telemetry import get_telemetry
-from comfyvn.server.routes import accessibility as accessibility_routes
-from comfyvn.server.routes import battle as battle_routes
-from comfyvn.server.routes import llm as llm_routes
-from comfyvn.server.routes import (
-    modder_hooks,
-    pov_worlds,
-    providers_gpu,
-    providers_image_video,
-    providers_llm,
-    providers_translate_ocr_speech,
-    remote_orchestrator,
-)
-from comfyvn.server.routes import perf as perf_routes
-from comfyvn.server.routes import pov as pov_routes
-from comfyvn.server.routes import themes as themes_routes
-from comfyvn.server.routes import viewer as viewer_routes
-from comfyvn.server.routes import weather as weather_routes
+from comfyvn.server.core.errors import register_exception_handlers
+from comfyvn.server.core.event_stream import AsyncEventHub
+from comfyvn.server.core.middleware_ex import RequestIDMiddleware, TimingMiddleware
 from comfyvn.server.system_metrics import collect_system_metrics
 
 try:
@@ -76,6 +64,7 @@ PRIORITY_MODULES: tuple[str, ...] = (
     "comfyvn.server.modules.roleplay_api",
     "comfyvn.server.modules.playground_api",
     "comfyvn.server.modules.events_api",
+    "comfyvn.server.modules.events_ws_api",
     "comfyvn.server.modules.gpu_api",
     "comfyvn.server.routes.audio",
     "comfyvn.server.routes.compute",
@@ -84,8 +73,90 @@ PRIORITY_MODULES: tuple[str, ...] = (
     "comfyvn.server.routes.diffmerge",
     "comfyvn.manga.routes",
 )
+BUILTIN_ROUTERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("comfyvn.server.routes.accessibility", ("router", "input_router")),
+    ("comfyvn.server.routes.viewer", ("router",)),
+    ("comfyvn.server.routes.pov", ("router",)),
+    ("comfyvn.server.routes.llm", ("router",)),
+    ("comfyvn.server.routes.pov_worlds", ("router",)),
+    ("comfyvn.server.routes.perf", ("router",)),
+    ("comfyvn.server.routes.themes", ("router",)),
+    ("comfyvn.server.routes.weather", ("router",)),
+    ("comfyvn.server.routes.battle", ("router",)),
+    ("comfyvn.server.routes.providers_gpu", ("router",)),
+    ("comfyvn.server.routes.providers_image_video", ("router",)),
+    ("comfyvn.server.routes.providers_translate_ocr_speech", ("router",)),
+    ("comfyvn.server.routes.providers_llm", ("router",)),
+    ("comfyvn.server.routes.remote_orchestrator", ("router",)),
+    ("comfyvn.server.routes.modder_hooks", ("router",)),
+)
 
 _LOGGED_BASE = False
+
+
+if TYPE_CHECKING:
+    from comfyvn.core.task_registry import TaskItem
+
+
+class _TaskEventBridge:
+    """Fan out task registry updates to all active event hubs."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._hubs: "weakref.WeakSet[AsyncEventHub]" = weakref.WeakSet()
+        self._listener_registered = False
+        self._registry = None
+        self._registry_failed = False
+
+    def register(self, hub: AsyncEventHub) -> None:
+        with self._lock:
+            self._hubs.add(hub)
+            if not self._listener_registered:
+                registry = self._get_registry()
+                if registry is not None:
+                    registry.subscribe(self._on_task_update)
+                    self._listener_registered = True
+
+    def unregister(self, hub: AsyncEventHub) -> None:
+        with self._lock:
+            self._hubs.discard(hub)
+
+    def _on_task_update(self, task: Any) -> None:
+        payload = _serialise_task(task)
+        with self._lock:
+            hubs = list(self._hubs)
+        for hub in hubs:
+            try:
+                hub.publish("jobs.update", payload)
+            except Exception:
+                continue
+
+    def _get_registry(self):
+        if self._registry is None and not self._registry_failed:
+            try:
+                from comfyvn.core.task_registry import task_registry
+            except Exception as exc:  # pragma: no cover - optional dependency
+                LOGGER.debug("Task registry unavailable for event bridge: %s", exc)
+                self._registry_failed = True
+                return None
+            self._registry = task_registry
+        return self._registry
+
+
+_TASK_EVENT_BRIDGE = _TaskEventBridge()
+
+
+def _serialise_task(task: Any) -> dict[str, Any]:
+    return {
+        "id": task.id,
+        "kind": task.kind,
+        "status": task.status,
+        "progress": task.progress,
+        "message": task.message,
+        "meta": task.meta,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+    }
 
 
 def _connect_host(host: str) -> str:
@@ -115,9 +186,9 @@ def _port_candidates(port_config: dict[str, object]) -> list[int]:
 def _resolve_server_base(
     port_config: dict[str, object]
 ) -> tuple[str, list[int], int, str]:
-    host = str(port_config.get("host") or "127.0.0.1")
+    host = str(port_config.get("host") or os.getenv("COMFYVN_HOST") or "127.0.0.1")
     candidates = _port_candidates(port_config)
-    env_port = os.getenv("COMFYVN_SERVER_PORT")
+    env_port = os.getenv("COMFYVN_PORT") or os.getenv("COMFYVN_SERVER_PORT")
     active_port: int | None = None
     if env_port:
         try:
@@ -138,7 +209,11 @@ def _resolve_server_base(
         candidates.insert(0, active_port)
     elif candidates and candidates[0] != active_port:
         candidates = [active_port, *[p for p in candidates if p != active_port]]
-    base_override = os.getenv("COMFYVN_SERVER_BASE") or os.getenv("COMFYVN_BASE_URL")
+    base_override = (
+        os.getenv("COMFYVN_SERVER_BASE")
+        or os.getenv("COMFYVN_BASE_URL")
+        or os.getenv("COMFYVN_BASE")
+    )
     public_base = port_config.get("public_base")
     if base_override:
         base_url = base_override.rstrip("/")
@@ -160,20 +235,30 @@ def _collect_route_signatures(routes: Iterable[Any]) -> Set[Tuple[str, str]]:
     return signatures
 
 
-def _configure_logging() -> Path:
-    level = os.getenv("COMFYVN_LOG_LEVEL", "INFO")
-    DEFAULT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _configure_logging() -> tuple[Path, str]:
+    level = os.getenv("LOG_LEVEL") or os.getenv("COMFYVN_LOG_LEVEL", "INFO")
+    log_dir_env = os.getenv("LOG_DIR")
+    log_dir = Path(log_dir_env).expanduser() if log_dir_env else DEFAULT_LOG_PATH.parent
     log_path = init_logging(
-        log_dir=DEFAULT_LOG_PATH.parent,
+        log_dir=log_dir,
         level=level,
         filename=DEFAULT_LOG_PATH.name,
     )
     warning_bus.attach_logging_handler()
-    LOGGER.info("Server logging configured -> %s", log_path)
-    return log_path
+    LOGGER.info(
+        "Server logging configured",
+        extra={"log_path": str(log_path), "log_level": level},
+    )
+    return log_path, level
 
 
-def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) -> None:
+def _include_router_module(
+    app: FastAPI,
+    module_name: str,
+    *,
+    seen: set[str],
+    registry: Optional[list[str]] = None,
+) -> None:
     if module_name in seen:
         return
     try:
@@ -200,6 +285,8 @@ def _include_router_module(app: FastAPI, module_name: str, *, seen: set[str]) ->
     try:
         app.include_router(router)
         seen.add(module_name)
+        if registry is not None:
+            registry.append(module_name)
         LOGGER.debug(
             "Included router: %s (prefix=%s)",
             module_name,
@@ -234,14 +321,62 @@ def _iter_module_names(
     yield from _walk([str(base_path)], f"{package}.")
 
 
-def _include_routers(app: FastAPI, *, seen: Optional[Set[str]] = None) -> None:
+def _include_routers(
+    app: FastAPI,
+    *,
+    seen: Optional[Set[str]] = None,
+    registry: Optional[list[str]] = None,
+) -> None:
     seen = set(seen or ())
     for module_name in PRIORITY_MODULES:
-        _include_router_module(app, module_name, seen=seen)
+        _include_router_module(app, module_name, seen=seen, registry=registry)
     for module_name in _iter_module_names(MODULE_PATH, MODULE_PACKAGE):
-        _include_router_module(app, module_name, seen=seen)
+        _include_router_module(app, module_name, seen=seen, registry=registry)
     for module_name in _iter_module_names(ROUTES_PATH, ROUTES_PACKAGE):
-        _include_router_module(app, module_name, seen=seen)
+        _include_router_module(app, module_name, seen=seen, registry=registry)
+
+
+def include_builtin_routers(app: FastAPI) -> tuple[list[str], Set[str]]:
+    registry: list[str] = []
+    seen: Set[str] = set()
+    for module_name, attr_names in BUILTIN_ROUTERS:
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            LOGGER.warning(
+                "Skipping builtin router %s (import failed: %s)", module_name, exc
+            )
+            continue
+        for attr_name in attr_names:
+            router = getattr(module, attr_name, None)
+            if router is None:
+                continue
+            router_routes = getattr(router, "routes", None)
+            if not router_routes:
+                continue
+            existing_signatures = _collect_route_signatures(app.routes)
+            router_signatures = _collect_route_signatures(router_routes)
+            collisions = router_signatures.intersection(existing_signatures)
+            if collisions:
+                LOGGER.debug(
+                    "Skipping builtin router %s.%s (collision %s)",
+                    module_name,
+                    attr_name,
+                    ", ".join(sorted({path for path, _ in collisions})[:3]),
+                )
+                continue
+            try:
+                app.include_router(router)
+                registry.append(f"{module_name}:{attr_name}")
+            except Exception as exc:
+                LOGGER.warning(
+                    "Failed to include builtin router %s.%s: %s",
+                    module_name,
+                    attr_name,
+                    exc,
+                )
+        seen.add(module_name)
+    return registry, seen
 
 
 def _route_exists(app: FastAPI, path: str, methods: Set[str]) -> bool:
@@ -273,30 +408,34 @@ def create_app(
 ) -> FastAPI:
     """Application factory used by both CLI launches and ASGI servers."""
     install_sys_hook()
-    log_path = _configure_logging()
+    log_path, log_level = _configure_logging()
 
     port_config = ports_config.get_config()
     base_url, port_candidates, active_port, bind_host = _resolve_server_base(
         port_config
     )
-    public_base_value = port_config.get("public_base")
     default_kwargs = {"default_response_class": _ORJSON} if _ORJSON else {}
     app = FastAPI(title="ComfyVN", version=APP_VERSION, **default_kwargs)
     app.state.version = APP_VERSION
     app.state.log_path = log_path
+    app.state.log_level = log_level
     app.state.telemetry = get_telemetry(app_version=APP_VERSION)
     app.state.port_config = port_config
     app.state.port_candidates = port_candidates
     app.state.server_base = base_url
     app.state.bind_host = bind_host
+    app.state.active_port = active_port
+    app.state.router_catalog: list[str] = []
 
     global _LOGGED_BASE
     if not _LOGGED_BASE:
         LOGGER.info(
-            "Server base configured -> %s (host=%s, ports=%s)",
-            base_url,
-            bind_host,
-            port_candidates,
+            "Server base configured",
+            extra={
+                "base_url": base_url,
+                "bind_host": bind_host,
+                "port_candidates": port_candidates,
+            },
         )
         _LOGGED_BASE = True
 
@@ -309,43 +448,27 @@ def create_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        LOGGER.info("CORS enabled for origins: %s", origins)
+        LOGGER.info("CORS enabled", extra={"origins": origins})
 
-    preloaded_modules: Set[str] = {
-        accessibility_routes.__name__,
-        viewer_routes.__name__,
-        pov_routes.__name__,
-        llm_routes.__name__,
-        pov_worlds.__name__,
-        perf_routes.__name__,
-        themes_routes.__name__,
-        weather_routes.__name__,
-        battle_routes.__name__,
-        providers_gpu.__name__,
-        providers_image_video.__name__,
-        providers_translate_ocr_speech.__name__,
-        providers_llm.__name__,
-        remote_orchestrator.__name__,
-        modder_hooks.__name__,
-    }
-    app.include_router(accessibility_routes.router)
-    app.include_router(accessibility_routes.input_router)
-    app.include_router(viewer_routes.router)
-    app.include_router(pov_routes.router)
-    app.include_router(llm_routes.router)
-    app.include_router(pov_worlds.router)
-    app.include_router(perf_routes.router)
-    app.include_router(themes_routes.router)
-    app.include_router(weather_routes.router)
-    app.include_router(battle_routes.router)
-    app.include_router(providers_gpu.router)
-    app.include_router(providers_image_video.router)
-    app.include_router(providers_translate_ocr_speech.router)
-    app.include_router(providers_llm.router)
-    app.include_router(remote_orchestrator.router)
-    app.include_router(modder_hooks.router)
+    app.add_middleware(TimingMiddleware)
+    app.add_middleware(RequestIDMiddleware)
 
-    _include_routers(app, seen=preloaded_modules)
+    register_exception_handlers(app)
+
+    event_hub = AsyncEventHub()
+    app.state.event_hub = event_hub
+    _TASK_EVENT_BRIDGE.register(event_hub)
+
+    @app.on_event("shutdown")
+    async def _on_shutdown() -> None:
+        _TASK_EVENT_BRIDGE.unregister(event_hub)
+
+    builtin_registry, preloaded_modules = include_builtin_routers(app)
+    app.state.router_catalog.extend(builtin_registry)
+
+    _include_routers(
+        app, seen=set(preloaded_modules), registry=app.state.router_catalog
+    )
 
     if not _route_exists(app, "/health", {"GET"}):
 
@@ -361,12 +484,16 @@ def create_app(
 
         @app.get("/status", tags=["System"], summary="Service status overview")
         async def core_status():
-            routes = [route.path for route in app.routes if isinstance(route, APIRoute)]
+            routes = sorted(
+                {route.path for route in app.routes if isinstance(route, APIRoute)}
+            )
             return {
-                "status": "ok",
                 "ok": True,
                 "version": APP_VERSION,
                 "routes": routes,
+                "routers": list(app.state.router_catalog),
+                "base_url": app.state.server_base,
+                "log_path": str(app.state.log_path),
             }
 
     if not _route_exists(app, "/system/metrics", {"GET"}):
@@ -379,8 +506,23 @@ def create_app(
         async def core_metrics():
             return collect_system_metrics()
 
-    LOGGER.info("FastAPI application created with %d routes", len(app.routes))
+    LOGGER.info(
+        "FastAPI application ready",
+        extra={
+            "routes": len(app.routes),
+            "routers_loaded": len(app.state.router_catalog),
+            "version": APP_VERSION,
+        },
+    )
     return app
 
 
-app = create_app()
+if os.getenv("COMFYVN_SKIP_APP_AUTOLOAD", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}:
+    app: FastAPI | None = None
+else:
+    app = create_app()

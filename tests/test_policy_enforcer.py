@@ -10,7 +10,9 @@ from comfyvn.policy.enforcer import PolicyEnforcer
 
 
 def _test_gate(tmp_path: Path) -> PolicyGate:
-    settings = SettingsManager(path=tmp_path / "config.json")
+    settings = SettingsManager(
+        path=tmp_path / "config.json", db_path=tmp_path / "settings.db"
+    )
     gate = PolicyGate(settings)
     gate.acknowledge(user="tester")
     return gate
@@ -57,7 +59,7 @@ def test_policy_enforcer_blocks_on_block_findings(tmp_path, monkeypatch):
         ],
     )
 
-    assert result.allow is False
+    assert result.allow is True
     assert result.counts["block"] == 1
     assert any(entry["level"] == "block" for entry in result.blocked)
     log_path = Path(result.log_path)

@@ -96,6 +96,8 @@ def start_detached_server(host: str, port: int, reload: bool = False):  # chat: 
 
 **File:** `comfyvn/advisory/policy.py`
 **File:** `comfyvn/server/routes/advisory.py`
+> **Note:** The P7 advisory refresh replaced the hard gate with the `/api/advisory/disclaimer` + `/api/advisory/ack` flow. The legacy notes below remain for historical context.
+
 **Goal:** atomic save to `config/policy_ack.json`, REST `GET/POST /api/policy/ack`, block risky ops when false.
 
 ```python
@@ -140,7 +142,7 @@ def write_ack(): set_ack(True); return {"ack": True}
 **Acceptance**
 
 * First risky action prompts; clicking “Acknowledge” persists.
-* Restart app → `/api/policy/ack` returns `{"ack": true}`.
+* Restart app → `/api/policy/ack` returns `{"ack": true}`. _(Legacy endpoint; use `/api/advisory/ack` in current builds.)_
 * Export/installer routes can call `require_ack_or_raise()` to block before ack.
 
 ---
@@ -272,14 +274,14 @@ menu.addAction(act)
 2. Click **Tools → Import Assets** (open panel), **Ren’Py Exporter**, **External Tool Installer**.
 3. **Settings** → change ports order; **Probe** shows expected base; save; restart server → base matches first free port.
 4. Open **Help** docs.
-5. Liability Gate: call `/api/policy/ack` from UI; restart → remains `true`.
+5. Liability Gate: call `/api/policy/ack` from UI; restart → remains `true`. _(Legacy endpoint; current builds expose `/api/advisory/ack`.)_
 
 ---
 
 ## Debug & Verification
 
 * [ ] No `ModuleNotFoundError: comfyvn` in `server_detached.log` on Windows.
-* [ ] `/api/policy/ack` returns `{"ack": true}` after UI acknowledge; risky routes refuse without ack.
+* [ ] `/api/policy/ack` returns `{"ack": true}` after UI acknowledge; risky routes refuse without ack. _(Legacy endpoint; see `/api/advisory/ack`.)_
 * [ ] Tools menu items open functioning panels (import/export/tools).
 * [ ] Demo entries removed from menu; only one bottom tab row; status bar shows guide.
 * [ ] `tools/check_current_system.py` and (if available) `tools/doctor_phase_all.py` both resolve base via **base authority**, no hardcoded `:8000/:8001`.

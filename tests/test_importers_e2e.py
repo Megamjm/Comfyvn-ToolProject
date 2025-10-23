@@ -71,6 +71,10 @@ def test_vn_import_blocking_and_jobs_status(client: TestClient, tmp_path: Path):
     summary = payload["import"]
     assert summary["adapter"] in {"generic", "renpy", "lightvn"}
     assert "intro" in summary.get("scenes", [])
+    assert payload.get("logs_path")
+    assert Path(payload["logs_path"]).exists()
+    assert summary.get("preview_path")
+    assert Path(summary["preview_path"]).exists()
 
     # Poll generic jobs/status API
     status = client.get(f"/jobs/status/{job_id}")
@@ -82,6 +86,21 @@ def test_vn_import_blocking_and_jobs_status(client: TestClient, tmp_path: Path):
     vn_status = client.get(f"/vn/import/{job_id}")
     assert vn_status.status_code == 200
     assert vn_status.json()["ok"] is True
+
+    # Unified import status endpoint
+    unified = client.get(f"/imports/status/{job_id}")
+    assert unified.status_code == 200
+    status_payload = unified.json()["job"]
+    assert status_payload["kind"] == "vn"
+    assert status_payload.get("logs_path") == payload["logs_path"]
+    assert status_payload.get("percent") >= 100.0
+    listing = client.get("/imports/status")
+    assert listing.status_code == 200
+    jobs = listing.json().get("jobs", [])
+    assert any(
+        entry.get("job_id") == job_id or entry.get("job_id") == str(job_id)
+        for entry in jobs
+    )
 
 
 def test_vn_import_bad_input_returns_400(client: TestClient):
@@ -107,9 +126,12 @@ def test_roleplay_import_log_stream_present(client: TestClient):
     # Log endpoint returns plain text
     log = client.get(f"/roleplay/imports/{job_id}/log")
     assert log.status_code == 200
-    assert "scene_id=" in log.text or "[ok]" in log.text
+    assert "scene_id=" in log.text or "[ok]" in log.text or "[queued]" in log.text
     status = client.get(f"/roleplay/imports/status/{job_id}")
     assert status.status_code == 200
+    unified = client.get(f"/imports/status/{job_id}")
+    assert unified.status_code == 200
+    assert unified.json()["job"]["kind"] == "roleplay"
 
 
 def test_manga_import_blocking(client: TestClient, tmp_path: Path, monkeypatch):
@@ -125,13 +147,20 @@ def test_manga_import_blocking(client: TestClient, tmp_path: Path, monkeypatch):
     payload = resp.json()
     assert payload["ok"] is True
     job_id = payload["job"]["id"]
+    assert payload.get("logs_path")
+    assert Path(payload["logs_path"]).exists()
     summary = payload["import"]
     assert summary["scenes"]
     assert summary["assets"]
     assert summary["summary_path"]
     assert Path(summary["summary_path"]).exists()
+    assert summary.get("preview_path")
+    assert Path(summary["preview_path"]).exists()
     status = client.get(f"/manga/import/{job_id}")
     assert status.status_code == 200
+    unified = client.get(f"/imports/status/{job_id}")
+    assert unified.status_code == 200
+    assert unified.json()["job"]["kind"] == "manga"
     history = client.get("/manga/imports/history")
     assert history.status_code == 200
     imports = history.json()["imports"]

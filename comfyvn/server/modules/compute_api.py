@@ -116,10 +116,21 @@ async def advise(body: Optional[Dict[str, Any]] = Body(None)) -> Dict[str, Any]:
     devices = GPU_MANAGER.list_all(refresh=True)
     choice = GPU_MANAGER.select_device(prefer=prefer, requirements=requirements)
     rationale = _rationale_from_choice(choice, job_type)
+    target = (
+        (choice.get("kind") or choice.get("device") or "cpu")
+        if isinstance(choice, dict)
+        else "cpu"
+    )
+    if isinstance(target, str):
+        target_normalized = target.split(":", 1)[0]
+        if target_normalized not in {"cpu", "gpu", "remote"}:
+            target_normalized = "gpu" if target.startswith("cuda:") else "cpu"
+        target = target_normalized
 
     response = {
         "ok": True,
         "choice": choice,
+        "target": target,
         "policy": GPU_MANAGER.get_policy(),
         "considered": devices,
         "rationale": rationale,
@@ -154,18 +165,24 @@ async def advise_query(
         prefer_remote=prefer_remote,
         hardware_override=hardware_override,
     )
-    rationale = recommendation.get("reason") or ""
     choice = recommendation.get("choice")
-    summary = (
-        f"{choice.upper() if isinstance(choice, str) else choice}: {rationale}"
-        if choice
-        else rationale
-    )
+    target = str(choice).lower() if isinstance(choice, str) else None
+    if target not in {"cpu", "gpu", "remote"}:
+        if isinstance(choice, str) and choice.startswith("cuda:"):
+            target = "gpu"
+        elif isinstance(choice, str) and choice.startswith("remote:"):
+            target = "remote"
+        elif isinstance(choice, dict):
+            target = choice.get("kind")
+        else:
+            target = "cpu"
+    rationale = recommendation.get("reason") or ""
     return {
         "ok": True,
         "task": task,
         "size_mb": size_mb,
         "choice": choice,
-        "rationale": summary,
+        "target": target,
+        "rationale": rationale,
         "advice": recommendation,
     }

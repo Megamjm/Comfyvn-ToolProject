@@ -26,7 +26,7 @@ surface the active configuration, including whether an auth token was detected.
 ## Consent & Liability
 
 Ensure contributors have read `docs/LEGAL_LIABILITY.md` and have acknowledged
-the `/api/policy/ack` waiver before syncing user-generated content. The bridge
+the `/api/advisory/ack` disclaimer before syncing user-generated content. The bridge
 flags missing acknowledgement as `alerts: ["policy_unacknowledged"]` in the
 health payload to help operators enforce compliance.
 

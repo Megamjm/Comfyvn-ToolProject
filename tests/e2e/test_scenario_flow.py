@@ -219,7 +219,7 @@ def test_scenario_flow_with_exports(tmp_path, monkeypatch):
     )
     (runtime_paths.data_dir("assets", "backgrounds") / "bg.png").write_bytes(b"fake")
 
-    client.post("/api/policy/ack", json={"user": "phase4-test"})
+    client.post("/api/advisory/ack", json={"user": "phase4-test"})
     responses["export_renpy"] = client.post(
         "/api/export/renpy", params={"project_id": "phase4", "timeline_id": "main"}
     ).json()

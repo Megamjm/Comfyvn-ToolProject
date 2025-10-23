@@ -21,7 +21,7 @@
   - Logging configuration documented in `run_comfyvn.py` and `comfyvn/server/app.py`.
 
 ### Next Steps
-- Phase 2 migration extensions (`setup/apply_phase06_rebuild.py`).  
+- Phase 2 migration extensions (`tools/apply_migrations.py`).  
 - Studio registries expansion (`comfyvn/studio/core`).  
 - CLI consolidation for bundle/manifest workflows.
-- ~~Silence the `RegisterAssetRequest.copy` Pydantic warning and add regression coverage for `/settings/save` deep-merge semantics.~~ ✅ 2025-10-23 — Field renamed to `copy_file` and regression tests added for settings deep-merge and launcher smoke checks.
+- ~~Silence the `RegisterAssetRequest.copy` Pydantic warning and add regression coverage for `/system/settings` deep-merge semantics.~~ ✅ 2025-10-23 — Field renamed to `copy_file` and regression tests added for settings deep-merge and launcher smoke checks.

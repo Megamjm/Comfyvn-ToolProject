@@ -7,6 +7,7 @@ This update transforms ComfyVN from a static scene exporter into a multi-layer, 
 Studio highlights for this drop:
 
 - Detached server launches now shell out to `python -m uvicorn comfyvn.app:app`, inheriting the unified base authority (`config/baseurl_authority.py`) so Windows launches stop failing with `ModuleNotFoundError: comfyvn`.
+- Core server boot now wires JSON logging (request/response timing + `X-Request-ID` middleware), extends `/status` with the router catalogue/base URL/log path trio, and exposes the unified event hub (`/ws/events`, legacy `/events/ws`, `/events/sse`). Structured logs live in `logs/server.log`, and non-2xx replies use `{ok:false, code, message, details?, request_id?}` so diagnostics bundles stay copy-paste friendly.
 - Panel catalogue gains a **VN Loader** dock (`comfyvn/gui/panels/vn_loader_panel.py`) that pulls `/api/vn/projects`, rebuilds compiled story bundles, surfaces scene metadata, and pipes the payload into the Mini-VN fallback or a full Ren'Py launch without leaving Studio.
 - Tools menu now exposes an **Import Processing** submenu with an OS file picker, SillyTavern presets, and the existing Import Manager panels (`comfyvn/gui/panels/json_endpoint_panel.py`). Quick presets cover persona/lore/chat payloads, FurAffinity drops, roleplay archives, and now link directly to the External Tool Installer dock for remote module plans.
 - Dock widgets now expose a shared context menu (Close / Move to Dock Area) and stable workspace save-state naming; see `docs/DOCKING_AND_LAYOUT.md` for workflow tips.
@@ -25,13 +26,13 @@ Studio highlights for this drop:
 
 Highlights:
 
-🛡️ Legal & Creative Responsibility
-- You retain full creative freedom over the stories, assets, and exports you craft with ComfyVN. The platform provides guardrails—like the advisory scanner and liability gate—to surface risks, not to dictate content.
-- Before distributing builds, acknowledge the legal terms once per installation (Studio: **Settings → Advisory**, CLI: `scripts/export_bundle.py` prompts on block-level findings). This acknowledgement records that you accept all downstream responsibility for compliance with licences, ratings, and local regulations.
+- 🛡️ Legal & Creative Responsibility
+- You retain full creative freedom over the stories, assets, and exports you craft with ComfyVN. The platform provides guardrails—like the advisory scanner and disclaimer banner—to surface risks, not to dictate content.
+- Before distributing builds, acknowledge the advisory disclaimer once per installation (Studio: **Settings → Advisory**, CLI: `scripts/export_bundle.py` highlights it on first run). This acknowledgement is stored alongside provenance notes so you accept downstream responsibility for licences, ratings, and local regulations.
 - Flat → Layers pipeline (`docs/FLAT_TO_LAYERS.md`) documents the rembg/SAM/MiDaS workflow, provenance sidecars, `tools/depth_planes.py` helper, and Playground hooks for interactive mask refinement.
-- Block-level advisory findings halt exports; warnings flag items for manual review while keeping your workflow unblocked. See `docs/development/advisory_modding.md` for plugin hooks, troubleshooting, and override workflows.
+- Block-level advisory findings are surfaced prominently but no longer hard-stop exports; warnings flag items for manual review while keeping your workflow unblocked. See `docs/development/advisory_modding.md` for plugin hooks, troubleshooting, and override workflows.
 - Contributors shipping mods or automation scripts should reference the debug/API matrix in the same doc to understand available hooks, expected audit trails, and how to publish their own scanners without restricting user choice.
-- Studio bundle flow now surfaces `GET /api/export/bundle/status` (feature flag + gate probe) and `POST /api/advisory/scan` (deterministic findings: info/warn/block). `scripts/export_bundle.py` returns exit `3` when `enable_export_bundle=false` and prints the enforcement log path on success. See `docs/ADVISORY_EXPORT.md` for full workflow, CLI JSON contract, and modder hooks.
+- Studio bundle flow now surfaces `GET /api/advisory/disclaimer`, `POST /api/advisory/ack`, and `POST /api/advisory/scan` (deterministic findings grouped as license/sfw/unknown). `scripts/export_bundle.py` warns on advisory blockers but leaves the workflow unblocked, printing the enforcement log path and provenance bundle for review. See `docs/ADVISORY_EXPORT.md` for the full workflow, CLI JSON contract, and modder hooks.
 
 🔒 Rating Matrix & SFW Gate
 - `comfyvn/rating/classifier_stub.py` ships a conservative ESRB-style matrix (`E/T/M/Adult`) that scores prompts, metadata, and tags. Reviewer overrides persist to `config/settings/rating/overrides.json`, ensuring manual calls stay sticky across restarts.
@@ -515,7 +516,9 @@ Async refactor: switched to httpx.AsyncClient.
 
 Scaffolded “Import Roleplay” dialog (Phase 3.2 GUI target).
 
-Read-only Scenes, Characters, and Timeline inspectors now live under `comfyvn/gui/views/` and source their lists from `/api/{scenes,characters,timelines}` via the shared `ServerBridge`, falling back to mock payloads when the backend is offline. Selection updates a JSON inspector so designers can sanity-check payloads without leaving the Studio shell.
+- Read-only Scenes, Characters, and Timeline inspectors now live under `comfyvn/gui/views/` and source their lists from `/api/{scenes,characters,timelines}` via the shared `ServerBridge`, falling back to mock payloads when the backend is offline. Selection updates a JSON inspector so designers can sanity-check payloads without leaving the Studio shell. A `Show raw response` toggle ships with these inspectors (and the Import Processing/Export surfaces) so power users can inspect undigested payloads without cracking open DevTools.
+- The Studio shell bundles first-class Compute, Audio, Advisory, Import Processing, Export, and Logs views. Compute reuses the provider diagnostics grid, Audio exposes playback toggles, Advisory fronts the liability gate/pre-flight findings, Import Processing streams `/jobs/ws`, Export wires `/api/studio/export_bundle`, and Logs tails `./logs/gui.log` et al inside the shell.
+- `/system/metrics` polling now feeds rolling CPU/RAM sparklines in the dashboard footer (90 s window) alongside the status text and GPU breakdown so operators can spot drift without leaving Studio.
 - Character Designer complements the inspectors with full CRUD, LoRA attachment management, and hardened render buttons that surface asset UIDs + thumbnails inline for rapid iteration.
 
 🌍 World & Ambience Enhancements
@@ -640,15 +643,18 @@ Environment variables honour the same knobs:
 - `COMFYVN_SERVER_BASE` / `COMFYVN_BASE_URL` – default authority for the GUI, CLI helpers, and background workers (populated automatically from `--server-url` or the derived host/port).
 - `COMFYVN_SERVER_AUTOSTART=0` – disable GUI auto-start of a local server.
 - `COMFYVN_SERVER_HOST`, `COMFYVN_SERVER_PORT`, `COMFYVN_SERVER_APP`, `COMFYVN_SERVER_LOG_LEVEL` – default values consumed by the launcher when flags are omitted.
+- `COMFYVN_SKIP_APP_AUTOLOAD=1` – skip module-level creation of the FastAPI app so tests and embedded hosts can call `create_app()` manually before serving.
 - Viewer helpers honour `COMFYVN_RENPY_PROJECT_DIR` (override the default `renpy_project` path), `COMFYVN_RENPY_EXECUTABLE` (explicit runtime binary), `COMFYVN_RENPY_SDK` (SDK folder), plus the feature flags `enable_viewer_webmode` and `enable_mini_vn`. See `docs/VIEWER_README.md` for the decision tree and API surface.
 - Base URL authority lives in `comfyvn/config/baseurl_authority.py`. Resolution order: explicit `COMFYVN_BASE_URL` → runtime state file (`config/runtime_state.json` or cache override) → persisted settings (`settings/config.json`) → `comfyvn.json` fallback → default `http://127.0.0.1:8001`. The launcher writes the resolved host/port back to `config/runtime_state.json` after binding so parallel launchers, the GUI, and helper scripts stay aligned.
 - When no `--server-url` is provided the launcher derives a connectable URL from the chosen host/port (coercing `0.0.0.0` to `127.0.0.1` etc.), persists it via the base URL authority, and exports `COMFYVN_SERVER_BASE`/`COMFYVN_BASE_URL`/`COMFYVN_SERVER_PORT` for child processes.
 - Settings → **Network / Port Binding** now ships a web admin page at `/studio/settings/network.html` (token guard requires an admin role). It calls `/api/settings/ports/{get,set,probe}` to edit host, rollover ports, and optional public base overrides, mirrors the “would bind to” probe result, and surfaces ready-to-share curl drills for modders. Changes persist through `config/comfyvn.json` and update `.runtime/last_server.json`; see `docs/PORTS_ROLLOVER.md` for automation hooks.
 - GUI → Settings → *Compute / Server Endpoints* now manages both local and remote compute providers: discover loopback servers, toggle activation, edit base URLs, and persist entries to the shared provider registry (and, when available, the running backend).
 - Backend `features.enable_compute` now defaults to `false`. Enable it explicitly before wiring remote GPUs; compute APIs still respond while disabled but remote advice and cost previews stay informational only. After toggling, call `feature_flags.refresh_cache()` (or restart the backend) so long-lived workers see the change.
-- Compute routes add structured debug hooks: append `?debug=1` to `/api/gpu/list` or `/api/providers`, post `{"debug": true}` to `/api/compute/advise` for advisor thresholds + queue snapshots, and use `/api/compute/costs` to preview base/transfer/VRAM costs without dispatching jobs. All responses echo the feature flag state so Studio and modders can surface clear guidance.
+- Compute routes add structured debug hooks: append `?debug=1` to `/api/gpu/list` or `/api/providers`, post `{"debug": true}` to `/api/compute/advise` for advisor thresholds + queue snapshots, and use `/api/compute/costs` to preview base/transfer/VRAM costs without dispatching jobs. `/api/gpu/list` now surfaces summarised metrics (`mem_total`, `mem_free`, `util`) and the persisted GPU policy (`mode`, `preferred_id`), while `/api/compute/advise` normalises its recommendation under a `target` key (`cpu|gpu|remote`). A lightweight `echo` provider adapter keeps health checks green during smoke tests without wiring real remote GPUs. All responses echo the feature flag state so Studio and modders can surface clear guidance.
 - The Settings panel also exposes a local backend port selector with a “Find Open Port” helper so you can avoid clashes with other services; the selection is saved to the user config directory (`settings/config.json`), mirrored to the current environment, and honoured by the next launcher run.
-- Backend `/settings/{get,set,save}` endpoints now use the shared settings manager with deep-merge semantics, so GUI updates and CLI edits land in the same file without clobbering unrelated sections.
+- Backend `/system/settings` (GET/POST) now fronts the settings service. It deep-merges payloads, persists to both `settings/config.json` and the new SQLite settings table, and exposes `/system/settings/schema` for schema/default introspection.
+- Run `python tools/apply_migrations.py --list` to confirm SQLite migrations, `python tools/apply_migrations.py --dry-run` before deploying, and `python tools/apply_migrations.py --verbose` to see each migration as it executes.
+- Health helpers: `python tools/db_integrity_check.py` performs `PRAGMA integrity_check`, while `python tools/seed_demo_data.py [--force]` seeds demo scenes, characters, and assets for quick smoke tests.
 - Settings → **Debug & Feature Flags** hosts the ComfyUI hardened bridge toggle; once enabled the flag is persisted to `config/comfyvn.json` so subsequent ComfyUI submissions pick up prompt overrides, per-character LoRAs, and sidecar polling without needing to edit JSON by hand.
 - Asset imports enqueue thumbnail generation on a background worker so large images stop blocking the registration path; provenance metadata is embedded into PNGs and, when the optional `mutagen` package is installed, MP3/OGG/FLAC/WAV assets as well.
 - Install `mutagen` with `pip install mutagen` if you need audio provenance tags; without it the system still registers assets but skips embedding the metadata marker.
@@ -731,14 +737,19 @@ The `renpy_project/` directory is a pristine sample used for rendering validatio
 
 ### Ren'Py Export Orchestrator
 
-Use `python scripts/export_renpy.py --project <id>` to build a playable Ren'Py project under `build/renpy_game/`. Key helpers:
+Use `python scripts/export_renpy.py --project <id>` to build a playable Ren'Py project under `build/renpy_game/`. The same orchestrator is now available to automation via public routes:
+
+- `POST /export/renpy` stages a Ren'Py-ready folder (defaults to `exports/renpy/<project>_<timeline>/`) and returns the script path, manifest, provenance bundle locations, and a quick asset validation summary.
+- `POST /export/bundle` packages the Studio bundle (scenes, assets, provenance, embedded Ren'Py snapshot) into `exports/bundles/<slug>.zip`, mirroring the CLI provenance bundle. Dry runs reuse the diff payload emitted by `scripts/export_renpy.py`.
+
+Key CLI helpers:
 
 - Add `--dry-run` to print a diff against the current export without touching disk—ideal for pipeline previews. The FastAPI mirror lives at `GET /api/export/renpy/preview` so Studio and automation bots can surface the same diff payload to modders.
 - Pass `--publish --publish-out exports/renpy/<name>.zip` to generate a deterministic archive containing `game/`, `publish_manifest.json`, and per-platform placeholders. Combine with `--invoke-sdk --renpy-sdk /path/to/renpy` when you want the orchestrator to call the Ren'Py launcher immediately after zipping.
 - Use `--no-per-scene` to skip auxiliary `.rpy` modules or `--platform <id>` to customise placeholder folders for downstream packagers.
 - `--pov-mode` (`auto`, `master`, `forks`, `both`, `disabled`) and `--no-pov-switch` govern POV-aware exports. In the default `auto` mode the orchestrator analyses scene/timeline metadata, emits a master build with an in-game “Switch POV” menu, and materialises per-POV forks under `forks/<slug>/`. Disable the menu when distribution bundles should select POV externally (e.g., standalone character routes).
 - `--bake-weather` toggles deterministic weather/lighting baking (default inherits the `enable_export_bake` feature flag) and writes `<out>/label_manifest.json` with POV label coverage plus the `battle_labels` catalogue hashed for cache invalidation.
-- Successful runs now drop `provenance_bundle.zip` and a readable `provenance.json` beside the export. The CLI summary echoes `provenance_bundle`, `provenance_json`, and `provenance_findings` so downstream jobs can archive or lint the provenance payloads without unpacking the archive.
+- Successful runs now drop `provenance_bundle.zip` and a readable `provenance.json` beside the export. The CLI summary echoes `provenance_bundle`, `provenance_json`, and `provenance_findings` so downstream jobs can archive or lint the provenance payloads without unpacking the archive. The public `/export/renpy` route returns the same payload so Studio/automation can mirror CLI output verbatim.
 - Modder hooks `on_export_started` / `on_export_completed` broadcast CLI runs (project, timeline, weather bake flag, label manifest path, provenance bundle status) so CI/CD can react without tailing logs.
 
 See `docs/development_notes.md` for additional CLI samples, REST hooks, and environment toggles aimed at modders and tooling authors.
@@ -811,6 +822,7 @@ Embed this block (copy/paste) into every PR description so reviewers can confirm
 ## Tools & Ports
 
 - CLI diagnostics (`python tools/check_current_system.py`, `python tools/doctor_phase_all.py`) now auto-discover the backend base URL by reading `config/comfyvn.json` (`server.host`, `server.ports`, `server.public_base`) and the `COMFYVN_BASE|HOST|PORTS` environment overrides. The first `/health` probe that responds becomes the active base; failures exit `2` and print the attempted URLs.
+- External integrations installer (`python -m comfyvn.scripts.install_manager`) covers SillyTavern sync, Ren'Py bootstrap, and ComfyUI node packs. Pass `--verify-only` for a read-only health check, or add `--sillytavern`, `--renpy`, and `--comfyui` overrides to perform installs. Each run appends a JSON entry to `logs/install_report.log`, and downloads reuse `tools/cache/` with SHA256 sidecars for integrity.
 - Pin a specific backend in CI or remote staging with `--base` to bypass rollover probing. See `docs/PORTS_ROLLOVER.md` for the discovery order, debugging tips, and guidance on adding new ports.
 
 ## Policy Enforcement & Audit

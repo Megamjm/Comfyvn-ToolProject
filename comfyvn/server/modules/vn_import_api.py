@@ -4,21 +4,108 @@ import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from comfyvn.config.runtime_paths import imports_log_dir
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
 from comfyvn.server.core import extractor_installer
 from comfyvn.server.core.external_extractors import extractor_manager
+from comfyvn.server.core.import_status import import_status_store
 from comfyvn.server.core.vn_importer import VNImportError, import_vn_package
 from comfyvn.server.modules.auth import require_scope
 
 logger = logging.getLogger(__name__)
 
+LOG_DIR = imports_log_dir() / "vn"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 router = APIRouter(prefix="/vn", tags=["Importers"])
+
+
+def _log_line(log_file: Optional[Path], message: str) -> None:
+    if not log_file:
+        return
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    try:
+        with log_file.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        logger.debug("Failed to write VN import log line", exc_info=True)
+
+
+def _build_preview(summary: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    import_id = summary.get("import_id")
+    if not import_id:
+        return None
+    converted_dir = summary.get("converted_path")
+    preview_root: Optional[Path] = None
+    if converted_dir:
+        try:
+            preview_root = (
+                Path(converted_dir).expanduser().resolve().parent.parent / "preview"
+            )
+        except Exception:
+            preview_root = None
+    if preview_root is None:
+        data_root = Path(summary.get("data_root") or "data").expanduser().resolve()
+        preview_root = data_root / "imports" / "vn" / "preview"
+    preview_root.mkdir(parents=True, exist_ok=True)
+    scenes_dir_candidates = []
+    data_root = summary.get("data_root")
+    if data_root:
+        scenes_dir_candidates.append(Path(data_root).expanduser().resolve() / "scenes")
+    if converted_dir:
+        scenes_dir_candidates.append(Path(converted_dir).expanduser().resolve())
+    scene_ids = list(summary.get("scenes") or [])[:3]
+    scenes_preview: List[Dict[str, Any]] = []
+    for scene_id in scene_ids:
+        scene_payload = None
+        for base in scenes_dir_candidates:
+            if base is None:
+                continue
+            candidate = base / f"{scene_id}.json"
+            if candidate.exists():
+                try:
+                    scene_payload = json.loads(candidate.read_text(encoding="utf-8"))
+                    break
+                except Exception:
+                    continue
+        if not scene_payload or not isinstance(scene_payload, dict):
+            continue
+        nodes = scene_payload.get("nodes") or scene_payload.get("lines") or []
+        if isinstance(nodes, list):
+            snippet = nodes[:3]
+        else:
+            snippet = []
+        scenes_preview.append(
+            {
+                "scene_id": scene_id,
+                "title": scene_payload.get("title"),
+                "snippet": snippet,
+            }
+        )
+    preview_payload = {
+        "import_id": import_id,
+        "scenes": scenes_preview,
+        "characters": list(summary.get("characters") or [])[:6],
+        "assets": list(summary.get("assets") or [])[:10],
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    preview_path = preview_root / f"{import_id}.json"
+    try:
+        preview_path.write_text(
+            json.dumps(preview_payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        summary["preview_path"] = preview_path.as_posix()
+        summary["preview"] = preview_payload
+    except Exception:
+        logger.debug("Failed to write VN preview for %s", import_id, exc_info=True)
+    return preview_payload
 
 
 def _task_meta(task_id: str) -> Dict[str, Any]:
@@ -38,8 +125,18 @@ def _coerce_bool(value: Any) -> bool:
 
 
 def _execute_import(
-    task_id: str, package_path: str, overwrite: bool, tool: Optional[str]
+    task_id: str,
+    package_path: str,
+    overwrite: bool,
+    tool: Optional[str],
+    log_path: Optional[str] = None,
 ) -> Dict[str, Any]:
+    log_file = Path(log_path).expanduser().resolve() if log_path else None
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.touch(exist_ok=True)
+    _log_line(log_file, f"Starting VN import '{task_id}' from {package_path}")
+
     logger.info(
         "[VN Import] job=%s starting (overwrite=%s, tool=%s) -> %s",
         task_id,
@@ -51,7 +148,24 @@ def _execute_import(
         task_id, status="running", progress=0.05, message="Preparing import"
     )
     try:
+        import_status_store.update(
+            task_id,
+            state="running",
+            percent=5.0,
+            message="Preparing import",
+            stage="init",
+            meta={
+                "package": package_path,
+                "overwrite": overwrite,
+                "tool": tool,
+            },
+        )
+    except KeyError:
+        pass
+
+    try:
         summary = import_vn_package(package_path, overwrite=overwrite, tool=tool)
+        _log_line(log_file, "Archive imported successfully")
     except (
         Exception
     ) as exc:  # let caller convert to HTTP error, but make sure registry updated first
@@ -60,12 +174,34 @@ def _execute_import(
         task_registry.update(
             task_id, status="error", progress=1.0, message=str(exc), meta=meta
         )
+        _log_line(log_file, f"[error] {exc}")
+        try:
+            import_status_store.update(
+                task_id,
+                state="error",
+                percent=100.0,
+                message=str(exc),
+                stage="failed",
+                meta={"error": str(exc)},
+            )
+        except KeyError:
+            pass
         logger.exception("[VN Import] job=%s failed: %s", task_id, exc)
         raise
 
     meta = _task_meta(task_id)
+    preview_payload = _build_preview(summary)
+    if preview_payload:
+        _log_line(
+            log_file,
+            f"Preview generated with {len(preview_payload.get('scenes', []))} scenes",
+        )
+    if log_file:
+        summary["logs_path"] = log_file.as_posix()
+    meta["logs_path"] = summary.get("logs_path")
     meta["result"] = summary
     meta["summary_path"] = summary.get("summary_path")
+    meta["preview_path"] = summary.get("preview_path")
     meta["extractor"] = summary.get("extractor")
     if summary.get("extractor_warning"):
         meta.setdefault("warnings", []).append(summary["extractor_warning"])
@@ -83,16 +219,36 @@ def _execute_import(
         message=f"Import complete ({stats})",
         meta=meta,
     )
+    try:
+        import_status_store.update(
+            task_id,
+            state="done",
+            percent=100.0,
+            message=f"Import complete ({stats})",
+            stage="completed",
+            meta={
+                "summary_path": summary.get("summary_path"),
+                "preview_path": summary.get("preview_path"),
+                "adapter": summary.get("adapter"),
+            },
+        )
+    except KeyError:
+        pass
+    _log_line(log_file, f"[ok] {stats}")
     logger.info("[VN Import] job=%s complete %s", task_id, stats)
     return summary
 
 
 def _spawn_import_job(
-    task_id: str, package_path: str, overwrite: bool, tool: Optional[str]
+    task_id: str,
+    package_path: str,
+    overwrite: bool,
+    tool: Optional[str],
+    log_path: Optional[str] = None,
 ) -> None:
     def _runner() -> None:
         try:
-            _execute_import(task_id, package_path, overwrite, tool)
+            _execute_import(task_id, package_path, overwrite, tool, log_path=log_path)
         except VNImportError:
             # already logged in _execute_import; nothing else to do
             return
@@ -109,14 +265,8 @@ async def import_vn(payload: Dict[str, Any]):
     """Import a ComfyVN package (.cvnpack/.zip/.pak) into the local workspace."""
 
     gate = policy_gate.evaluate_action("import.vn")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "import blocked until legal acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        logger.warning("Advisory disclaimer pending for import.vn")
     path_value = payload.get("path") or payload.get("package_path")
     if not path_value:
         raise HTTPException(status_code=400, detail="path is required")
@@ -142,25 +292,80 @@ async def import_vn(payload: Dict[str, Any]):
         message=f"Import {resolved_path.name}",
         meta={"package": str(resolved_path), "tool": tool},
     )
+    log_path = LOG_DIR / f"vn_{task_id}.log"
+    log_path.touch(exist_ok=True)
+
+    task = task_registry.get(task_id)
+    base_meta = dict(getattr(task, "meta", {}) or {})
+    base_meta.update(
+        {
+            "package": str(resolved_path),
+            "tool": tool,
+            "logs_path": log_path.as_posix(),
+            "overwrite": overwrite,
+        }
+    )
+    task_registry.update(task_id, meta=base_meta)
+
+    status_links = {"logs": f"/jobs/logs/{task_id}"}
+    status_meta = {
+        "package": str(resolved_path),
+        "overwrite": overwrite,
+        "tool": tool,
+    }
+    try:
+        import_status_store.register(
+            "vn",
+            task_id,
+            task_id=task_id,
+            logs_path=log_path.as_posix(),
+            links=status_links,
+            meta=status_meta,
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.debug(
+            "Failed to register VN import status for %s", task_id, exc_info=True
+        )
 
     if blocking:
         try:
-            summary = _execute_import(task_id, str(resolved_path), overwrite, tool)
+            summary = _execute_import(
+                task_id,
+                str(resolved_path),
+                overwrite,
+                tool,
+                log_path=log_path.as_posix(),
+            )
         except VNImportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except FileNotFoundError as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=500, detail="vn import failed") from exc
-        return {"ok": True, "import": summary, "job": {"id": task_id}, "gate": gate}
+        return {
+            "ok": True,
+            "import": summary,
+            "job": {"id": task_id},
+            "logs_path": log_path.as_posix(),
+            "links": {"logs": f"/jobs/logs/{task_id}"},
+            "gate": gate,
+        }
 
     try:
-        _spawn_import_job(task_id, str(resolved_path), overwrite, tool)
+        _spawn_import_job(
+            task_id, str(resolved_path), overwrite, tool, log_path=log_path.as_posix()
+        )
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to spawn VN import job: %s", exc)
         raise HTTPException(status_code=500, detail="vn import spawn failed") from exc
 
-    return {"ok": True, "job": {"id": task_id}, "gate": gate}
+    return {
+        "ok": True,
+        "job": {"id": task_id},
+        "logs_path": log_path.as_posix(),
+        "links": {"logs": f"/jobs/logs/{task_id}"},
+        "gate": gate,
+    }
 
 
 @router.get("/import/{job_id}")

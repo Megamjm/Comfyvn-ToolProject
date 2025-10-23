@@ -20,13 +20,23 @@ from starlette.datastructures import UploadFile
 from comfyvn.config.runtime_paths import data_dir, imports_log_dir
 from comfyvn.core import advisory as advisory_core
 from comfyvn.core.advisory import AdvisoryIssue
-from comfyvn.core.file_importer import (ImportDirectories,
-                                        build_preview_payload, flatten_lines,
-                                        sanitize_filename)
+from comfyvn.core.file_importer import (
+    ImportDirectories,
+    build_preview_payload,
+    flatten_lines,
+    sanitize_filename,
+)
 from comfyvn.core.task_registry import task_registry
 from comfyvn.lmstudio_client import get_base_url as lmstudio_get_base_url
-from comfyvn.studio.core import (AssetRegistry, CharacterRegistry,
-                                 ImportRegistry, JobRegistry, SceneRegistry)
+from comfyvn.server.core.import_status import import_status_store
+from comfyvn.studio.core import (
+    AssetRegistry,
+    CharacterRegistry,
+    ImportRegistry,
+    JobRegistry,
+    SceneRegistry,
+    TimelineRegistry,
+)
 
 from .formatter import RoleplayFormatter
 from .parser import RoleplayParser
@@ -39,12 +49,15 @@ LOG_DIR = imports_log_dir()
 ROLEPLAY_DIRS = ImportDirectories.ensure("roleplay")
 ROLEPLAY_ROOT = ROLEPLAY_DIRS.root
 RAW_DIR = ROLEPLAY_DIRS.raw
+EXTRACTED_DIR = ROLEPLAY_DIRS.extracted
 PROCESSED_DIR = ROLEPLAY_DIRS.converted
 PREVIEW_DIR = ROLEPLAY_DIRS.preview
-STATUS_DIR = data_dir("roleplay", "metadata")
-LEGACY_RAW_DIR = data_dir("imports", "roleplay")
-LEGACY_PROCESSED_DIR = data_dir("roleplay", "processed")
-LEGACY_FINAL_DIR = data_dir("roleplay", "final")
+STATUS_DIR = ROLEPLAY_DIRS.status
+LEGACY_ROOT = data_dir("roleplay")
+LEGACY_STATUS_DIR = data_dir("roleplay", "metadata")
+LEGACY_RAW_DIR = LEGACY_ROOT / "raw"
+LEGACY_PROCESSED_DIR = LEGACY_ROOT / "processed"
+LEGACY_FINAL_DIR = LEGACY_ROOT / "final"
 DEFAULT_UPLOAD_LIMIT_MB = 10.0
 
 
@@ -62,6 +75,41 @@ def _resolve_upload_limit_bytes() -> int:
     return int(limit_mb * 1024 * 1024)
 
 
+def _append_timeline_entry(
+    name: str, entry: Dict[str, Any], meta: Dict[str, Any]
+) -> Optional[int]:
+    try:
+        timelines = _timeline_registry.list_timelines()
+    except Exception:
+        LOGGER.debug("Timeline list failed", exc_info=True)
+        return None
+    for timeline in timelines:
+        if timeline.get("name") == name:
+            order = list(timeline.get("scene_order") or [])
+            if any(slot.get("scene_id") == entry.get("scene_id") for slot in order):
+                return timeline.get("id")
+            order.append(entry)
+            merged_meta = dict(timeline.get("meta") or {})
+            merged_meta.update(meta)
+            try:
+                return _timeline_registry.save_timeline(
+                    name=name,
+                    scene_order=order,
+                    meta=merged_meta,
+                    timeline_id=timeline.get("id"),
+                )
+            except Exception:
+                LOGGER.debug("Timeline update failed", exc_info=True)
+                return timeline.get("id")
+    try:
+        return _timeline_registry.save_timeline(
+            name=name, scene_order=[entry], meta=meta
+        )
+    except Exception:
+        LOGGER.debug("Timeline create failed", exc_info=True)
+        return None
+
+
 ROLEPLAY_UPLOAD_LIMIT_BYTES = _resolve_upload_limit_bytes()
 ROLEPLAY_UPLOAD_LIMIT_MB = math.ceil(ROLEPLAY_UPLOAD_LIMIT_BYTES / (1024 * 1024))
 ROLEPLAY_UPLOAD_CHUNK_SIZE = 64 * 1024
@@ -69,9 +117,11 @@ ROLEPLAY_UPLOAD_CHUNK_SIZE = 64 * 1024
 for _dir in (
     ROLEPLAY_ROOT,
     RAW_DIR,
+    EXTRACTED_DIR,
     PROCESSED_DIR,
     PREVIEW_DIR,
     STATUS_DIR,
+    LEGACY_STATUS_DIR,
     LEGACY_RAW_DIR,
     LEGACY_PROCESSED_DIR,
     LEGACY_FINAL_DIR,
@@ -109,6 +159,7 @@ _character_registry = CharacterRegistry()
 _job_registry = JobRegistry()
 _import_registry = ImportRegistry()
 _asset_registry = AssetRegistry()
+_timeline_registry = TimelineRegistry()
 
 
 @dataclass
@@ -161,7 +212,9 @@ def _job_logs_link(task_id: Optional[str]) -> Optional[str]:
     return f"/jobs/logs/{task_id}"
 
 
-def _merge_task_meta(task_ref: Optional[str], **updates: Any) -> Optional[Dict[str, Any]]:
+def _merge_task_meta(
+    task_ref: Optional[str], **updates: Any
+) -> Optional[Dict[str, Any]]:
     if not task_ref:
         return None
     task = task_registry.get(task_ref)
@@ -265,9 +318,12 @@ def _save_preview(scene_uid: str, payload: Dict[str, Any]) -> None:
 def _load_status(scene_uid: str) -> Dict[str, Any]:
     path = _status_file(scene_uid)
     if not path.exists():
-        legacy_path = LEGACY_FINAL_DIR / f"{scene_uid}.json"
-        if legacy_path.exists():
-            path = legacy_path
+        legacy_status = LEGACY_STATUS_DIR / f"{scene_uid}.json"
+        legacy_final = LEGACY_FINAL_DIR / f"{scene_uid}.json"
+        if legacy_status.exists():
+            path = legacy_status
+        elif legacy_final.exists():
+            path = legacy_final
         else:
             raise HTTPException(status_code=404, detail="Scene status not found.")
     try:
@@ -410,17 +466,30 @@ def _execute_import_job(
         *,
         status: Optional[str] = None,
         meta: Optional[Dict[str, Any]] = None,
+        stage: Optional[str] = None,
     ) -> None:
-        if not task_ref:
-            return
-        updates: Dict[str, Any] = {"progress": progress, "message": message}
-        if status:
-            updates["status"] = status
-        if meta:
-            merged = _merge_task_meta(task_ref, **meta)
-            if merged is not None:
-                updates["meta"] = merged
-        task_registry.update(task_ref, **updates)
+        if task_ref:
+            updates: Dict[str, Any] = {"progress": progress, "message": message}
+            if status:
+                updates["status"] = status
+            if meta:
+                merged = _merge_task_meta(task_ref, **meta)
+                if merged is not None:
+                    updates["meta"] = merged
+            task_registry.update(task_ref, **updates)
+        try:
+            extra_meta = meta if isinstance(meta, dict) else None
+            import_status_store.update(
+                str(job_id),
+                state=status,
+                percent=max(0.0, min(100.0, progress * 100.0)),
+                message=message,
+                stage=stage or status or "progress",
+                detail=message,
+                meta=extra_meta,
+            )
+        except KeyError:
+            pass
 
     logs_link = _job_logs_link(task_ref)
     base_meta: Dict[str, Any] = {
@@ -439,13 +508,13 @@ def _execute_import_job(
         base_meta["links"] = {"logs": logs_link}
 
     _job_registry.update_job(job_id, status="running")
-    if task_ref:
-        _task_progress(
-            0.05,
-            "Preparing roleplay import",
-            status="running",
-            meta=base_meta,
-        )
+    _task_progress(
+        0.05,
+        "Preparing roleplay import",
+        status="running",
+        meta=base_meta,
+        stage="init",
+    )
     import_id: Optional[int] = None
     raw_path: Optional[Path] = None
 
@@ -468,12 +537,12 @@ def _execute_import_job(
             legacy_raw.write_text(text_content, encoding="utf-8")
         except Exception:  # pragma: no cover - optional legacy mirror
             LOGGER.debug("Unable to mirror legacy raw transcript path", exc_info=True)
-        if task_ref:
-            _task_progress(
-                0.12,
-                "Transcript staged",
-                meta={"paths": {"raw": str(raw_path)}},
-            )
+        _task_progress(
+            0.12,
+            "Transcript staged",
+            meta={"paths": {"raw": str(raw_path)}},
+            stage="staged",
+        )
 
         import_meta = {
             "job_id": job_id,
@@ -491,12 +560,12 @@ def _execute_import_job(
             processed=False,
             meta=import_meta,
         )
-        if task_ref:
-            _task_progress(
-                0.18,
-                "Import recorded",
-                meta={"import_id": import_id},
-            )
+        _task_progress(
+            0.18,
+            "Import recorded",
+            meta={"import_id": import_id},
+            stage="recorded",
+        )
 
         if payload.structured_lines:
             parsed_lines = _parser.parse_json(
@@ -509,12 +578,12 @@ def _execute_import_job(
             raise HTTPException(
                 status_code=400, detail="Parsed transcript has no lines."
             )
-        if task_ref:
-            _task_progress(
-                0.32,
-                f"Parsed {len(parsed_lines)} lines",
-                meta={"parsed_lines": len(parsed_lines)},
-            )
+        _task_progress(
+            0.32,
+            f"Parsed {len(parsed_lines)} lines",
+            meta={"parsed_lines": len(parsed_lines)},
+            stage="parsed",
+        )
 
         scene_payload = _formatter.to_scene(
             parsed_lines,
@@ -527,17 +596,17 @@ def _execute_import_job(
         scene_meta["llm_detail"] = payload.detail_level
         scene_meta["line_count"] = len(parsed_lines)
         scene_uid = scene_payload["id"]
-        if task_ref:
-            participants_meta = scene_meta.get("participants", [])
-            _task_progress(
-                0.45,
-                "Scene structured",
-                meta={
-                    "scene_uid": scene_uid,
-                    "participants": participants_meta,
-                    "line_count": len(parsed_lines),
-                },
-            )
+        participants_meta = scene_meta.get("participants", [])
+        _task_progress(
+            0.45,
+            "Scene structured",
+            meta={
+                "scene_uid": scene_uid,
+                "participants": participants_meta,
+                "line_count": len(parsed_lines),
+            },
+            stage="scene_structured",
+        )
 
         canonical_transcript = text_content or flatten_lines(parsed_lines)
         advisory_flags = advisory_core.scan_text(
@@ -610,15 +679,15 @@ def _execute_import_job(
             linked_characters.append(
                 {"id": char_id, "name": name, "persona_hints": hints}
             )
-        if task_ref:
-            _task_progress(
-                0.6,
-                "Characters linked",
-                meta={
-                    "characters": [entry["name"] for entry in linked_characters],
-                    "advisory_flags": advisory_flags,
-                },
-            )
+        _task_progress(
+            0.6,
+            "Characters linked",
+            meta={
+                "characters": [entry["name"] for entry in linked_characters],
+                "advisory_flags": advisory_flags,
+            },
+            stage="characters_linked",
+        )
 
         processed_path = _processed_file(scene_uid)
         preview_path = _preview_file(scene_uid)
@@ -683,18 +752,18 @@ def _execute_import_job(
         if task_ref:
             status_payload["task_id"] = task_ref
         _save_status(scene_uid, status_payload)
-        if task_ref:
-            _task_progress(
-                0.82,
-                "Preview generated",
-                meta={
-                    "paths": {
-                        "processed": str(processed_path),
-                        "preview": str(preview_path),
-                        "status": str(status_path),
-                    }
-                },
-            )
+        _task_progress(
+            0.82,
+            "Preview generated",
+            meta={
+                "paths": {
+                    "processed": str(processed_path),
+                    "preview": str(preview_path),
+                    "status": str(status_path),
+                }
+            },
+            stage="preview",
+        )
 
         asset_metadata = {
             "job_id": job_id,
@@ -754,6 +823,33 @@ def _execute_import_job(
         )
         final_asset = preview_asset
 
+        timeline_id: Optional[int] = None
+        timeline_entry = {
+            "scene_id": scene_db_id,
+            "scene_uid": scene_uid,
+            "title": scene_payload["title"],
+            "participants": [entry["name"] for entry in linked_characters],
+            "detail_level": payload.detail_level,
+            "advisory_flags": advisory_flags,
+            "import_id": import_id,
+            "job_id": job_id,
+        }
+        if payload.world:
+            timeline_entry["world"] = payload.world
+        timeline_meta = {
+            "origin": "roleplay_import",
+            "detail_level": payload.detail_level,
+            "last_job_id": job_id,
+        }
+        if payload.world:
+            timeline_meta["world"] = payload.world
+        timeline_name = (
+            f"Roleplay · {payload.world}" if payload.world else "Roleplay Imports"
+        )
+        timeline_id = _append_timeline_entry(
+            timeline_name, timeline_entry, timeline_meta
+        )
+
         _import_registry.mark_processed(
             import_id,
             meta={
@@ -771,12 +867,14 @@ def _execute_import_job(
                     "status": str(status_path),
                 },
                 "advisory_flags": advisory_flags,
+                "timeline_id": timeline_id,
             },
         )
 
         result_payload = {
             "scene_id": scene_db_id,
             "scene_uid": scene_uid,
+            "timeline_id": timeline_id,
             "preview_path": str(preview_path),
             "participants": scene_meta.get("participants", []),
             "advisory_flags": advisory_flags,
@@ -789,6 +887,7 @@ def _execute_import_job(
             "scene_id": scene_db_id,
             "scene_uid": scene_uid,
             "import_id": import_id,
+            "timeline_id": timeline_id,
             "asset_uid": asset_info["uid"],
             "processed_asset_uid": processed_asset["uid"],
             "final_asset_uid": final_asset["uid"],
@@ -823,13 +922,13 @@ def _execute_import_job(
                 )
             )
 
-        if task_ref:
-            _task_progress(
-                1.0,
-                "Roleplay import complete",
-                status="done",
-                meta={"result": output_payload},
-            )
+        _task_progress(
+            1.0,
+            "Roleplay import complete",
+            status="done",
+            meta={"result": output_payload},
+            stage="completed",
+        )
 
         response = {
             "ok": True,
@@ -837,6 +936,7 @@ def _execute_import_job(
             "scene": scene_payload,
             "scene_db_id": scene_db_id,
             "scene_uid": scene_uid,
+            "timeline_id": timeline_id,
             "asset": asset_info,
             "processed_asset": processed_asset,
             "final_asset": final_asset,
@@ -864,15 +964,16 @@ def _execute_import_job(
         }
         if task_ref:
             error_payload["task_id"] = task_ref
-            _task_progress(
-                1.0,
-                f"Roleplay import failed: {error_payload['error']}",
-                status="error",
-                meta={
-                    "error": {"detail": error_payload["error"], "type": "http"},
-                    "logs_path": str(log_path),
-                },
-            )
+        _task_progress(
+            1.0,
+            f"Roleplay import failed: {error_payload['error']}",
+            status="error",
+            meta={
+                "error": {"detail": error_payload["error"], "type": "http"},
+                "logs_path": str(log_path),
+            },
+            stage="failed",
+        )
         _job_registry.update_job(job_id, status="failed", output_payload=error_payload)
         if import_id is not None:
             meta_update = {
@@ -894,18 +995,17 @@ def _execute_import_job(
         error_payload = {"error": error_message}
         if task_ref:
             error_payload["task_id"] = task_ref
-            _task_progress(
-                1.0,
-                f"Roleplay import failed: {error_message}",
-                status="error",
-                meta={
-                    "error": {"detail": error_message, "type": "exception"},
-                    "logs_path": str(log_path),
-                },
-            )
-        _job_registry.update_job(
-            job_id, status="failed", output_payload=error_payload
+        _task_progress(
+            1.0,
+            f"Roleplay import failed: {error_message}",
+            status="error",
+            meta={
+                "error": {"detail": error_message, "type": "exception"},
+                "logs_path": str(log_path),
+            },
+            stage="failed",
         )
+        _job_registry.update_job(job_id, status="failed", output_payload=error_payload)
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(f"[error] {exc}\n")
         if import_id is not None:
@@ -1074,6 +1174,10 @@ async def import_roleplay(request: Request):
 
     log_path = LOG_DIR / f"roleplay_{job_id}.log"
     log_path.touch(exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            f"[queued] job_id={job_id} detail_level={job_payload.detail_level}\n"
+        )
     _job_registry.update_job(job_id, logs_path=str(log_path))
 
     task_payload = {
@@ -1092,7 +1196,9 @@ async def import_roleplay(request: Request):
         "detail_level": job_payload.detail_level,
         "has_lines": bool(job_payload.structured_lines),
     }
-    task_message_hint = job_payload.title or job_payload.original_filename or f"job {job_id}"
+    task_message_hint = (
+        job_payload.title or job_payload.original_filename or f"job {job_id}"
+    )
     task_id = task_registry.register(
         "import.roleplay",
         task_payload,
@@ -1109,6 +1215,32 @@ async def import_roleplay(request: Request):
         if merged_meta is not None:
             task_registry.update(task_id, meta=merged_meta)
         task_registry.update(task_id, message="roleplay import queued", progress=0.0)
+
+    status_links: Dict[str, Any] = {}
+    if logs_link:
+        status_links["logs"] = logs_link
+    status_meta = {
+        "title": job_payload.title,
+        "world": job_payload.world,
+        "source": job_payload.source,
+        "detail_level": job_payload.detail_level,
+        "has_lines": bool(job_payload.structured_lines),
+        "metadata": job_payload.metadata,
+        "filename": job_payload.original_filename,
+    }
+    try:
+        import_status_store.register(
+            "roleplay",
+            str(job_id),
+            task_id=task_id,
+            logs_path=str(log_path),
+            links=status_links or None,
+            meta={k: v for k, v in status_meta.items() if v is not None},
+        )
+    except Exception:  # pragma: no cover - defensive logging
+        LOGGER.debug(
+            "Failed to register import status for job %s", job_id, exc_info=True
+        )
 
     if blocking:
         return _execute_import_job(job_id, job_payload, log_path, task_id=task_id)
@@ -1203,7 +1335,11 @@ def preview_scene(scene_uid: str):
         preview_payload = build_preview_payload(
             scene_uid=scene_uid,
             title=(
-                (scene_payload.get("title") if isinstance(scene_payload, dict) else None)
+                (
+                    scene_payload.get("title")
+                    if isinstance(scene_payload, dict)
+                    else None
+                )
                 or context.get("title")
                 or scene_uid
             ),

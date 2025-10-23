@@ -23,7 +23,8 @@ from comfyvn.server.modules import settings_api
 
 def test_settings_save_deep_merge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     config_path = tmp_path / "config.json"
-    manager = SettingsManager(config_path)
+    db_path = tmp_path / "settings.db"
+    manager = SettingsManager(path=config_path, db_path=db_path)
     manager.save(
         {
             "ui": {"menu_sort_mode": "load_order", "theme": "dark"},
@@ -80,14 +81,14 @@ def test_settings_save_deep_merge(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     app = create_app()
     with TestClient(app) as client:
         resp = client.post(
-            "/settings/save", json={"ui": {"menu_sort_mode": "alphabetical"}}
+            "/system/settings", json={"ui": {"menu_sort_mode": "alphabetical"}}
         )
         assert resp.status_code == 200, resp.text
         saved = manager.load()
         assert saved["ui"]["menu_sort_mode"] == "alphabetical"
         assert saved["ui"]["theme"] == "dark"
 
-        resp = client.post("/settings/save", json={"server": {"local_port": 9002}})
+        resp = client.post("/system/settings", json={"server": {"local_port": 9002}})
         assert resp.status_code == 200, resp.text
         saved = manager.load()
         assert saved["server"]["local_port"] == 9002
@@ -98,7 +99,8 @@ def test_settings_save_updates_runtime_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     config_path = tmp_path / "config.json"
-    manager = SettingsManager(config_path)
+    db_path = tmp_path / "settings.db"
+    manager = SettingsManager(path=config_path, db_path=db_path)
     manager.save(
         {
             "server": {
@@ -164,7 +166,7 @@ def test_settings_save_updates_runtime_state(
 
     app = create_app()
     with TestClient(app) as client:
-        resp = client.post("/settings/save", json={"server": {"local_port": 8001}})
+        resp = client.post("/system/settings", json={"server": {"local_port": 8001}})
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
@@ -189,3 +191,19 @@ def test_settings_save_updates_runtime_state(
     assert os.environ["COMFYVN_SERVER_PORT"] == "8100"
 
     assert body["settings"]["server"]["local_port"] == 8100
+
+
+def test_settings_schema_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    config_path = tmp_path / "config.json"
+    db_path = tmp_path / "settings.db"
+    manager = SettingsManager(path=config_path, db_path=db_path)
+    monkeypatch.setattr(settings_api, "_settings", manager, raising=False)
+
+    app = create_app()
+    with TestClient(app) as client:
+        resp = client.get("/system/settings/schema")
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()
+        assert "schema" in payload
+        assert "defaults" in payload
+        assert payload["defaults"]["developer"]["verbose"] is True

@@ -12,6 +12,15 @@ LOGGER = logging.getLogger("comfyvn.api.advisory")
 router = APIRouter(prefix="/api/advisory", tags=["Advisory/Policy"])
 
 
+def _categorise_kind(kind: str) -> str:
+    lowered = kind.lower()
+    if lowered in {"policy", "copyright", "license"}:
+        return "license"
+    if lowered in {"nsfw", "sfw", "content"}:
+        return "sfw"
+    return "unknown"
+
+
 class AdvisoryScanRequest(BaseModel):
     target_id: str = Field(..., description="Asset, scene, or import identifier")
     text: str = Field("", description="Raw text to scan")
@@ -20,7 +29,11 @@ class AdvisoryScanRequest(BaseModel):
 
 class AdvisoryScanResponse(BaseModel):
     ok: bool = True
-    issues: list[dict]
+    findings: list[dict]
+    issues: Optional[list[dict]] = Field(
+        default=None,
+        description="Deprecated legacy field; mirrors findings for backward compatibility.",
+    )
 
 
 class AdvisoryResolveRequest(BaseModel):
@@ -46,7 +59,13 @@ def scan(payload: AdvisoryScanRequest = Body(...)) -> AdvisoryScanResponse:
         payload.text,
         license_scan=payload.license_scan,
     )
-    return AdvisoryScanResponse(issues=issues)
+    findings: list[dict] = []
+    for entry in issues:
+        record = dict(entry)
+        category = _categorise_kind(str(record.get("kind") or ""))
+        record.setdefault("category", category)
+        findings.append(record)
+    return AdvisoryScanResponse(findings=findings, issues=findings)
 
 
 @router.get("/logs", summary="List advisory findings")

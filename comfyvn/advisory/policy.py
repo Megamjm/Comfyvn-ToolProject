@@ -12,7 +12,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from comfyvn.core.policy_gate import PolicyStatus, policy_gate
 
@@ -34,16 +34,34 @@ def _coerce_ack_record(payload: Any) -> Optional[Dict[str, Any]]:
             if name:
                 record["name"] = name
         notes = payload.get("notes")
+        normalised_notes: list[Any] = []
         if isinstance(notes, str):
-            notes = notes.strip()
-            if notes:
-                record["notes"] = notes
+            note_val = notes.strip()
+            if note_val:
+                normalised_notes.append(note_val)
+        elif isinstance(notes, Sequence) and not isinstance(notes, (str, bytes)):
+            for item in notes:
+                if isinstance(item, (str, bytes)):
+                    stripped = str(item).strip()
+                    if stripped:
+                        normalised_notes.append(stripped)
+                elif isinstance(item, Mapping):
+                    normalised_notes.append(dict(item))
+        elif isinstance(notes, Mapping):
+            normalised_notes.append(dict(notes))
+        if normalised_notes:
+            record["notes"] = normalised_notes
         timestamp = payload.get("at") or payload.get("timestamp")
         if timestamp is not None:
             try:
                 record["at"] = float(timestamp)
             except (TypeError, ValueError):
                 pass
+        version = payload.get("version")
+        if isinstance(version, str):
+            version = version.strip()
+            if version:
+                record["version"] = version
         return record
     return None
 
@@ -69,13 +87,24 @@ def _write_ack_file(record: Mapping[str, Any]) -> None:
     payload: Dict[str, Any] = {"ack": bool(record.get("ack", False))}
     if record.get("name"):
         payload["name"] = record["name"]
-    if record.get("notes"):
-        payload["notes"] = record["notes"]
+    if record.get("notes") is not None:
+        notes = record.get("notes")
+        if isinstance(notes, (list, tuple)):
+            payload["notes"] = list(notes)
+        elif isinstance(notes, Mapping):
+            payload["notes"] = dict(notes)
+        else:
+            payload["notes"] = notes
     if record.get("at") is not None:
         try:
             payload["at"] = float(record["at"])
         except (TypeError, ValueError):
             payload["at"] = time.time()
+    version = record.get("version")
+    if isinstance(version, str):
+        version = version.strip()
+        if version:
+            payload["version"] = version
     try:
         tmp.write(json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
         tmp.flush()
@@ -126,6 +155,15 @@ def _maybe_upgrade_ack_file(
     if status.ack_timestamp and not upgraded.get("at"):
         upgraded["at"] = status.ack_timestamp
         needs_write = True
+    meta = policy_gate.settings.load().get("advisory_ack") or {}
+    notes = meta.get("notes")
+    if notes and not upgraded.get("notes"):
+        upgraded["notes"] = notes
+        needs_write = True
+    version = meta.get("version")
+    if version and upgraded.get("version") != version:
+        upgraded["version"] = version
+        needs_write = True
     if needs_write:
         _write_ack_file(upgraded)
 
@@ -154,22 +192,54 @@ def evaluate_action(action: str, *, override: bool = False) -> Dict[str, Any]:
 def get_ack_record() -> Dict[str, Any]:
     """Return the persisted acknowledgement metadata (ack flag, name, timestamp)."""
     status = gate_status()
-    record = _read_ack_file()
-    if record is None:
-        return {
-            "ack": bool(status.ack_legal_v1),
-            "name": status.ack_user,
-            "at": status.ack_timestamp,
-        }
-    payload = dict(record)
-    if payload.get("ack"):
-        payload.setdefault("name", status.ack_user)
-        payload.setdefault("at", status.ack_timestamp)
-    else:
-        payload.pop("name", None)
-        payload.pop("notes", None)
-        payload["ack"] = False
-    return payload
+    cfg = policy_gate.settings.load()
+    advisory_meta = dict(cfg.get("advisory_ack") or {})
+    notes_meta = advisory_meta.get("notes")
+    notes_list: list[Any] = []
+    if isinstance(notes_meta, Sequence) and not isinstance(notes_meta, (str, bytes)):
+        notes_list = list(notes_meta)
+    elif isinstance(notes_meta, (str, bytes)):
+        stripped = (
+            notes_meta.decode("utf-8").strip()
+            if isinstance(notes_meta, bytes)
+            else notes_meta.strip()
+        )
+        if stripped:
+            notes_list = [stripped]
+    record: Dict[str, Any] = {
+        "ack": bool(status.ack_legal_v1),
+        "name": status.ack_user,
+        "at": status.ack_timestamp,
+        "notes": notes_list,
+        "version": advisory_meta.get("version") or "v1",
+    }
+    persisted = _read_ack_file()
+    if persisted:
+        if persisted.get("name") and not record.get("name"):
+            record["name"] = persisted["name"]
+        if persisted.get("at") and not record.get("at"):
+            record["at"] = persisted["at"]
+        persisted_notes = persisted.get("notes")
+        if isinstance(persisted_notes, Sequence) and not isinstance(
+            persisted_notes, (str, bytes)
+        ):
+            for entry in persisted_notes:
+                if entry not in record["notes"]:
+                    record["notes"].append(entry)
+        elif isinstance(persisted_notes, (str, bytes)):
+            value = (
+                persisted_notes.decode("utf-8").strip()
+                if isinstance(persisted_notes, bytes)
+                else persisted_notes.strip()
+            )
+            if value and value not in record["notes"]:
+                record["notes"].append(value)
+        if persisted.get("version") and not advisory_meta.get("version"):
+            record["version"] = persisted["version"]
+    if not record["ack"]:
+        record["name"] = None
+        record["notes"] = []
+    return record
 
 
 def get_ack() -> bool:
@@ -189,17 +259,40 @@ def set_ack(
     if ack:
         display_name = str(name or user or "anonymous").strip() or "anonymous"
         status = policy_gate.acknowledge(user=display_name, notes=notes)
+        cfg = policy_gate.settings.load()
+        advisory_meta = dict(cfg.get("advisory_ack") or {})
+        notes_meta = advisory_meta.get("notes")
+        if isinstance(notes_meta, Sequence) and not isinstance(
+            notes_meta, (str, bytes)
+        ):
+            notes_payload = list(notes_meta)
+        elif isinstance(notes_meta, (str, bytes)):
+            stripped_note = (
+                notes_meta.decode("utf-8").strip()
+                if isinstance(notes_meta, bytes)
+                else notes_meta.strip()
+            )
+            notes_payload = [stripped_note] if stripped_note else []
+        else:
+            notes_payload = []
         record: Dict[str, Any] = {
             "ack": True,
             "name": status.ack_user or display_name,
             "at": status.ack_timestamp or time.time(),
+            "notes": notes_payload,
+            "version": advisory_meta.get("version") or "v1",
         }
-        if notes:
-            record["notes"] = notes
         _write_ack_file(record)
         return status
     status = policy_gate.reset()
-    _write_ack_file({"ack": False, "at": status.ack_timestamp})
+    _write_ack_file(
+        {
+            "ack": False,
+            "at": status.ack_timestamp,
+            "notes": [],
+            "version": "v1",
+        }
+    )
     return status
 
 
@@ -219,7 +312,7 @@ def require_ack(
     if gate.get("requires_ack") and not gate.get("allow", False):
         raise RuntimeError(
             message
-            or "Policy acknowledgement required. POST /api/policy/ack before retrying."
+            or "Policy acknowledgement expected. POST /api/advisory/ack before retrying."
         )
     return gate
 

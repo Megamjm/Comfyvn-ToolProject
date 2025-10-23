@@ -1,9 +1,44 @@
+### 2025-10-30 — SQLite Migrations & Settings API Refresh
+- Introduced `comfyvn/db/migrations.py` with SQL payloads under `comfyvn/db/sql/` and a reusable `MigrationRunner`. Apply migrations via `python tools/apply_migrations.py [--list|--dry-run|--verbose]`; integrations should drop `setup/apply_phase06_rebuild.py` in favour of the new tooling.
+- Added `tools/db_integrity_check.py` (`PRAGMA integrity_check`) and `tools/seed_demo_data.py` (scenes/characters/assets/jobs/providers) for smoke fixtures, plus `tests/test_db_migrations.py` to guard idempotency.
+- Rebuilt the settings stack around a Pydantic model that mirrors data to both `settings/config.json` and the SQLite `settings` table. FastAPI now exposes `/system/settings` (GET/POST) and `/system/settings/schema`; GUI bridge posts to the new endpoint and tests/doc stubs were updated accordingly.
+
+### 2025-10-29 — Integrations Installer Automation
+- `python -m comfyvn.scripts.install_manager` now orchestrates SillyTavern extension sync, Ren'Py SDK bootstrap, ComfyUI node pack installs, and model presence checks. Runs append JSON summaries to `logs/install_report.log`, reuse cache entries under `tools/cache/`, and accept `--verify-only` for read-only audits plus `--sillytavern`, `--renpy`, `--comfyui`, and `--models` overrides for targeted installs.
+- Ren'Py setup reuses cached archives with SHA256 sidecars (`tools/cache/renpy`) and respects the new `cache_dir` parameter so downstream tooling inherits deterministic downloads while still supporting forced refreshes.
+- Added installer smoke coverage (`tests/test_install_manager.py`) and refreshed Ren'Py setup tests to exercise the cache path (`tests/test_renpy_setup.py`), keeping regressions visible in CI.
+- Documentation highlights: README “Tools & Ports” section documents the CLI, and `.gitignore` now ignores `tools/cache/` so cached archives stay local.
+
 ## v0.5.0-world-seed
 - Added schemas for world/scene/timeline/assets.
 - Seeded 3 open worlds with timelines and scene openers.
 - Standardized ComfyUI → PNG+JSON sidecar pipeline under `exports/assets/worlds/<world_id>/...`.
 - ComfyUI connector now honors `metadata.asset_pipeline` to drop renders + schema sidecars into the world export tree and refresh per-world manifests.
 - Bootstrapped legacy views: `defaults/worlds/*.json` feed the World Manager, `defaults/characters/*.json` hydrate Character Manager, and `TimelineRegistry` now auto-builds `<World> Openers` sequences from the seeded scene samples when the database is empty.
+
+### 2025-10-24 — Studio Shell Diagnostics & Sparklines
+- `comfyvn/gui/studio_window.py` now restores Studio layout from `config/studio.json`, syncs host/theme/pane state across sessions, and wires Ctrl+Shift+D to a diagnostics dialog (provider health + log tail) without leaving the app.
+- Expanded Studio nav adds Compute, Audio, Advisory, Import Processing, Export, and Logs views. Each panel consumes the `ServerBridge` event bus so host swaps and `/jobs/ws` updates stay live across tabs.
+- Scenes, Characters, Import Processing, and Export views gained “Show raw response” toggles for on-demand JSON inspection; payloads fall back to mock data when the backend is offline.
+- `MetricsDashboard` renders 90 s CPU/RAM sparklines in addition to usage bars and the embedded server button, keeping `/system/metrics` trends visible at a glance.
+- `comfyvn/gui/services/server_bridge.py` exposes `request/get/post`, `subscribe`, and websocket helpers, improving error toasts and enabling downstream widgets to react to `jobs:progress`, `imports:status`, and `system:metrics` without bespoke pollers.
+
+### 2025-10-23 — Exporter Public Routes & Shared Helpers
+- Introduced `comfyvn/server/routes/export_public.py` mounting `POST /export/renpy` and `POST /export/bundle`, mirroring the orchestrator used by the `/api/export/*` routes while defaulting outputs to `exports/renpy/<slug>` and `exports/bundles/<slug>.zip`. Responses now include provenance paths, asset copy counts, and a quick asset validation summary.
+- Refactored common export utilities into `comfyvn/exporters/export_helpers.py` (label manifest builder, provenance bundle generator, slugify helper, diff serialization). Both the FastAPI routes and `scripts/export_renpy.py` consume the shared module, keeping CLI and HTTP payloads aligned.
+- Updated `scripts/export_renpy.py` to rely on the shared helpers instead of bespoke manifest/provenance code paths; CLI dry-runs embed the same diff structure returned by the new HTTP endpoints.
+- Extended `tests/test_export_api.py` to exercise the public exporter routes alongside the legacy `/api/export/*` flows, stubbing policy/feature gates for isolation and verifying bundle/provenance artefacts.
+
+### 2025-10-23 — Core Server Diagnostics & Logging
+- Logging is initialised before any server import. `comfyvn/logging_config.py` now emits structured JSON lines (file + stdout), honours `LOG_DIR` alongside the legacy env overrides, and injects the active `X-Request-ID` into every record so diagnostics, Studio, and automation can correlate requests across workers.
+- `comfyvn/server/app.create_app()` wires request/response timing + request-id middleware, attaches the JSON error envelope, and records the router catalogue during startup. `/status` responds with `{routers, base_url, log_path}` alongside the version and route list, enabling “copy diagnostics” tooling without introspecting code.
+- Introduced `AsyncEventHub` (`comfyvn/server/core/event_stream.py`) and refreshed the events module so `/ws/events` is the canonical WebSocket fan-out (with `/events/ws` retained for legacy clients); SSE and WebSocket consumers now share queue backpressure and optional topic filters. Task registry updates bridge into the hub when available.
+- Docs updated (README, architecture notes, this changelog) to highlight the JSON logging shape, the expanded `/status` payload, and the new WebSocket endpoint so ops checklists and dashboards stay in sync.
+
+### 2025-10-23 — Compute Advisor Policy Sync & Echo Adapter
+- GPU device policy now persists through the shared settings backend (`settings/config.json` + SQLite) and `/api/gpu/list` mirrors `mode`, `preferred_id`, and summarised VRAM metrics (`mem_total`, `mem_free`, `util`) so Studio and automation agree on the active selection.
+- `/api/compute/advise` emits a normalised `target` field (`cpu|gpu|remote`) for UI copy and dashboards, and the new `echo` provider adapter returns health without requiring a real remote GPU endpoint—ideal for smoke tests.
+- Documentation sweep: README compute highlights, architecture overview, `docs/COMPUTE_ADVISOR.md`, and `docs/dev_notes_compute_advisor.md` now call out the new fields and the lightweight echo adapter.
 
 ### 2025-10-21 — VN Loader Panel & Mini-VN Scene Debugger
 - Introduced the SillyTavern chat importer (`comfyvn/importers/st_chat/{parser,mapper}.py`) plus FastAPI router `comfyvn/server/routes/import_st.py`, mounted via `server/modules/st_import_api.py` and gated by `features.enable_st_importer` (default OFF). The pipeline parses SillyTavern `.json`/`.txt` transcripts, segments them into scenario graphs, persists run artefacts under `imports/<runId>/`, writes scenes to `data/scenes/<id>.json`, and appends project history to `data/projects/<projectId>.json`.

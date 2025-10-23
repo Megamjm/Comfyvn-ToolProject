@@ -14,7 +14,7 @@ Feature flag: `features.enable_publish_web` (defaults **false**).
 | `/api/publish/web/redact` | `POST` | Same build pipeline with sanitisation toggles (strip NSFW assets, scrub provenance, optional watermarks). |
 | `/api/publish/web/preview` | `GET` | Lists available bundles or returns manifest/content-map/health/redaction payloads for a specific slug. |
 
-The router enforces the `publish.web` policy gate; acknowledge via Studio → Advisory or `/api/advisory/ack` when blocked with HTTP 423.
+The router calls the `publish.web` policy gate; any pending disclaimer acknowledgement shows up as warnings in the response, so review `result.disclaimer` before distributing builds.
 
 ## Bundle layout
 ```
@@ -57,5 +57,5 @@ Inside the archive:
 - Missing bundle files: rerun without `dry_run`. `dry_run=true` only reports diffs.
 - Asset unexpectedly removed: inspect `result.redaction.removed_assets` and underlying asset metadata in the registry (`assets/_meta/*.json`). Adjust tags or disable `strip_nsfw`.
 - 403 errors: ensure `enable_publish_web` flag is set true and the server reloaded.
-- 423 errors: the advisory gate (`publish.web`) is blocking; acknowledge via `/api/advisory/ack`.
+- Advisory warnings: the disclaimer (`publish.web`) is still pending; acknowledge via `/api/advisory/ack` or document the review before shipping.
 - Hash drift: confirm assets weren’t modified between builds and that the feature flag set matches expectations; the deterministic ZIP builder uses fixed timestamps/permissions, so only content changes should alter hashes.

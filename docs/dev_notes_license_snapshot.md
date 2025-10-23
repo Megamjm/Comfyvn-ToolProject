@@ -10,8 +10,9 @@ audit payloads next to assets, and require explicit acknowledgements before hub 
     and records summary state in `config/config.json::advisory_licenses`.
   - `record_ack()` stores per-user acknowledgements in both the snapshot file and
     settings, preserving provenance payloads for later export manifests.
-  - `require_ack()` raises `LicenseAcknowledgementRequired` when the snapshot hash
-    lacks an acknowledgement; route wrapper returns HTTP 423.
+  - `require_ack()` now returns advisory metadata, setting `ack_required`/`warnings`
+    when the snapshot hash lacks an acknowledgement so callers can warn instead of
+    hard-blocking.
 - Settings payload (`config/config.json`):
 
 ```json
@@ -56,8 +57,8 @@ Hashes changing wipe `ack_by_user` so downstream workflows re-prompt users.
     normalized text (for UI display) plus ack state.
   - `POST /api/advisory/license/ack` — persist per-user acknowledgement with optional
     provenance envelope.
-  - `POST /api/advisory/license/require` — helper for connectors to block downloads
-    when ack missing (HTTP 423).
+  - `POST /api/advisory/license/require` — helper for connectors to warn when an
+    acknowledgement is missing (`ack_required: true`), returning advisory context for dashboards.
   - `GET /api/advisory/license/{asset_id}` — dump stored status; `?include_text=true`
     surfaces the normalised EULA for dashboards.
 - Routes stay active even when `features.enable_advisory` is disabled so CLI/QA can

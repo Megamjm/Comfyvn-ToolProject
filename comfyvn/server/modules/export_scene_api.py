@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
@@ -14,6 +15,8 @@ router = APIRouter()
 OUT = Path("exports/renpy")
 OUT.mkdir(parents=True, exist_ok=True)
 
+LOGGER = logging.getLogger("comfyvn.api.export.scene")
+
 
 @router.post("/export/scene")
 def export_scene(payload: dict = Body(...)):
@@ -23,14 +26,8 @@ def export_scene(payload: dict = Body(...)):
     if not sid:
         return {"ok": False, "error": "scene required"}
     gate = policy_gate.evaluate_action("export.scene")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "export blocked until legal acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        LOGGER.warning("Advisory disclaimer pending for export.scene")
     src = _scene_path(sid)
     if not src.exists():
         return {"ok": False, "error": "scene not found"}

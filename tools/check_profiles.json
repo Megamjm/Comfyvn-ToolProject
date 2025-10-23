@@ -453,8 +453,8 @@
       {"key": "enable_export_bundle", "expect": false, "required": true}
     ],
     "routes": [
-      {"path": "/api/policy/ack", "method": "GET", "required": true},
-      {"path": "/api/policy/ack", "method": "POST", "required": true},
+      {"path": "/api/advisory/disclaimer", "method": "GET", "required": true},
+      {"path": "/api/advisory/ack", "method": "POST", "required": true},
       {"path": "/api/advisory/scan", "method": "POST", "required": true},
       {"path": "/api/export/bundle", "method": "POST", "required": true},
       {"path": "/api/export/renpy/preview", "method": "POST", "required": false}

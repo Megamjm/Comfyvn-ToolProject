@@ -1,6 +1,6 @@
 # Input Schemes & Controller Profiles
 
-The input manager centralises keyboard and controller bindings for the Studio viewer, editors, and automation hooks. Bindings persist to `config/settings/accessibility.json` under `input_map`, can be remapped live inside Studio, and remain scriptable via FastAPI.
+The input manager centralises keyboard and controller bindings for the Studio viewer, editors, and automation hooks. Bindings persist to `config/settings/accessibility.json` under `input_map` (mirrored to the SQLite `settings` table), can be remapped live inside Studio, and remain scriptable via FastAPI.
 
 ## Default Bindings
 

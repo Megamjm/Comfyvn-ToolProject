@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from comfyvn.core.audio_cache import AudioCacheEntry, audio_cache
-from comfyvn.core.comfyui_audio import (ComfyUIAudioRunner,
-                                        ComfyUIWorkflowConfig,
-                                        ComfyUIWorkflowError)
+from comfyvn.core.comfyui_audio import (
+    ComfyUIAudioRunner,
+    ComfyUIWorkflowConfig,
+    ComfyUIWorkflowError,
+)
 from comfyvn.core.settings_manager import SettingsManager
 
 LOGGER = logging.getLogger("comfyvn.audio.pipeline")
@@ -220,6 +222,28 @@ def _synth_via_comfyui(
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, artifact_path)
 
+    duration_seconds: Optional[float] = None
+    sample_rate: Optional[int] = None
+    if artifact_path.suffix.lower() == ".wav":
+        try:
+            with wave.open(str(artifact_path), "rb") as wav_file:
+                sample_rate = wav_file.getframerate()
+                frames = wav_file.getnframes()
+                if sample_rate:
+                    duration_seconds = frames / float(sample_rate)
+        except wave.Error as exc:
+            LOGGER.debug(
+                "ComfyUI TTS unable to read WAV metadata %s: %s",
+                artifact_path,
+                exc,
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.debug(
+                "ComfyUI TTS unexpected metadata read failure %s: %s",
+                artifact_path,
+                exc,
+            )
+
     created_at = time.time()
     metadata = {
         "voice": voice,
@@ -242,6 +266,10 @@ def _synth_via_comfyui(
         "device_hint": device_hint,
         "seed": seed_value,
     }
+    if duration_seconds is not None:
+        metadata["duration_seconds"] = duration_seconds
+    if sample_rate is not None:
+        metadata["sample_rate"] = sample_rate
     sidecar_path = artifact_path.with_suffix(".json")
     sidecar_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
@@ -256,6 +284,8 @@ def _synth_via_comfyui(
         "device_hint": device_hint or "",
         "seed": str(seed_value),
     }
+    if duration_seconds is not None:
+        cache_metadata["duration_seconds"] = f"{duration_seconds:.3f}"
     _store_cache_entry(
         cache_key=cache_key,
         artifact_path=artifact_path,

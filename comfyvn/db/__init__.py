@@ -11,6 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Sequence, Set
 
+from .migrations import (
+    MigrationRunner,
+    SQLMigration,
+    list_migration_versions,
+    load_default_migrations,
+)
 from .schema_v06 import (  # re-exported for convenience
     SCHEMA_VERSION,
     TABLE_DEFINITIONS,
@@ -31,6 +37,10 @@ __all__ = [
     "iter_tables",
     "table_names",
     "TABLE_DEFINITIONS",
+    "MigrationRunner",
+    "SQLMigration",
+    "load_default_migrations",
+    "list_migration_versions",
 ]
 
 

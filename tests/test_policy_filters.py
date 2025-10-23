@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from comfyvn.core import advisory
 from comfyvn.core.content_filter import ContentFilter
 from comfyvn.core.policy_gate import PolicyGate
@@ -10,33 +8,43 @@ from comfyvn.core.settings_manager import SettingsManager
 
 def test_policy_gate_acknowledgement_flow(tmp_path, monkeypatch):
     settings_path = tmp_path / "config.json"
-    settings = SettingsManager(path=settings_path)
+    db_path = tmp_path / "settings.db"
+    settings = SettingsManager(path=settings_path, db_path=db_path)
     gate = PolicyGate(settings)
 
     status = gate.status()
     assert status.requires_ack is True
     assert status.ack_legal_v1 is False
 
+    result = gate.evaluate_action("export.bundle")
+    assert result["allow"] is True
+    assert result["requires_ack"] is True
+    assert any(
+        "disclaimer" in warning.lower() for warning in result.get("warnings", [])
+    )
+
     updated = gate.acknowledge(user="tester")
     assert updated.ack_legal_v1 is True
     assert updated.requires_ack is False
     assert updated.ack_timestamp
 
-    result = gate.evaluate_action("export.bundle")
-    assert result["allow"] is True
-    assert result["requires_ack"] is False
-    assert isinstance(result["warnings"], list)
+    result_after = gate.evaluate_action("export.bundle")
+    assert result_after["allow"] is True
+    assert result_after["requires_ack"] is False
+    assert result_after.get("warnings") == []
 
     gate.reset()
     reset_status = gate.status()
     assert reset_status.requires_ack is True
-    config = json.loads(settings_path.read_text())
+    config = settings.load()
+    assert config["ack_disclaimer_v1"] is False
     assert config["policy"]["ack_legal_v1"] is False
 
 
 def test_content_filter_modes_persist_in_settings(tmp_path):
     settings_path = tmp_path / "config.json"
-    settings = SettingsManager(path=settings_path)
+    db_path = tmp_path / "settings.db"
+    settings = SettingsManager(path=settings_path, db_path=db_path)
     filt = ContentFilter(settings)
 
     items = [
@@ -50,7 +58,7 @@ def test_content_filter_modes_persist_in_settings(tmp_path):
     assert len(result_sfw["flagged"]) == 1
 
     filt.set_mode("warn")
-    config = json.loads(settings_path.read_text())
+    config = settings.load()
     assert config["filters"]["content_mode"] == "warn"
 
     result_warn = filt.filter_items(items)

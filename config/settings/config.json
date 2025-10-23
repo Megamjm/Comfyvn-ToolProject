@@ -1,4 +1,11 @@
 {
+  "ack_disclaimer_v1": false,
+  "advisory_ack": {
+    "user": null,
+    "timestamp": null,
+    "notes": [],
+    "version": "v1"
+  },
   "developer": {
     "verbose": true,
     "toasts": true,

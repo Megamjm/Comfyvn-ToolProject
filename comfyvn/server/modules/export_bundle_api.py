@@ -1,8 +1,9 @@
+import logging
 import shutil
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from PySide6.QtGui import QAction
 
 from comfyvn.core.policy_gate import policy_gate
@@ -17,6 +18,8 @@ BUNDLES = Path("exports/bundles")
 REN.mkdir(parents=True, exist_ok=True)
 BUNDLES.mkdir(parents=True, exist_ok=True)
 
+LOGGER = logging.getLogger("comfyvn.api.export_bundle")
+
 
 @router.get("/health")
 def health():
@@ -26,14 +29,8 @@ def health():
 @router.post("/bundle/renpy")
 def bundle_renpy():
     gate = policy_gate.evaluate_action("export.bundle")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "export blocked until legal acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        LOGGER.warning("Advisory disclaimer pending for export.bundle")
     ts = int(time.time())
     base = BUNDLES / f"renpy_{ts}"
     # shutil.make_archive adds extension automatically for format="zip"
@@ -45,4 +42,10 @@ def bundle_renpy():
         inputs={"bundle": "renpy", "timestamp": ts},
         embed=False,
     )
-    return {"ok": True, "zip": zip_path, "provenance": provenance, "gate": gate}
+    return {
+        "ok": True,
+        "zip": zip_path,
+        "provenance": provenance,
+        "gate": gate,
+        "disclaimer": gate.get("disclaimer"),
+    }

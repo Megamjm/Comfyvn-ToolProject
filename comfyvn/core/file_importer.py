@@ -244,21 +244,32 @@ def _ensure_layout_dir(path: Path) -> Path:
 @dataclass(frozen=True)
 class ImportDirectories:
     """
-    Helper representing the canonical ``raw/converted/preview`` layout under ``data/``.
+    Helper representing the canonical ``raw/extracted/converted/preview`` layout.
     """
 
     root: Path
     raw: Path
+    extracted: Path
     converted: Path
     preview: Path
+    status: Path
 
     @classmethod
     def ensure(cls, *parts: str) -> "ImportDirectories":
-        root = _ensure_layout_dir(data_dir(*parts))
+        root = _ensure_layout_dir(data_dir("imports", *parts))
         raw = _ensure_layout_dir(root / "raw")
+        extracted = _ensure_layout_dir(root / "extracted")
         converted = _ensure_layout_dir(root / "converted")
         preview = _ensure_layout_dir(root / "preview")
-        return cls(root=root, raw=raw, converted=converted, preview=preview)
+        status = _ensure_layout_dir(root / "status")
+        return cls(
+            root=root,
+            raw=raw,
+            extracted=extracted,
+            converted=converted,
+            preview=preview,
+            status=status,
+        )
 
 
 def sanitize_filename(filename: Optional[str], default: str = "upload.txt") -> str:

@@ -2,24 +2,28 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from comfyvn.config.runtime_paths import settings_file
+from comfyvn.core.settings_manager import SettingsManager
 
 try:  # torch is optional at runtime
     import torch  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     torch = None
 
-from comfyvn.core.compute_registry import (ComputeProviderRegistry,
-                                           get_provider_registry)
+from comfyvn.core.compute_registry import ComputeProviderRegistry, get_provider_registry
 
 LOGGER = logging.getLogger(__name__)
 
 POLICY_MODES = {"auto", "manual", "sticky"}
+GPU_MANAGER_DISABLED = os.getenv(
+    "COMFYVN_GPU_MANAGER_DISABLED", ""
+).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class GPUManager:
@@ -29,10 +33,12 @@ class GPUManager:
         self,
         config_path: str | Path = settings_file("gpu_policy.json"),
         provider_registry: Optional[ComputeProviderRegistry] = None,
+        settings_manager: Optional[SettingsManager] = None,
     ):
         self.path = Path(config_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.registry = provider_registry or get_provider_registry()
+        self._settings = settings_manager or SettingsManager()
         self._state = self._load_state()
         self._devices: List[Dict[str, Any]] = []
         self.refresh()
@@ -41,25 +47,61 @@ class GPUManager:
     # Persistence
     # ------------------------------------------------------------------
     def _load_state(self) -> Dict[str, Any]:
-        if self.path.exists():
+        state: Dict[str, Any] = {}
+
+        # Prefer settings.json storage to keep policy alongside other preferences.
+        try:
+            settings_payload = self._settings.load()
+            compute_cfg = settings_payload.get("compute")
+            if isinstance(compute_cfg, dict):
+                policy_cfg = compute_cfg.get("gpu_policy")
+                if isinstance(policy_cfg, dict):
+                    state = dict(policy_cfg)
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.debug("Unable to load GPU policy from settings: %s", exc)
+
+        # Backwards compatibility with legacy gpu_policy.json files.
+        if not state and self.path.exists():
             try:
-                data = json.loads(self.path.read_text(encoding="utf-8"))
-                data.setdefault("mode", "auto")
-                data.setdefault("manual_device", "cpu")
-                data.setdefault("sticky_device", None)
-                data.setdefault("last_selected", None)
-                return data
+                legacy = json.loads(self.path.read_text(encoding="utf-8"))
+                if isinstance(legacy, dict):
+                    state = dict(legacy)
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("GPU policy file corrupt (%s); resetting", exc)
-        return {
-            "mode": "auto",
-            "manual_device": "cpu",
-            "sticky_device": None,
-            "last_selected": None,
-        }
+
+        # Normalise defaults.
+        state.setdefault("mode", "auto")
+        state.setdefault("manual_device", "cpu")
+        state.setdefault("sticky_device", None)
+        state.setdefault("last_selected", None)
+        state.setdefault("preferred_id", state.get("manual_device"))
+        return state
 
     def _save_state(self) -> None:
-        self.path.write_text(json.dumps(self._state, indent=2), encoding="utf-8")
+        payload = dict(self._state)
+        if payload.get("preferred_id") is None:
+            payload["preferred_id"] = payload.get("manual_device")
+
+        # Persist to shared settings store.
+        try:
+            settings_payload = self._settings.load()
+        except Exception:
+            settings_payload = {}
+        compute_cfg = settings_payload.get("compute")
+        if not isinstance(compute_cfg, dict):
+            compute_cfg = {}
+        compute_cfg["gpu_policy"] = dict(payload)
+        settings_payload["compute"] = compute_cfg
+        try:
+            self._settings.save(settings_payload)
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.warning("Failed to persist GPU policy to settings: %s", exc)
+
+        # Maintain legacy json file for tooling that still reads it directly.
+        try:
+            self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.debug("Failed to write gpu_policy.json: %s", exc)
 
     # ------------------------------------------------------------------
     # Device discovery
@@ -188,15 +230,25 @@ class GPUManager:
     def get_policy(self) -> Dict[str, Any]:
         return dict(self._state)
 
-    def set_policy(self, mode: str, device: Optional[str] = None) -> Dict[str, Any]:
+    def set_policy(
+        self,
+        mode: str,
+        device: Optional[str] = None,
+        *,
+        preferred_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         mode = (mode or "").lower().strip()
         if mode not in POLICY_MODES:
             raise AssertionError(
                 f"mode must be one of: {', '.join(sorted(POLICY_MODES))}"
             )
         self._state["mode"] = mode
-        if device:
-            self._state["manual_device"] = device
+        target = preferred_id if preferred_id is not None else device
+        if target:
+            self._state["manual_device"] = target
+            self._state["preferred_id"] = target
+        elif self._state.get("preferred_id") is None:
+            self._state["preferred_id"] = self._state.get("manual_device")
         self._save_state()
         LOGGER.info(
             "GPU policy set -> mode=%s, device=%s",
@@ -209,6 +261,7 @@ class GPUManager:
         if not device:
             raise ValueError("device must be provided")
         self._state["manual_device"] = device
+        self._state["preferred_id"] = device
         self._save_state()
         LOGGER.debug("Manual GPU device set -> %s", device)
         return self.get_policy()
@@ -332,8 +385,56 @@ class GPUManager:
 _GPU_MANAGER: GPUManager | None = None
 
 
+class _DisabledGPUManager(GPUManager):  # type: ignore[misc]
+    """Minimal GPU manager stub for environments where compute is disabled."""
+
+    def __init__(self) -> None:
+        self._devices = [self._cpu_entry()]
+        self._state = {
+            "mode": "auto",
+            "manual_device": "cpu",
+            "sticky_device": None,
+            "last_selected": "cpu",
+            "preferred_id": "cpu",
+        }
+
+    def refresh(self) -> List[Dict[str, Any]]:
+        self._devices = [self._cpu_entry()]
+        return list(self._devices)
+
+    def select_device(
+        self, *, policy: Optional[str] = None, requested: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return {
+            "device": "cpu",
+            "reason": "disabled",
+            "mode": policy or "auto",
+            "requested": requested,
+        }
+
+    def annotate_payload(self, payload: Dict[str, Any], **_kwargs) -> Dict[str, Any]:
+        payload = dict(payload or {})
+        payload["device"] = "cpu"
+        payload.setdefault("meta", {})["compute_policy"] = self.select_device()
+        return payload
+
+    def _cpu_entry(self) -> Dict[str, Any]:
+        return {
+            "id": "cpu",
+            "name": "CPU",
+            "kind": "cpu",
+            "available": True,
+            "memory_total": None,
+            "memory_used": None,
+            "source": "disabled",
+        }
+
+
 def get_gpu_manager() -> GPUManager:
     global _GPU_MANAGER
     if _GPU_MANAGER is None:
-        _GPU_MANAGER = GPUManager()
+        if GPU_MANAGER_DISABLED:
+            _GPU_MANAGER = _DisabledGPUManager()
+        else:
+            _GPU_MANAGER = GPUManager()
     return _GPU_MANAGER

@@ -195,13 +195,24 @@ class PolicyEnforcer:
         findings_list = (
             self._scan_findings(bundle, findings=findings) if enabled else []
         )
+
+        if gate_status.get("requires_ack"):
+            disclaimer_detail = gate_status.get("disclaimer") or {}
+            findings_list.append(
+                {
+                    "level": "warn",
+                    "kind": "disclaimer",
+                    "message": "Advisory disclaimer has not been acknowledged.",
+                    "severity": "warn",
+                    "detail": disclaimer_detail,
+                }
+            )
+
         blocked = [entry for entry in findings_list if entry["level"] == "block"]
         warnings = [entry for entry in findings_list if entry["level"] == "warn"]
         info = [entry for entry in findings_list if entry["level"] == "info"]
 
         allow = bool(gate_status.get("allow", True))
-        if enabled and blocked:
-            allow = False
 
         counts = {
             "info": len(info),

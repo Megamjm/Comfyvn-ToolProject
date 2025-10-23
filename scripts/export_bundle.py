@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from fastapi import HTTPException
 
-from comfyvn.advisory.policy import require_ack
+from comfyvn.advisory.policy import evaluate_action
 from comfyvn.config import feature_flags
 from comfyvn.server.modules import export_api
 
@@ -70,14 +70,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 3
-    try:
-        gate = require_ack(
-            "export.bundle.cli",
-            message="Refusing export: policy not acknowledged. POST /api/policy/ack first.",
-        )
-    except RuntimeError as exc:  # pragma: no cover - CLI guard
-        print(str(exc), file=sys.stderr)
-        return 1
+    gate = evaluate_action("export.bundle.cli")
 
     try:
         project_data, _ = export_api._load_project(args.project)
@@ -130,12 +123,13 @@ def main() -> int:
     warnings = [entry for entry in findings if entry.get("level") == "warn"]
 
     payload = {
-        "ok": not blockers,
-        "blocked": bool(blockers),
+        "ok": True,
+        "blocked": False,
         "project": args.project,
         "timeline": resolved_timeline,
         "out": bundle_path.as_posix(),
         "gate": gate,
+        "disclaimer": gate.get("disclaimer"),
         "findings": findings,
         "warning_count": len(warnings),
         "blocker_count": len(blockers),
@@ -158,16 +152,6 @@ def main() -> int:
     elif isinstance(enforcement, dict):
         payload["enforcement"] = enforcement
 
-    if blockers:
-        messages = [b.get("message") or "" for b in blockers if b.get("message")]
-        summary = messages[0] if messages else "Blocking advisory findings present."
-        print(
-            f"Export blocked due to advisory findings: {summary}",
-            file=sys.stderr,
-        )
-        print(json.dumps(payload, indent=2))
-        return 2
-
     if warnings:
         warning_messages = [
             w.get("message") or "" for w in warnings if w.get("message")
@@ -177,6 +161,17 @@ def main() -> int:
             preview += f"; … (+{len(warning_messages) - 3} more)"
         print(
             f"Advisory warnings present ({len(warnings)}): {preview}",
+            file=sys.stderr,
+        )
+    if blockers:
+        blocker_messages = [
+            b.get("message") or "" for b in blockers if b.get("message")
+        ]
+        preview = "; ".join(blocker_messages[:3]) if blocker_messages else "n/a"
+        if len(blocker_messages) > 3:
+            preview += f"; … (+{len(blocker_messages) - 3} more)"
+        print(
+            "Advisory blockers detected (workflow not halted): " f"{preview}",
             file=sys.stderr,
         )
 

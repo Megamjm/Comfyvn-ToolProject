@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import os
 import sys
 import types
 from pathlib import Path
@@ -9,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("COMFYVN_SKIP_APP_AUTOLOAD", "1")
 
 
 def _install_pyside6_stub() -> bool:
@@ -455,7 +459,78 @@ def _install_pyside6_stub() -> bool:
     return True
 
 
+def _install_settings_stub() -> None:
+    from comfyvn.core import settings_manager as settings_module
+
+    if getattr(settings_module, "_TEST_SETTINGS_STUB", False):
+        return
+
+    defaults = copy.deepcopy(settings_module.DEFAULTS)
+
+    class _SettingsStub:
+        def __init__(
+            self, path: Path | str | None = None, db_path: Path | str | None = None
+        ):
+            self.path = Path(path) if path is not None else Path("settings_stub.json")
+            self.db_path = (
+                Path(db_path) if db_path is not None else self.path.with_suffix(".db")
+            )
+            self._data = copy.deepcopy(defaults)
+
+        def load(self) -> dict:
+            return copy.deepcopy(self._data)
+
+        def load_model(self):
+            return self.load()
+
+        def save(self, data):
+            self._data = copy.deepcopy(dict(data))
+            return self.load()
+
+        def save_model(self, model):
+            return self.save(model)
+
+        def get(self, key: str, default=None):
+            value = self._data.get(key, default)
+            return copy.deepcopy(value)
+
+        def patch(self, key: str, value):
+            updated = copy.deepcopy(self._data)
+            updated[key] = copy.deepcopy(value)
+            self._data = updated
+            return self.load()
+
+        def merge(self, updates: dict):
+            merged = copy.deepcopy(self._data)
+            for key, value in updates.items():
+                if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                    merged[key] = self._deep_merge(merged[key], value)
+                else:
+                    merged[key] = copy.deepcopy(value)
+            self._data = merged
+            return self.load()
+
+        def defaults(self):
+            return copy.deepcopy(defaults)
+
+        def schema(self):
+            return {"title": "SettingsStub", "type": "object"}
+
+        def _deep_merge(self, base: dict, updates: dict):
+            result = copy.deepcopy(base)
+            for key, value in updates.items():
+                if isinstance(value, dict) and isinstance(result.get(key), dict):
+                    result[key] = self._deep_merge(result[key], value)
+                else:
+                    result[key] = copy.deepcopy(value)
+            return result
+
+    settings_module.SettingsManager = _SettingsStub  # type: ignore[assignment]
+    settings_module._TEST_SETTINGS_STUB = True
+
+
 USING_QT_STUB = _install_pyside6_stub()
+_install_settings_stub()
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: D401 - pytest hook

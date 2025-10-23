@@ -16,23 +16,24 @@ syncing or distributing assets.
 
 ## Acknowledging the Policy
 
-The studio UI surfaces the waiver via **Help → Legal & Liability**. For
-automation or CI workflows call:
+The studio UI surfaces the waiver via **Settings → Advisory**. For automation
+or CI workflows call:
 
 ```
-POST /api/policy/ack { "version": "v1", "accepted": true }
+POST /api/advisory/ack { "user": "ci-bot", "notes": "pipeline bootstrap" }
 ```
 
-The acknowledgement is stored under `policy.ack_legal_v1` in
-`config/comfyvn.json`. Health checks and onboarding flows should verify this
-flag before enabling SillyTavern bridging or remote publishing tasks.
+The acknowledgement is stored under `ack_disclaimer_v1` (plus metadata in
+`advisory_ack`) within `config/comfyvn.json`. Health checks and onboarding
+flows should confirm this flag before enabling SillyTavern bridging or remote
+publishing tasks.
 
 ## Recommended Practices
 
 - Record acknowledgement timestamps alongside contributor IDs for audit trails.
 - Pair importer access with read-only workspaces until acknowledgements are
   captured.
-- Re-run `/api/policy/ack` whenever the legal text or liability scope changes,
-  and bump the version key to invalidate stale consents.
+- Re-run `/api/advisory/ack` whenever the legal text or liability scope
+  changes, and bump the version key to invalidate stale consents.
 - Reference the waiver inside modding documentation and CONTRIBUTING guides so
   third-party teams inherit the same expectations.

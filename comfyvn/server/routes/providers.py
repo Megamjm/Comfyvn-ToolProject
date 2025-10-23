@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from fastapi import APIRouter, Body, HTTPException, Query
 
 from comfyvn.compute.providers import get_default_registry
+from comfyvn.compute.providers_echo import EchoAdapter
 from comfyvn.compute.providers_runpod import RunPodAdapter
 from comfyvn.compute.providers_unraid import UnraidAdapter
 from comfyvn.core import compute_providers as generic_providers
@@ -43,6 +44,8 @@ def _adapter_for(entry: Dict[str, Any]):
         return "runpod", RunPodAdapter.from_provider(entry)
     if "unraid" in provider_id or service in {"unraid", "lan", "ssh_unraid"}:
         return "unraid", UnraidAdapter.from_provider(entry)
+    if "echo" in {provider_id, service}:
+        return "echo", EchoAdapter.from_provider(entry)
     return "generic", None
 
 
@@ -98,6 +101,8 @@ async def providers_health(
             status = await adapter.health()  # type: ignore[union-attr]
         elif kind == "unraid":
             status = await adapter.health()  # type: ignore[union-attr]
+        elif kind == "echo":
+            status = await adapter.health()  # type: ignore[union-attr]
         else:
             status = await _generic_health(entry)
         status["provider_id"] = entry.get("id")
@@ -120,6 +125,8 @@ async def providers_quota(
         result = await adapter.fetch_quota()  # type: ignore[union-attr]
     elif kind == "unraid":
         result = await adapter.fetch_quota()  # type: ignore[union-attr]
+    elif kind == "echo":
+        result = await adapter.fetch_quota()  # type: ignore[union-attr]
     else:
         result = {"ok": False, "error": "quota inspection not supported"}
     result["provider_id"] = provider_id
@@ -135,6 +142,8 @@ async def providers_templates(
     if kind == "runpod":
         result = await adapter.fetch_templates()  # type: ignore[union-attr]
     elif kind == "unraid":
+        result = await adapter.fetch_templates()  # type: ignore[union-attr]
+    elif kind == "echo":
         result = await adapter.fetch_templates()  # type: ignore[union-attr]
     else:
         result = {"ok": False, "error": "template enumeration not available"}

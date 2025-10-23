@@ -104,7 +104,9 @@ def rebuild_registry(
 
     processed = 0
     skipped = 0
+    asset_paths_seen: set[Path] = set()
     for file_path, rel_path in _iter_asset_files(assets_root):
+        asset_paths_seen.add(rel_path)
         asset_type = _derive_asset_type(rel_path)
         meta_payload, license_tag = _load_sidecar(file_path)
         meta_payload.setdefault("origin", "rebuild_asset_registry")
@@ -142,7 +144,71 @@ def rebuild_registry(
             removed += 1
 
     AssetRegistry.wait_for_thumbnails(timeout=30.0)
-    return {"processed": processed, "skipped": skipped, "removed": removed}
+    orphaned_sidecars: list[Path] = []
+    for sidecar_path in assets_root.rglob(f"*{registry.sidecar_suffix}"):
+        if not sidecar_path.is_file():
+            continue
+        try:
+            rel = sidecar_path.relative_to(assets_root)
+        except ValueError:
+            continue
+        if rel.name.endswith(registry.sidecar_suffix):
+            if "_meta" in rel.parts:
+                continue
+            asset_rel = Path(str(rel)[: -len(registry.sidecar_suffix)])
+            if asset_rel not in asset_paths_seen:
+                orphaned_sidecars.append(rel)
+
+    missing_thumbs: list[tuple[str, str]] = []
+    thumb_root = registry.THUMB_ROOT
+    for asset in registry.list_assets():
+        uid = asset.get("uid") or "unknown"
+        thumb_candidates: set[str] = set()
+        thumb_field = asset.get("thumb")
+        if isinstance(thumb_field, str) and thumb_field:
+            thumb_candidates.add(thumb_field)
+        meta_raw = asset.get("meta")
+        meta = meta_raw if isinstance(meta_raw, dict) else {}
+        preview = meta.get("preview")
+        if isinstance(preview, dict):
+            if isinstance(preview.get("path"), str):
+                thumb_candidates.add(preview["path"])
+            paths_map = preview.get("paths")
+            if isinstance(paths_map, dict):
+                thumb_candidates.update(
+                    str(value) for value in paths_map.values() if isinstance(value, str)
+                )
+        for thumb_rel in thumb_candidates:
+            thumb_filename = Path(thumb_rel).name
+            thumb_path = thumb_root / thumb_filename
+            if not thumb_path.exists():
+                missing_thumbs.append((uid, thumb_rel))
+
+    if orphaned_sidecars:
+        for rel in orphaned_sidecars[:10]:
+            LOGGER.warning("Orphaned sidecar without matching asset: %s", rel)
+        if len(orphaned_sidecars) > 10:
+            LOGGER.warning(
+                "Additional orphaned sidecars detected: %s",
+                len(orphaned_sidecars) - 10,
+            )
+
+    if missing_thumbs:
+        for uid, thumb_rel in missing_thumbs[:10]:
+            LOGGER.warning("Missing thumbnail for asset %s (%s)", uid, thumb_rel)
+        if len(missing_thumbs) > 10:
+            LOGGER.warning(
+                "Additional assets missing thumbnails: %s",
+                len(missing_thumbs) - 10,
+            )
+
+    return {
+        "processed": processed,
+        "skipped": skipped,
+        "removed": removed,
+        "orphaned_sidecars": len(orphaned_sidecars),
+        "missing_thumbnails": len(missing_thumbs),
+    }
 
 
 def parse_args() -> argparse.Namespace:

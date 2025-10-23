@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -50,6 +51,75 @@ def _filter_by_license(
     return filtered
 
 
+def _ensure_relative_path(value: Optional[str]) -> Optional[Path]:
+    if value is None:
+        return None
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise HTTPException(
+            status_code=400,
+            detail="dest_path must be relative to the asset registry root.",
+        )
+    return candidate
+
+
+def _coerce_metadata(meta: Any) -> Dict[str, Any]:
+    if meta is None:
+        return {}
+    if isinstance(meta, dict):
+        return dict(meta)
+    if isinstance(meta, str):
+        text = meta.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:  # pragma: no cover - validation
+            raise HTTPException(
+                status_code=400, detail=f"metadata must be valid JSON: {exc}"
+            ) from exc
+        if isinstance(parsed, dict):
+            return dict(parsed)
+        raise HTTPException(
+            status_code=400, detail="metadata JSON must decode to an object."
+        )
+    raise HTTPException(
+        status_code=400, detail="metadata must be an object or JSON string."
+    )
+
+
+def _serialize_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
+    meta_raw = asset.get("meta")
+    meta = meta_raw if isinstance(meta_raw, dict) else {}
+    links_raw = asset.get("links")
+    payload: Dict[str, Any] = {
+        "id": asset.get("uid"),
+        "uid": asset.get("uid"),
+        "type": asset.get("type"),
+        "hash": asset.get("hash"),
+        "bytes": asset.get("bytes"),
+        "tags": list(meta.get("tags") or []),
+        "license": meta.get("license"),
+        "origin": meta.get("origin"),
+        "version": meta.get("version"),
+        "created_at": asset.get("created_at"),
+        "metadata": meta,
+        "links": dict(links_raw) if isinstance(links_raw, dict) else {},
+        "sidecar": asset.get("sidecar"),
+        "path": asset.get("path"),
+    }
+    thumb = asset.get("thumb")
+    if isinstance(thumb, str):
+        payload["thumb"] = thumb
+    preview = meta.get("preview")
+    if isinstance(preview, dict):
+        payload["preview"] = preview
+    thumbnails = meta.get("thumbnails")
+    if isinstance(thumbnails, dict):
+        payload["thumbnails"] = thumbnails
+    return payload
+
+
 def _serialize_summary(summary: RebuildSummary) -> Dict[str, Any]:
     payload = summary.as_dict()
     payload.update(
@@ -87,6 +157,28 @@ class SidecarEnforceRequest(BaseModel):
 class SidecarEnforceResponse(BaseModel):
     ok: bool = True
     report: Dict[str, Any]
+
+
+class AssetRegisterRequest(BaseModel):
+    path: str = Field(
+        ..., description="Absolute or relative path to the source asset on disk."
+    )
+    asset_type: str = Field(
+        default="generic", description="Logical asset type bucket (e.g. images)."
+    )
+    dest_path: Optional[str] = Field(
+        default=None,
+        description="Optional relative destination path inside the asset registry.",
+    )
+    metadata: Optional[Any] = Field(
+        default=None,
+        description="Asset metadata object or JSON string to persist in the sidecar.",
+    )
+    copy_file: bool = Field(
+        default=True,
+        alias="copy",
+        description="Copy the source into the asset registry (set false to register in-place).",
+    )
 
 
 class RegistryRebuildRequest(BaseModel):
@@ -145,6 +237,39 @@ async def _list_assets_async(
     )
 
 
+@router.post("/api/assets/register")
+async def register_asset(payload: AssetRegisterRequest) -> Dict[str, Any]:
+    source = Path(payload.path).expanduser()
+    if not source.exists():
+        raise HTTPException(status_code=404, detail="Source file does not exist.")
+
+    dest_relative = _ensure_relative_path(payload.dest_path)
+    if dest_relative and not dest_relative.suffix:
+        dest_relative = dest_relative / source.name
+
+    metadata = _coerce_metadata(payload.metadata)
+    license_value = metadata.get("license")
+    license_tag = license_value.strip() if isinstance(license_value, str) else None
+    asset_type = payload.asset_type or "generic"
+
+    def _register() -> Dict[str, Any]:
+        return _REGISTRY.register_file(
+            source,
+            asset_type=asset_type,
+            dest_relative=dest_relative,
+            metadata=metadata,
+            copy=payload.copy_file,
+            license_tag=license_tag,
+        )
+
+    asset_info = await run_in_threadpool(_register)
+    return {
+        "ok": True,
+        "asset_id": asset_info.get("uid"),
+        "asset": _serialize_asset(asset_info),
+    }
+
+
 @router.get("/api/assets/search", response_model=AssetSearchResponse)
 async def search_assets(
     asset_type: Optional[str] = Query(
@@ -169,6 +294,7 @@ async def search_assets(
     ),
     text: Optional[str] = Query(
         default=None,
+        alias="q",
         description="Substring search that scans path and metadata text.",
     ),
     limit: Optional[int] = Query(
@@ -196,8 +322,10 @@ async def search_assets(
         limit=query_limit,
     )
     filtered = _filter_by_license(assets, license_tag)
+    total_results = len(filtered)
+    serialized = [_serialize_asset(asset) for asset in filtered]
     if raw_limit:
-        filtered = filtered[:raw_limit]
+        serialized = serialized[:raw_limit]
 
     debug_payload: Optional[Dict[str, Any]] = None
     if include_debug:
@@ -213,17 +341,25 @@ async def search_assets(
         }
 
     return AssetSearchResponse(
-        total=len(filtered),
-        items=filtered,
+        total=total_results,
+        items=serialized,
         filters={
             "type": asset_type,
             "tags": normalized_tags or [],
             "license": license_tag,
-            "text": text,
+            "q": text,
             "limit": raw_limit,
         },
         debug=debug_payload,
     )
+
+
+@router.get("/api/assets/{uid}")
+async def get_asset(uid: str) -> Dict[str, Any]:
+    asset = await run_in_threadpool(_REGISTRY.get_asset, uid)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    return {"ok": True, "asset": _serialize_asset(asset)}
 
 
 @router.post("/api/assets/enforce", response_model=SidecarEnforceResponse)

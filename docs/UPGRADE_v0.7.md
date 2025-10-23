@@ -19,7 +19,7 @@ Updated: 2025-10-26
 ## Upgrade steps
 1. Checkout the release tag: `git checkout v0.7.0-studio`.
 2. Install dependencies: `pip install -r requirements.txt` (use `requirements-dev.txt` if you maintain developer tooling).
-3. Apply schema baseline (idempotent): `python setup/apply_phase06_rebuild.py --migrate-only`.
+3. Apply schema baseline (idempotent): `python tools/apply_migrations.py --verbose`.
 4. Regenerate provider locks if you use custom render pipelines: `python tools/lock_nodes.py`.
 5. Run Doctor: `python tools/doctor_v07.py` — resolves runtime paths, validates dependencies, and surfaces missing render grid prerequisites.
 6. Smoke test backend: `python run_comfyvn.py --server-only` then `curl http://127.0.0.1:8000/health`.

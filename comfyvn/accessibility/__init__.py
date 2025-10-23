@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -412,6 +413,61 @@ class AccessibilityManager:
                 )
 
 
-accessibility_manager = AccessibilityManager()
+_ACCESSIBILITY_DISABLED = os.getenv(
+    "COMFYVN_ACCESSIBILITY_DISABLED", ""
+).strip().lower() in {"1", "true", "yes", "on"}
+
+
+if _ACCESSIBILITY_DISABLED:
+
+    class _DisabledAccessibilityManager:
+        """No-op accessibility manager used when disabled via environment."""
+
+        def __init__(self) -> None:
+            self._state = AccessibilityState()
+
+        @property
+        def state(self) -> AccessibilityState:
+            return AccessibilityState(**asdict(self._state))
+
+        def snapshot(self) -> AccessibilityState:
+            return self.state
+
+        def export_profile(self) -> Dict[str, Any]:
+            return self._state.to_persisted_dict()
+
+        def import_profile(self, payload: Mapping[str, Any]) -> AccessibilityState:
+            return self.snapshot()
+
+        def subscribe(self, callback: Callable[[AccessibilityState], None]) -> str:
+            token = "accessibility-disabled"
+            if callable(callback):
+                try:
+                    callback(self.snapshot())
+                except Exception:  # pragma: no cover - defensive
+                    LOGGER.debug(
+                        "Disabled accessibility subscriber callback failed",
+                        exc_info=True,
+                    )
+            return token
+
+        def unsubscribe(self, _token: str) -> None:
+            return None
+
+        def update(self, **_fields: Any) -> AccessibilityState:
+            return self.snapshot()
+
+        def ensure_applied(self) -> None:
+            return None
+
+        def push_subtitle(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+        def clear_subtitle(self) -> None:
+            return None
+
+    accessibility_manager = _DisabledAccessibilityManager()
+else:
+    accessibility_manager = AccessibilityManager()
 
 __all__ = ["AccessibilityManager", "AccessibilityState", "accessibility_manager"]

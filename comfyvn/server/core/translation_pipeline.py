@@ -129,8 +129,18 @@ def plan_remix_tasks(
     music: List[Dict[str, object]] = []
     if scenes:
         try:
-            artifact, sidecar = remix_track(scene_id=scenes[0], target_style="import")
-            music.append({"scene": scenes[0], "artifact": artifact, "sidecar": sidecar})
+            artifact, sidecar, cached, meta = remix_track(
+                scene_id=scenes[0], target_style="import"
+            )
+            music.append(
+                {
+                    "scene": scenes[0],
+                    "artifact": artifact,
+                    "sidecar": sidecar,
+                    "cached": cached,
+                    "metadata": meta,
+                }
+            )
         except Exception as exc:
             LOGGER.warning("Music remix stub failed for scene %s: %s", scenes[0], exc)
 

@@ -11,33 +11,47 @@ import os
 import threading
 from typing import Any, Dict, Mapping, Optional
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAction,
+    QApplication,
+    QDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QStackedWidget,
     QStatusBar,
     QStyle,
+    QTabWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
+from comfyvn.config import runtime_paths
+from comfyvn.core.theme_manager import apply_theme
+from comfyvn.gui.panels.advisory_panel import AdvisoryPanel
+from comfyvn.gui.panels.debug_integrations import DebugIntegrationsPanel
 from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.gui.statusbar_metrics import StatusBarMetrics
+from comfyvn.gui.studio_config import StudioConfig
 from comfyvn.gui.views import (
     AssetSummaryView,
+    AudioView,
     CharactersView,
+    ComputeSummaryView,
+    ExportStatusView,
     ImportsJobsView,
     ScenesView,
     TimelineView,
 )
 from comfyvn.gui.views.metrics_dashboard import MetricsDashboard
+from comfyvn.gui.widgets.log_hub import LogHub
 from comfyvn.studio.core.asset_registry import AssetRegistry
 from comfyvn.studio.core.character_registry import CharacterRegistry
 from comfyvn.studio.core.scene_registry import SceneRegistry
@@ -57,8 +71,40 @@ class StudioWindow(QMainWindow):
         self.setWindowTitle("ComfyVN Studio Shell")
         self.resize(1280, 820)
 
-        self.bridge = bridge or ServerBridge()
+        self._config = StudioConfig()
+        cfg_snapshot = self._config.load()
+        layout_snapshot = cfg_snapshot.get("layout")
+        self._layout_state = (
+            dict(layout_snapshot) if isinstance(layout_snapshot, dict) else {}
+        )
+        host_override = cfg_snapshot.get("host")
+        base_override = (
+            host_override.strip()
+            if isinstance(host_override, str) and host_override.strip()
+            else None
+        )
+
+        if bridge is not None:
+            self.bridge = bridge
+            if base_override:
+                try:
+                    self.bridge.set_host(base_override)
+                except Exception as exc:
+                    logger.debug("Unable to apply stored host override: %s", exc)
+        else:
+            self.bridge = ServerBridge(base=base_override)
         self.bridge.status_updated.connect(self._on_metrics)
+        self._active_base = self.bridge.base_url
+
+        self._theme_preference = str(cfg_snapshot.get("theme") or "system")
+        self._pending_view_label = (
+            str(self._layout_state.get("current_view"))
+            if isinstance(self._layout_state.get("current_view"), str)
+            else None
+        )
+        if self._pending_view_label == "Import Processing":
+            self._pending_view_label = "Imports / Jobs"
+        self._apply_theme_preference()
 
         self._autostart_enabled = self._resolve_autostart_flag()
         self._autostart_base_delay = 3
@@ -84,6 +130,14 @@ class StudioWindow(QMainWindow):
         self._init_toolbar()
         self._init_central()
         self._init_status()
+        self._update_base_dependent_views()
+        self._restore_layout_state()
+
+        self._diagnostics_dialog: QDialog | None = None
+        self._diagnostics_tabs: QTabWidget | None = None
+        self._diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        self._diagnostics_shortcut.setContext(Qt.ApplicationShortcut)
+        self._diagnostics_shortcut.activated.connect(self._open_diagnostics)
 
         self.bridge.start_polling()
         if self._autostart_enabled:
@@ -132,7 +186,7 @@ class StudioWindow(QMainWindow):
         self._view_stack = QStackedWidget(self)
         content_row.addWidget(self._view_stack, 1)
 
-        self._build_views()
+        self._build_views(initial_view=self._pending_view_label)
 
         self._dashboard = MetricsDashboard(self)
         layout.addWidget(self._dashboard)
@@ -147,14 +201,19 @@ class StudioWindow(QMainWindow):
 
         self.setCentralWidget(container)
 
-    def _build_views(self) -> None:
-        imports_label = "Import Processing"
+    def _build_views(self, *, initial_view: str | None = None) -> None:
+        imports_label = "Imports / Jobs"
         icons = {
             "Scenes": QStyle.SP_FileIcon,
             "Characters": QStyle.SP_FileDialogContentsView,
             "Timeline": QStyle.SP_DirOpenIcon,
             "Assets": QStyle.SP_DriveHDIcon,
             imports_label: QStyle.SP_BrowserReload,
+            "Compute": QStyle.SP_ComputerIcon,
+            "Audio": QStyle.SP_MediaVolume,
+            "Advisory": QStyle.SP_FileDialogDetailedView,
+            "Export": QStyle.SP_DialogSaveButton,
+            "Logs": QStyle.SP_FileDialogInfoView,
         }
 
         self._scene_view = ScenesView(self.bridge, self)
@@ -162,6 +221,11 @@ class StudioWindow(QMainWindow):
         self._timeline_view = TimelineView(self.bridge, self)
         self._asset_view = AssetSummaryView(self._asset_registry, self)
         self._imports_view = ImportsJobsView(self.bridge.base_url, self)
+        self._compute_view = ComputeSummaryView(self.bridge.base_url, self)
+        self._audio_view = AudioView(parent=self)
+        self._advisory_view = AdvisoryPanel(self.bridge.base_url)
+        self._export_view = ExportStatusView(self.bridge, self)
+        self._log_view = LogHub(runtime_paths.logs_dir(), parent=self)
 
         self._view_map: dict[str, QWidget] = {
             "Scenes": self._scene_view,
@@ -169,6 +233,11 @@ class StudioWindow(QMainWindow):
             "Timeline": self._timeline_view,
             "Assets": self._asset_view,
             imports_label: self._imports_view,
+            "Compute": self._compute_view,
+            "Audio": self._audio_view,
+            "Advisory": self._advisory_view,
+            "Export": self._export_view,
+            "Logs": self._log_view,
         }
         self._view_order = list(self._view_map.keys())
 
@@ -181,10 +250,14 @@ class StudioWindow(QMainWindow):
 
         self._nav.currentRowChanged.connect(self._on_nav_changed)
         if self._view_order:
+            target_label = (
+                initial_view if initial_view in self._view_map else self._view_order[0]
+            )
+            target_index = self._view_order.index(target_label)
             self._nav.blockSignals(True)
-            self._nav.setCurrentRow(0)
+            self._nav.setCurrentRow(target_index)
             self._nav.blockSignals(False)
-            self._activate_view(self._view_order[0], notify_server=False)
+            self._activate_view(target_label, notify_server=False)
 
     def _update_info_label(self) -> None:
         lines = [
@@ -199,11 +272,158 @@ class StudioWindow(QMainWindow):
         self._info_extra = text or self._info_default
         self._update_info_label()
 
+    def _remember_layout_state(self) -> None:
+        if not isinstance(getattr(self, "_view_order", None), list):
+            return
+        layout = (
+            dict(self._layout_state) if isinstance(self._layout_state, dict) else {}
+        )
+        layout["current_view"] = self._current_view
+        if self._current_view in self._view_order:
+            layout["nav_index"] = self._view_order.index(self._current_view)
+        self._layout_state = layout
+
+    def _update_base_dependent_views(self) -> None:
+        base = self.bridge.base_url.rstrip("/")
+        if not base or getattr(self, "_active_base", None) == base:
+            return
+        self._active_base = base
+        if hasattr(self, "_metrics_display"):
+            self._metrics_display.set_base_url(base)
+        if hasattr(self, "_imports_view"):
+            self._imports_view.set_base_url(base)
+        if hasattr(self, "_compute_view"):
+            self._compute_view.set_base_url(base)
+        if hasattr(self, "_advisory_view"):
+            self._advisory_view.set_base_url(base)
+        if hasattr(self, "_export_view"):
+            self._export_view.set_base_url(base)
+
+    def _restore_layout_state(self) -> None:
+        if not isinstance(self._layout_state, dict):
+            self._layout_state = {}
+            return
+        geometry_blob = self._layout_state.get("geometry")
+        state_blob = self._layout_state.get("window_state")
+        geometry = self._decode_bytes(geometry_blob)
+        if geometry:
+            try:
+                self.restoreGeometry(geometry)
+            except Exception as exc:
+                logger.debug("Unable to restore studio geometry: %s", exc)
+        window_state = self._decode_bytes(state_blob)
+        if window_state:
+            try:
+                self.restoreState(window_state)
+            except Exception as exc:
+                logger.debug("Unable to restore studio window state: %s", exc)
+
+    def _persist_config(self) -> None:
+        if not hasattr(self, "_config"):
+            return
+        layout = (
+            dict(self._layout_state) if isinstance(self._layout_state, dict) else {}
+        )
+        layout["current_view"] = self._current_view
+        if hasattr(self, "_view_order") and self._current_view in self._view_order:
+            layout["nav_index"] = self._view_order.index(self._current_view)
+        geometry = self._encode_bytes(self.saveGeometry())
+        if geometry:
+            layout["geometry"] = geometry
+        window_state = self._encode_bytes(self.saveState())
+        if window_state:
+            layout["window_state"] = window_state
+        self._layout_state = layout
+        try:
+            self._config.update(
+                host=self.bridge.base_url,
+                theme=self._theme_preference,
+                layout=layout,
+            )
+        except Exception as exc:
+            logger.debug("Failed to persist studio config: %s", exc)
+
+    def _apply_theme_preference(self) -> None:
+        theme = (self._theme_preference or "").strip()
+        if theme.lower() in {"", "system"}:
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        try:
+            apply_theme(app, theme)
+        except Exception as exc:
+            logger.warning("Unable to apply theme %s: %s", theme, exc)
+
+    def _open_diagnostics(self) -> None:
+        dialog = self._diagnostics_dialog
+        if dialog is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Studio Diagnostics")
+            dialog.resize(900, 600)
+            container = QVBoxLayout(dialog)
+            tabs = QTabWidget(dialog)
+            compute_panel = DebugIntegrationsPanel(self.bridge.base_url, tabs)
+            logs_panel = LogHub(runtime_paths.logs_dir(), tabs)
+            tabs.addTab(compute_panel, "Compute")
+            tabs.addTab(logs_panel, "Logs")
+            container.addWidget(tabs)
+            close_button = QPushButton("Close", dialog)
+            close_button.clicked.connect(dialog.close)
+            container.addWidget(close_button, alignment=Qt.AlignRight)
+            dialog.setLayout(container)
+            self._diagnostics_dialog = dialog
+            self._diagnostics_tabs = tabs
+        else:
+            tabs = self._diagnostics_tabs
+            if tabs is not None:
+                compute_widget = tabs.widget(0)
+                if hasattr(compute_widget, "refresh"):
+                    try:
+                        compute_widget.refresh()
+                    except Exception:
+                        logger.debug(
+                            "Diagnostics compute refresh failed", exc_info=True
+                        )
+                logs_widget = tabs.widget(1)
+                if hasattr(logs_widget, "refresh"):
+                    try:
+                        logs_widget.refresh()
+                    except Exception:
+                        logger.debug("Diagnostics log refresh failed", exc_info=True)
+        dialog = self._diagnostics_dialog
+        if dialog is not None:
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+
+    @staticmethod
+    def _encode_bytes(blob: QByteArray | bytes | bytearray | None) -> str | None:
+        if isinstance(blob, QByteArray):
+            encoded = blob.toBase64()
+        elif isinstance(blob, (bytes, bytearray)):
+            encoded = QByteArray(blob).toBase64()
+        else:
+            return None
+        return bytes(encoded).decode("ascii")
+
+    @staticmethod
+    def _decode_bytes(value: object) -> QByteArray | None:
+        if isinstance(value, QByteArray):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                return QByteArray.fromBase64(value.encode("ascii"))
+            except Exception:
+                return None
+        return None
+
     def _on_nav_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._view_order):
             return
         label = self._view_order[index]
         self._activate_view(label, notify_server=True)
+        self._remember_layout_state()
 
     def _activate_view(self, label: str, *, notify_server: bool) -> None:
         widget = self._view_map.get(label)
@@ -214,6 +434,7 @@ class StudioWindow(QMainWindow):
             self._view_stack.setCurrentWidget(widget)
         self._current_view = label
         self._refresh_view(label)
+        self._remember_layout_state()
         if notify_server:
             self.bridge.post(
                 "/api/studio/switch_view", {"view": label}, cb=self._on_view_switched
@@ -245,6 +466,7 @@ class StudioWindow(QMainWindow):
         self._view_stack.setCurrentWidget(widget)
         self._current_view = label
         self._refresh_view(label)
+        self._remember_layout_state()
 
     def _reload_registries(self) -> None:
         logger.info("Reloading registries for project %s", self._current_project)
@@ -402,6 +624,7 @@ class StudioWindow(QMainWindow):
         self._dashboard.set_manual_enabled(
             not self._autostart_inflight and not self._manual_start_in_progress
         )
+        self._update_base_dependent_views()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.bridge.stop_polling()
@@ -411,6 +634,7 @@ class StudioWindow(QMainWindow):
                 self._imports_view.close()
             except Exception:
                 logger.debug("Imports view close handling failed", exc_info=True)
+        self._persist_config()
         super().closeEvent(event)
         if self._autostart_timer.isActive():
             self._autostart_timer.stop()
@@ -440,6 +664,7 @@ class StudioWindow(QMainWindow):
         self._autostart_inflight = False
         self._manual_start_in_progress = False
         self._autostart_step = 0
+        self._update_base_dependent_views()
 
     def _update_status_indicator(self, ok: bool) -> None:
         self._status_indicator.setText(self._format_status_dot(ok))

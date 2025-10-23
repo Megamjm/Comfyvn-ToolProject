@@ -6,14 +6,14 @@ The compute advisor surfaces local hardware snapshots, a persisted provider regi
 
 | Route | Method | Description |
 | ----- | ------ | ----------- |
-| `/api/gpu/list` | `GET` | Enumerates local CPU + NVIDIA GPUs. Append `?debug=1` to inspect the raw metric payload returned by `collect_system_metrics()`. |
+| `/api/gpu/list` | `GET` | Enumerates local CPU + NVIDIA GPUs and returns summarised metrics (`mem_total`, `mem_free`, `util`). Append `?debug=1` to inspect the raw device list and system payload captured from `collect_system_metrics()`. |
 | `/api/providers` | `GET` | Lists persisted compute providers from `config/compute_providers.json`. Add `?debug=1` to include aggregate counts and storage metadata. |
 | `/api/providers` | `POST` | Registers or updates a provider entry (`{id, kind, base, meta}`), persisting to disk and returning the stored record. Include `"debug": true` in the body to get updated stats alongside the upserted entry. |
 | `/api/providers/{id}` | `DELETE` | Removes a provider entry. Add `?debug=1` for an updated stats snapshot after deletion. |
-| `/api/compute/advise` | `POST` | Heuristic advisor returning `{decision: cpu|gpu|remote, reason}` plus a context summary. Send `"debug": true` to receive thresholds, derived job values, scheduler queue counts, hardware metrics, and registry stats. |
+| `/api/compute/advise` | `POST` | Heuristic advisor returning `{decision, reason, target}` plus a context summary. Send `"debug": true` to receive thresholds, derived job values, scheduler queue counts, hardware metrics, and registry stats. |
 | `/api/compute/costs` | `POST` | Lightweight cost preview that never bills. Accepts the same job payload as `enqueue` and responds with `{estimate, breakdown, hints, notes}`. `"debug": true` echoes provider stats and the resolved registry entries. |
 
-All responses include `{"feature": {"feature": "enable_compute", "enabled": false}}` so clients can reflect flag state. When the feature remains disabled, remote suggestions fall back to GPU or CPU automatically and the cost endpoint annotates remote estimates as informational only.
+All responses include `{"feature": {"feature": "enable_compute", "enabled": false}}` so clients can reflect flag state. When the feature remains disabled, remote suggestions fall back to GPU or CPU automatically and the cost endpoint annotates remote estimates as informational only. GPU policy preferences now persist inside the shared settings store (`settings/config.json` + SQLite), so CLI tools and the GUI share the same `{"mode", "preferred_id", "manual_device"}` snapshot without chasing `gpu_policy.json`.
 
 ## Payload Examples
 
@@ -32,6 +32,7 @@ curl -s -X POST "$BASE/api/compute/advise" \
 Response highlights:
 
 - `decision` and `reason` summarise the selected path.
+- `target` normalises the action into `cpu`, `gpu`, or `remote` regardless of the underlying device string.
 - `context` captures GPU presence, queue depths, and VRAM headroom.
 - `debug.advisor.thresholds` lists the cut-offs for queue pressure, image size, and VRAM slack.
 - `debug.scheduler.queues` mirrors the active queue lengths so modders can monitor saturation.
@@ -95,3 +96,4 @@ Key fields:
 - `comfyvn/compute/advisor.py` — heuristic decision maker with optional debug details.
 - `comfyvn/compute/scheduler.py` — job queues, sticky device support, cost previews, scheduler REST bridge under `/api/schedule/*`.
 - `docs/dev_notes_compute_advisor.md` — development log, hook recipes, and test hints.
+- A lightweight HTTP echo adapter (`kind="remote"`, `service="echo"`) is available for smoke tests. Health checks hit `GET <base>/health` when a real URL is provided, and when using `stub://` or `memory://` bases the adapter returns `{ok:true}` without leaving the process. Quota/template routes reply with a simple `"unsupported"` payload so dashboards stay predictable.

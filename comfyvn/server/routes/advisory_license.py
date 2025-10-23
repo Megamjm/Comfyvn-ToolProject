@@ -7,7 +7,6 @@ from fastapi import APIRouter, Body, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from comfyvn.advisory.license_snapshot import (
-    LicenseAcknowledgementRequired,
     LicenseSnapshotError,
     SnapshotResult,
     capture_snapshot,
@@ -200,11 +199,14 @@ def ensure_ack(
         hash_value = str(hash_value)
     try:
         info = require_ack(asset_id, hash_value=hash_value)
-    except LicenseAcknowledgementRequired as exc:
-        raise HTTPException(status_code=423, detail=str(exc)) from exc
     except LicenseSnapshotError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     response = dict(info)
-    response["ok"] = True
-    response["acknowledged"] = True
-    return response
+    ack_required = bool(response.pop("ack_required", False))
+    warnings = response.get("warnings") or []
+    return {
+        "ok": True,
+        "acknowledged": not ack_required,
+        "warnings": warnings,
+        **response,
+    }

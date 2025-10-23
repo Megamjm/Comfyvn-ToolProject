@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import zipfile
@@ -17,6 +18,7 @@ from comfyvn.core.policy_gate import policy_gate
 from comfyvn.policy.enforcer import policy_enforcer
 
 router = APIRouter()
+LOGGER = logging.getLogger("comfyvn.api.export")
 
 
 # ---------------------------------------------------------------------------
@@ -154,14 +156,8 @@ def _load_project(project_id: str) -> tuple[dict, Path]:
 
 def _require_gate(action: str) -> dict:
     gate = policy_gate.evaluate_action(action)
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "operation blocked until legal acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        LOGGER.warning("Advisory disclaimer pending for action=%s", action)
     return gate
 
 

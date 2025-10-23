@@ -3,7 +3,7 @@ ComfyVN — Studio Phase 7 (Advisory & Policy)
 
 Scope
 -----
-Phase 7 formalises liability gates, advisory scans, and SFW/NSFW filters. The new API stubs allow early integration with the studio UI while keeping the policy rules pluggable.
+Phase 7 formalises the advisory disclaimer, scanner workflow, and SFW/NSFW filters. The new API stubs allow early integration with the studio UI while keeping the policy rules pluggable.
 
 See also `docs/development/advisory_modding.md` for contributor-facing guidance on scanner plugins, debug hooks, and legal acknowledgement flows.
 
@@ -30,12 +30,12 @@ API Hooks
   - Request: `{issue_id, notes?}`
   - Returns `{ok, issue_id}` or HTTP 404 if the issue is unknown.
 
-`GET /api/policy/status`
-  - Provides liability-gate status: `{ok, status{ack_legal_v1,requires_ack,ack_timestamp}, message, allow_override}`.
-  - When `requires_ack` is true, UI shells should disable export/import triggers until acknowledgement is recorded.
+`GET /api/advisory/disclaimer`
+  - Provides disclaimer status and text: `{ok, acknowledged, message, links, status{ack_disclaimer_v1,...}}`.
+  - When `acknowledged` is false, UI shells should surface the banner but workflows remain unblocked.
 
-`POST /api/policy/ack`
-  - Stores the legal acknowledgement and optional notes. Response mirrors `status`.
+`POST /api/advisory/ack`
+  - Stores the acknowledgement with optional notes. Response mirrors the disclaimer payload.
 
 `POST /api/policy/evaluate`
   - Returns `{ok, action, requires_ack, warnings[], allow, override_requested}` to surface warnings before exports/imports.
@@ -55,10 +55,10 @@ Scanner Behaviour
 - Each finding receives a deterministic `issue_id`, timestamp, and optional detail payload for provenance linking.
 - Resolutions flip the `resolved` flag and append notes for audit trails.
 
-Liability Gate & User Choice
----------------------------
-- Gate status is stored in `data/settings/config.json` via `comfyvn/core/policy_gate.py`.
-- Exports and imports are blocked (`allow=false`) until the legal acknowledgement is recorded; other actions continue to return warnings while permitting the workflow.
+Disclaimer State & User Choice
+------------------------------
+- The acknowledgement flag lives in `data/settings/config.json` (`ack_disclaimer_v1`) and is mirrored to the SQLite `settings` table via `comfyvn/core/policy_gate.py`.
+- Exports and imports present warnings when the disclaimer is pending; workflows continue, but the UI should keep the banner visible until acknowledged.
 - Override requests should capture the user’s identity and notes for auditing.
 
 SFW/NSFW Filters
@@ -78,9 +78,9 @@ Logging & Debugging
   2. Call `GET /api/advisory/logs` and verify the issue appears with severity `warn`.
   3. Resolve with `curl -X POST .../resolve -d '{"issue_id":"<id>","notes":"Reviewed and cleared"}'` and confirm the item shows `resolved:true`.
 - WARN entries highlight new issues; INFO entries capture scan counts and resolution actions.
-- Policy gate smoke test:
-  1. `curl http://localhost:8000/api/policy/status`
-  2. `curl -X POST http://localhost:8000/api/policy/ack -H 'Content-Type: application/json' -d '{"user":"tester","notes":"Reviewed"}'`
+- Disclaimer + policy smoke test:
+  1. `curl http://localhost:8000/api/advisory/disclaimer`
+  2. `curl -X POST http://localhost:8000/api/advisory/ack -H 'Content-Type: application/json' -d '{"user":"tester","notes":"Reviewed"}'`
   3. `curl -X POST http://localhost:8000/api/policy/evaluate -H 'Content-Type: application/json' -d '{"action":"export.bundle","override":true}'`
 - Content filter test:
   1. `curl -X POST http://localhost:8000/api/policy/filter-preview -H 'Content-Type: application/json' -d '{"items":[{"id":"asset:1","meta":{"nsfw":true}},{"id":"asset:2","meta":{"tags":["safe"]}}],"mode":"sfw"}'`
@@ -88,7 +88,7 @@ Logging & Debugging
 
 Integration Notes
 -----------------
-- The liability gate can reuse advisory logs by ensuring each required acknowledgement writes a resolved note referencing the acceptance checkbox.
+- The disclaimer flow can reuse advisory logs by ensuring each required acknowledgement writes a resolved note referencing the acceptance checkbox.
 - When SFW/NSFW filters arrive, reuse `AdvisoryIssue.detail` to embed classification probabilities.
 - For provenance, the `issue_id` should be stored in `provenance.inputs_json` so exports can trace remediation history.
 - Provenance stamping lives in `comfyvn/core/provenance.py` and writes `<file>.prov.json` sidecars plus best-effort PNG/JPEG metadata markers; exports call this helper so Studio and CLI flows share the same audit trail.

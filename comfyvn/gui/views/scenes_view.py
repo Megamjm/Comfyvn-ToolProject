@@ -7,6 +7,7 @@ from typing import Any, Iterable, Optional
 from pydantic import ValidationError
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -41,6 +42,8 @@ class ScenesView(QWidget):
         super().__init__(parent)
         self.api = api_client or ServerBridge()
         self._items: list[dict[str, Any]] = []
+        self._last_raw_payload: Any | None = None
+        self._raw_mode = False
 
         self.list_widget = QListWidget(self)
         self.list_widget.setSelectionMode(QListWidget.SingleSelection)
@@ -60,7 +63,13 @@ class ScenesView(QWidget):
         refresh_button.clicked.connect(self.refresh)
         self._refresh_button = refresh_button
 
+        self.raw_toggle = QCheckBox("Show raw response", self)
+        self.raw_toggle.stateChanged.connect(
+            lambda state: self._set_raw_mode(state == Qt.Checked)
+        )
+
         actions_row = QHBoxLayout()
+        actions_row.addWidget(self.raw_toggle)
         actions_row.addStretch(1)
         actions_row.addWidget(refresh_button)
 
@@ -92,6 +101,8 @@ class ScenesView(QWidget):
             self._refresh_button.setEnabled(True)
 
         self._items = items
+        if source != "server":
+            self._last_raw_payload = {"source": source, "items": items}
         self.list_widget.clear()
 
         for index, item in enumerate(items):
@@ -110,6 +121,32 @@ class ScenesView(QWidget):
                 "Select a scene to compute presentation directives."
             )
 
+        if self._raw_mode:
+            self.detail.setPlainText(self._raw_payload_text())
+            self.plan_preview.setVisible(False)
+        else:
+            self.plan_preview.setVisible(True)
+
+    def _set_raw_mode(self, enabled: bool) -> None:
+        if self._raw_mode == enabled:
+            return
+        self._raw_mode = enabled
+        if enabled:
+            self.plan_preview.setVisible(False)
+            self.detail.setPlainText(self._raw_payload_text())
+        else:
+            self.plan_preview.setVisible(True)
+            self._on_selection_changed(self.list_widget.currentRow())
+
+    def _raw_payload_text(self) -> str:
+        payload = self._last_raw_payload
+        if payload is None:
+            return "No response captured yet."
+        try:
+            return json.dumps(payload, indent=2, sort_keys=True)
+        except TypeError:
+            return repr(payload)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -117,15 +154,19 @@ class ScenesView(QWidget):
         """Fetch scenes from REST API, falling back to mock data."""
         try:
             response = self.api.get_json("/api/scenes", timeout=4.0, default=None)
+            self._last_raw_payload = response
         except Exception as exc:  # pragma: no cover - defensive
             LOGGER.error("ScenesView API error: %s", exc)
+            self._last_raw_payload = {"ok": False, "error": str(exc)}
             return self._mock_items(), "mock data"
 
         if not isinstance(response, dict):
+            self._last_raw_payload = response
             return self._mock_items(), "mock data"
 
         status = response.get("status")
         if status == 404:
+            self._last_raw_payload = response
             return self._mock_items(), "mock data"
 
         if response.get("ok"):
@@ -194,6 +235,10 @@ class ScenesView(QWidget):
         return title
 
     def _on_selection_changed(self, index: int) -> None:
+        if self._raw_mode:
+            self.detail.setPlainText(self._raw_payload_text())
+            self.plan_preview.setVisible(False)
+            return
         if index < 0 or index >= len(self._items):
             self.detail.setPlainText("Select a scene to inspect its JSON payload.")
             self.plan_preview.show_idle(
@@ -203,6 +248,7 @@ class ScenesView(QWidget):
         item = self._items[index]
         serialized = json.dumps(item, indent=2, sort_keys=True)
         self.detail.setPlainText(serialized)
+        self.plan_preview.setVisible(True)
         self._update_plan_preview(item)
 
     def _update_plan_preview(self, scene: dict[str, Any]) -> None:

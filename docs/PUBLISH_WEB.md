@@ -79,7 +79,7 @@ The bundled `index.html` bootstraps the Mini-VN manifest, surfaces asset hashes,
 
 ## Failure modes & remediation
 - HTTP `403`: `enable_publish_web` is disabled. Toggle the feature flag.
-- HTTP `423`: advisory gate prevented the export (`publish.web`). Acknowledge the policy warning in Studio → Advisory or via `/api/advisory/ack`.
+- Advisory warnings: the `publish.web` disclaimer is pending. Acknowledge in Studio → Advisory or via `/api/advisory/ack` before shipping the bundle.
 - `status: degraded`: missing assets (Ren'Py export couldn’t copy them) or redaction removed NSFW assets. Inspect `result.preview` and `result.redaction.removed_assets`.
 
 Keep bundle directories under version control as artefacts (manifest, redaction summaries) rather than committing ZIP payloads.

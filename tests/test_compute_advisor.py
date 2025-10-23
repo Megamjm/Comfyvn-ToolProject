@@ -4,10 +4,17 @@ from pathlib import Path
 
 from comfyvn.core.compute_advisor import advise
 from comfyvn.core.gpu_manager import GPUManager
+from comfyvn.core.settings_manager import SettingsManager
 
 
 def _dummy_manager(tmp_path: Path) -> GPUManager:
-    manager = GPUManager(config_path=tmp_path / "gpu_policy.json")
+    settings = SettingsManager(
+        path=tmp_path / "settings.json", db_path=tmp_path / "settings.db"
+    )
+    manager = GPUManager(
+        config_path=tmp_path / "gpu_policy.json",
+        settings_manager=settings,
+    )
     manager.registry.register(
         {
             "id": "runpod",

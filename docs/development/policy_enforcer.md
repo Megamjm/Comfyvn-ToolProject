@@ -5,7 +5,7 @@ Owner: Advisory/Policy team
 
 ## Overview
 
-`comfyvn/policy/enforcer.py` centralises the import/export gate logic. Every high-risk action (`import.chat`, `import.manga`, `import.vn`, `export.renpy`, `export.bundle`, `export.scene`) now executes the enforcer before writing to disk. Findings are sourced from the advisory scanner; `block`-level entries flip `allow` to `false` and short-circuit the request with an HTTP `423` response.
+`comfyvn/policy/enforcer.py` centralises the import/export gate logic. Every high-risk action (`import.chat`, `import.manga`, `import.vn`, `export.renpy`, `export.bundle`, `export.scene`) now executes the enforcer before writing to disk. Findings are sourced from the advisory scanner; `block`-level entries still surface in the results, but callers decide how to react (the API no longer returns HTTP `423`).
 
 Feature flag `enable_policy_enforcer` (default `true`) controls the wiring. Disable the flag in `config/comfyvn.json → features` to retain legacy behaviour during migrations or offline smoke tests.
 
@@ -43,7 +43,7 @@ Sample response when the bundle is clear:
 }
 ```
 
-If any finding reports `level: block`, the endpoint raises `HTTP 423` with `{"message": "policy enforcement blocked", "result": {...}}`. Callers should surface `result.blocked` to the user and resolve issues before retrying.
+If any finding reports `level: block`, the `result.blocked` array is populated and `counts.block` increments. Callers should surface these blockers to reviewers and decide whether to pause the workflow or proceed with manual overrides.
 
 ### GET `/api/policy/audit`
 
@@ -98,7 +98,7 @@ The modder hook bus gained `on_policy_enforced`:
     "ts": 1732212345.12,
     "data": {
       "action": "import.vn",
-      "allow": false,
+      "allow": true,
       "counts": {"info": 0, "warn": 0, "block": 2},
       "blocked": [{"message": "License 'All Rights Reserved' forbids redistribution."}],
       "warnings": [],

@@ -49,7 +49,12 @@ class _GPUManagerStub:
                 "source": "stub",
             },
         ]
-        self._policy = {"mode": "auto", "device": None}
+        self._policy = {
+            "mode": "auto",
+            "preferred_id": None,
+            "manual_device": "cpu",
+            "sticky_device": None,
+        }
         self.registry = _RegistryStub(
             [
                 {
@@ -71,8 +76,13 @@ class _GPUManagerStub:
         return dict(self._policy)
 
     def set_policy(self, mode: str, *, device: str | None = None):
-        assert mode in {"auto", "local", "remote", "cpu"}
-        self._policy = {"mode": mode, "device": device}
+        assert mode in {"auto", "manual", "sticky"}
+        self._policy = {
+            "mode": mode,
+            "preferred_id": device,
+            "manual_device": device or self._policy.get("manual_device"),
+            "sticky_device": None,
+        }
         return self.get_policy()
 
     def select_device(
@@ -137,8 +147,12 @@ def test_gpu_list_and_policy(client: TestClient):
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["ok"] is True
-    assert any(d["kind"] == "gpu" for d in payload["devices"])  # has at least one GPU
-    assert payload["policy"]["mode"] in {"auto", "local", "remote", "cpu"}
+    assert isinstance(payload["devices"], list)
+    assert all("id" in d for d in payload["devices"])
+    assert all("mem_total" in d for d in payload["devices"])
+    assert any(d.get("kind") == "gpu" for d in payload["local"])
+    assert payload["policy"]["mode"] in {"auto", "manual", "sticky"}
+    assert "preferred_id" in payload["policy"]
 
 
 def test_gpu_advise_local_candidate(client: TestClient):
@@ -156,6 +170,7 @@ def test_gpu_advise_local_candidate(client: TestClient):
         "gpu",
         "remote",
         "cpu",
+        "local",
     }  # choice depends on prefer_remote flag
 
 

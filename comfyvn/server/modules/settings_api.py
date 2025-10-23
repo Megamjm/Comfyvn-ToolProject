@@ -20,7 +20,7 @@ from comfyvn.config.baseurl_authority import (
 )
 from comfyvn.core.settings_manager import SettingsManager
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+router = APIRouter(prefix="/system/settings", tags=["system-settings"])
 _settings = SettingsManager()
 LOGGER = logging.getLogger(__name__)
 _LOCAL_HOSTS = {
@@ -227,22 +227,48 @@ def _sync_runtime_state(settings: dict) -> None:
         LOGGER.warning("Failed to synchronise runtime state: %s", exc)
 
 
+def _handle_save(payload: dict | None) -> dict:
+    merged = _apply_update(payload or {})
+    _sync_runtime_state(merged)
+    saved = _settings.save(merged)
+    return {
+        "ok": True,
+        "settings": saved,
+        "saved": str(_settings.path),
+    }
+
+
+@router.get("")
+def read_settings():
+    return {
+        "settings": _settings.load(),
+        "saved": str(_settings.path),
+    }
+
+
+@router.post("")
+def update_settings(payload: dict = Body(...)):
+    return _handle_save(payload)
+
+
+@router.get("/schema")
+def settings_schema():
+    return {
+        "schema": _settings.schema(),
+        "defaults": _settings.defaults(),
+    }
+
+
 @router.get("/get")
-def get_settings():
-    return _settings.load()
+def legacy_get_settings():
+    return read_settings()
 
 
 @router.post("/set")
-def set_settings(payload: dict = Body(...)):
-    merged = _apply_update(payload or {})
-    _sync_runtime_state(merged)
-    _settings.save(merged)
-    return {"ok": True, "settings": merged, "saved": str(_settings.path)}
+def legacy_set_settings(payload: dict = Body(...)):
+    return _handle_save(payload)
 
 
 @router.post("/save")
-def save_settings(payload: dict = Body(...)):
-    merged = _apply_update(payload or {})
-    _sync_runtime_state(merged)
-    _settings.save(merged)
-    return {"ok": True, "settings": merged, "saved": str(_settings.path)}
+def legacy_save_settings(payload: dict = Body(...)):
+    return _handle_save(payload)

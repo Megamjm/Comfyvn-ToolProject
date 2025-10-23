@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,7 @@ from comfyvn.exporters.web_packager import (
 )
 
 router = APIRouter(prefix="/api/publish/web", tags=["Publish"])
+LOGGER = logging.getLogger("comfyvn.api.publish")
 
 
 class _BaseRequest(BaseModel):
@@ -178,14 +180,8 @@ def _package_options(payload: _BaseRequest) -> PackageOptions:
 def build_bundle(payload: WebBuildRequest) -> Dict[str, Any]:
     _ensure_feature_enabled()
     gate = policy_gate.evaluate_action("publish.web")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "publish.web blocked until advisory acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        LOGGER.warning("Advisory disclaimer pending for publish.web build request")
 
     export_result = _export_project(payload)
     package_options = _package_options(payload)
@@ -207,14 +203,8 @@ def build_bundle(payload: WebBuildRequest) -> Dict[str, Any]:
 def redact_bundle(payload: WebRedactRequest) -> Dict[str, Any]:
     _ensure_feature_enabled()
     gate = policy_gate.evaluate_action("publish.web")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "publish.web blocked until advisory acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        LOGGER.warning("Advisory disclaimer pending for publish.web redact request")
 
     export_result = _export_project(payload)
     package_options = _package_options(payload)

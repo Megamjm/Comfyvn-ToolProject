@@ -12,10 +12,19 @@ from comfyvn.core.content_filter import content_filter
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.policy.audit import policy_audit
 from comfyvn.policy.enforcer import policy_enforcer
-from comfyvn.server.routes.advisory import GateResponse
 
 LOGGER = logging.getLogger("comfyvn.api.policy")
 router = APIRouter(prefix="/api/policy", tags=["Advisory/Policy"])
+
+
+class GateResponse(BaseModel):
+    ack: bool
+    status: Dict[str, Any]
+    message: str
+    allow_override: bool
+    name: Optional[str] = None
+    at: Optional[float] = None
+    disclaimer: Optional[Dict[str, Any]] = None
 
 
 class EvaluateRequest(BaseModel):
@@ -59,10 +68,12 @@ class AuditResponse(BaseModel):
 def get_status() -> GateResponse:
     status = advisory_gate_status()
     record = get_ack_record()
+    evaluation = policy_gate.evaluate_action("policy.status")
+    disclaimer = evaluation.get("disclaimer") or {}
     message = (
-        "Legal acknowledgement required before completing exports."
+        "Review the advisory disclaimer before continuing."
         if status.requires_ack
-        else "Legal acknowledgement recorded; continue responsibly."
+        else "Advisory disclaimer acknowledged; advisory warnings remain informational."
     )
     return GateResponse(
         ack=bool(record.get("ack")),
@@ -71,6 +82,7 @@ def get_status() -> GateResponse:
         status=status.to_dict(),
         message=message,
         allow_override=status.warn_override_enabled,
+        disclaimer=disclaimer,
     )
 
 

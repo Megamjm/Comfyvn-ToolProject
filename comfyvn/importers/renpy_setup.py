@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -18,6 +19,7 @@ REN_PY_BASE_URL = "https://www.renpy.org/dl/"
 REN_PY_DEFAULT_VERSION = "8.2.1"
 REN_PY_ENV_ROOT = "COMFYVN_RENPY_ROOT"
 REN_PY_INSTALL_ROOT = Path("tools/renpy")
+REN_PY_CACHE_ROOT = Path("tools/cache/renpy")
 _TIMEOUT = 90.0
 _VERSION_PATTERN = re.compile(r'href="(\d+(?:\.\d+)*)/')
 
@@ -67,10 +69,73 @@ def _candidate_archives(version: str) -> Iterable[str]:
     yield f"renpy-{version}-sdk.tar.bz2"
 
 
-def _download_archive(version: str, client: httpx.Client, *, tmp_dir: Path) -> Path:
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _ensure_cache_root(cache_dir: Optional[Path] = None) -> Path:
+    base = Path(cache_dir) if cache_dir else _repo_root() / REN_PY_CACHE_ROOT
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _compute_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _record_checksum(path: Path, checksum: str) -> None:
+    path.write_text(checksum, encoding="utf-8")
+
+
+def _validate_cached_archive(archive_path: Path, checksum_path: Path) -> bool:
+    checksum = _compute_sha256(archive_path)
+    if checksum_path.exists():
+        recorded = checksum_path.read_text(encoding="utf-8").strip()
+        if recorded != checksum:
+            LOGGER.warning(
+                "Cached Ren'Py archive checksum mismatch (%s); redownloading",
+                archive_path.name,
+            )
+            return False
+    _record_checksum(checksum_path, checksum)
+    LOGGER.info(
+        "Reusing cached Ren'Py archive %s (sha256=%s)",
+        archive_path.name,
+        checksum,
+    )
+    return True
+
+
+def _download_archive(
+    version: str, client: httpx.Client, *, cache_dir: Optional[Path] = None
+) -> Path:
+    cache_root = _ensure_cache_root(cache_dir)
     errors: list[str] = []
     for filename in _candidate_archives(version):
         url = f"{REN_PY_BASE_URL}{version}/{filename}"
+        archive_path = cache_root / filename
+        checksum_path = archive_path.with_suffix(archive_path.suffix + ".sha256")
+        if archive_path.exists():
+            if checksum_path.exists():
+                if _validate_cached_archive(archive_path, checksum_path):
+                    return archive_path
+                archive_path.unlink(missing_ok=True)
+                checksum_path.unlink(missing_ok=True)
+            else:
+                checksum = _compute_sha256(archive_path)
+                _record_checksum(checksum_path, checksum)
+                LOGGER.info(
+                    "Recorded checksum for cached Ren'Py archive %s (sha256=%s)",
+                    archive_path.name,
+                    checksum,
+                )
+                return archive_path
         try:
             with client.stream("GET", url, timeout=_TIMEOUT) as resp:
                 status = getattr(resp, "status_code", 0)
@@ -79,12 +144,20 @@ def _download_archive(version: str, client: httpx.Client, *, tmp_dir: Path) -> P
                 if status and status >= 400:
                     errors.append(f"{filename}: HTTP {status}")
                     continue
-                archive_path = tmp_dir / filename
-                with archive_path.open("wb") as fh:
+                tmp_path = archive_path.with_suffix(archive_path.suffix + ".part")
+                tmp_path.parent.mkdir(parents=True, exist_ok=True)
+                with tmp_path.open("wb") as fh:
                     for chunk in resp.iter_bytes():
                         if chunk:
                             fh.write(chunk)
-                LOGGER.info("Downloaded Ren'Py archive %s", filename)
+                tmp_checksum = _compute_sha256(tmp_path)
+                tmp_path.rename(archive_path)
+                _record_checksum(checksum_path, tmp_checksum)
+                LOGGER.info(
+                    "Downloaded Ren'Py archive %s (sha256=%s)",
+                    filename,
+                    tmp_checksum,
+                )
                 return archive_path
         except Exception as exc:
             LOGGER.warning("Failed to download %s (%s)", filename, exc)
@@ -110,8 +183,8 @@ def _locate_install_root(path: Path) -> Path:
     raise RuntimeError("Downloaded Ren'Py archive did not contain a launcher script.")
 
 
-def _extract_archive(archive_path: Path, dest_dir: Path) -> Path:
-    extract_root = archive_path.parent / "extracted"
+def _extract_archive(archive_path: Path, dest_dir: Path, *, work_dir: Path) -> Path:
+    extract_root = work_dir / "extracted"
     if extract_root.exists():
         shutil.rmtree(extract_root)
     extract_root.mkdir(parents=True, exist_ok=True)
@@ -205,6 +278,7 @@ def ensure_renpy_sdk(
     install_root: Optional[Path] = None,
     client: Optional[httpx.Client] = None,
     force: bool = False,
+    cache_dir: Optional[Path] = None,
 ) -> Path:
     base = Path(install_root) if install_root else _install_root()
     base.mkdir(parents=True, exist_ok=True)
@@ -221,10 +295,16 @@ def ensure_renpy_sdk(
             LOGGER.debug("Ren'Py SDK already present at %s", target_dir)
             return target_dir
 
-        with tempfile.TemporaryDirectory(prefix="comfyvn-renpy-") as tmp:
+        cache_root = _ensure_cache_root(cache_dir)
+        archive_path = _download_archive(resolved_version, client, cache_dir=cache_root)
+
+        with tempfile.TemporaryDirectory(
+            prefix="comfyvn-renpy-", dir=cache_root
+        ) as tmp:
             tmp_path = Path(tmp)
-            archive_path = _download_archive(resolved_version, client, tmp_dir=tmp_path)
-            installed_dir = _extract_archive(archive_path, target_dir)
+            installed_dir = _extract_archive(
+                archive_path, target_dir, work_dir=tmp_path
+            )
 
         _write_metadata(
             target_dir, version=resolved_version, archive_name=archive_path.name

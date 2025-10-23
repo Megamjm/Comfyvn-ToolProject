@@ -8,6 +8,7 @@ Owner: Project Integration — Remote Compute & GPU Access
 - Refined the standalone compute advisor (`comfyvn/compute/advisor.py`) to return optional debug details (pixels, VRAM demand, queue thresholds, contextual notes).
 - Added registry statistics and scheduler cost previews so modders can inspect provider metadata and tune rates without diving into code.
 - Extended `/api/gpu/list`, `/api/providers`, `/api/compute/advise`, and the new `/api/compute/costs` endpoints with `debug` switches, feature flag context, and safety rails when `features.enable_compute` is disabled.
+- Persisted GPU policy selection to the shared settings store (`mode`, `preferred_id`, `manual_device`) and surfaced summarised VRAM metrics in `/api/gpu/list` so dashboards stay aligned across GUI/CLI tooling. Added a lightweight `echo` adapter for remote smoke tests when real providers are unavailable.
 
 ## Feature Flag Guard
 

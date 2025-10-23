@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -11,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from PySide6.QtGui import QAction
 
+from comfyvn.config.runtime_paths import imports_log_dir
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.core.task_registry import task_registry
 from comfyvn.policy.enforcer import policy_enforcer
@@ -20,11 +22,15 @@ from comfyvn.server.core.chat_import import (
     parse_text,
     to_scene_dict,
 )
+from comfyvn.server.core.import_status import import_status_store
 from comfyvn.server.core.manga_importer import MangaImportError, import_manga_archive
 from comfyvn.server.modules.auth import require_scope
 
 router = APIRouter()
 logger = logging.getLogger("comfyvn.api.imports")
+
+MANGA_LOG_DIR = imports_log_dir() / "manga"
+MANGA_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 SCENE_DIR = Path("./data/scenes")
 SCENE_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,6 +40,55 @@ def _write_scene(name: str, data: Dict[str, Any]) -> str:
     p = (SCENE_DIR / f"{name}.json").resolve()
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return name
+
+
+def _log_manga(log_file: Optional[Path], message: str) -> None:
+    if not log_file:
+        return
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    try:
+        with log_file.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        logger.debug("Failed to write manga import log line", exc_info=True)
+
+
+def _build_manga_preview(summary: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    import_id = summary.get("import_id")
+    if not import_id:
+        return None
+    converted_dir = summary.get("converted_path")
+    preview_root: Optional[Path] = None
+    if converted_dir:
+        try:
+            preview_root = (
+                Path(converted_dir).expanduser().resolve().parent.parent / "preview"
+            )
+        except Exception:
+            preview_root = None
+    if preview_root is None:
+        data_root = Path(summary.get("data_root") or "data").expanduser().resolve()
+        preview_root = data_root / "imports" / "manga" / "preview"
+    preview_root.mkdir(parents=True, exist_ok=True)
+    preview_payload = {
+        "import_id": import_id,
+        "scenes": list(summary.get("scenes") or [])[:3],
+        "characters": list(summary.get("characters") or [])[:6],
+        "panels": list(summary.get("panels") or [])[:5],
+        "advisories": list(summary.get("advisories") or []),
+        "translation": summary.get("translation"),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    preview_path = preview_root / f"{import_id}.json"
+    try:
+        preview_path.write_text(
+            json.dumps(preview_payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        summary["preview_path"] = preview_path.as_posix()
+        summary["preview"] = preview_payload
+    except Exception:
+        logger.debug("Failed to write manga preview for %s", import_id, exc_info=True)
+    return preview_payload
 
 
 def _task_meta(task_id: str) -> Dict[str, Any]:
@@ -119,20 +174,57 @@ def _load_manga_history(limit: int = 20) -> List[Dict[str, Any]]:
 
 
 def _execute_manga_import(
-    task_id: str, archive: str, options: Dict[str, Any]
+    task_id: str, archive: str, options: Dict[str, Any], log_path: Optional[str] = None
 ) -> Dict[str, Any]:
+    log_file = Path(log_path).expanduser().resolve() if log_path else None
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.touch(exist_ok=True)
+    _log_manga(log_file, f"Starting manga import '{task_id}' from {archive}")
+
     logger.info("[Manga Import] job=%s starting -> %s", task_id, archive)
     task_registry.update(
         task_id, status="running", progress=0.05, message="Preparing manga import"
     )
     try:
+        meta_payload: Dict[str, Any] = {"archive": archive}
+        for key, value in options.items():
+            if isinstance(value, Path):
+                meta_payload[key] = value.as_posix()
+            else:
+                meta_payload[key] = value
+        import_status_store.update(
+            task_id,
+            state="running",
+            percent=5.0,
+            message="Preparing manga import",
+            stage="init",
+            meta=meta_payload,
+        )
+    except KeyError:
+        pass
+
+    try:
         summary = import_manga_archive(archive, **options)
+        _log_manga(log_file, "Archive processed successfully")
     except MangaImportError as exc:
         meta = _task_meta(task_id)
         meta["error"] = str(exc)
         task_registry.update(
             task_id, status="error", progress=1.0, message=str(exc), meta=meta
         )
+        _log_manga(log_file, f"[error] {exc}")
+        try:
+            import_status_store.update(
+                task_id,
+                state="error",
+                percent=100.0,
+                message=str(exc),
+                stage="failed",
+                meta={"error": str(exc)},
+            )
+        except KeyError:
+            pass
         logger.warning("[Manga Import] job=%s failed: %s", task_id, exc)
         raise
     except Exception as exc:  # pragma: no cover - defensive
@@ -145,8 +237,29 @@ def _execute_manga_import(
             message="manga import failed",
             meta=meta,
         )
+        _log_manga(log_file, f"[error] {exc}")
+        try:
+            import_status_store.update(
+                task_id,
+                state="error",
+                percent=100.0,
+                message="manga import failed",
+                stage="failed",
+                meta={"error": str(exc)},
+            )
+        except KeyError:
+            pass
         logger.exception("[Manga Import] job=%s failed unexpectedly", task_id)
         raise
+
+    preview_payload = _build_manga_preview(summary)
+    if preview_payload:
+        _log_manga(
+            log_file,
+            f"Preview generated ({len(preview_payload.get('panels', []))} panels)",
+        )
+    if log_file:
+        summary["logs_path"] = log_file.as_posix()
 
     stats = (
         f"scenes={len(summary.get('scenes', []))} "
@@ -156,6 +269,8 @@ def _execute_manga_import(
     meta = _task_meta(task_id)
     meta["result"] = summary
     meta["summary_path"] = summary.get("summary_path")
+    meta["preview_path"] = summary.get("preview_path")
+    meta["logs_path"] = summary.get("logs_path")
     task_registry.update(
         task_id,
         status="done",
@@ -163,14 +278,31 @@ def _execute_manga_import(
         message=f"Manga import complete ({stats})",
         meta=meta,
     )
+    try:
+        import_status_store.update(
+            task_id,
+            state="done",
+            percent=100.0,
+            message=f"Manga import complete ({stats})",
+            stage="completed",
+            meta={
+                "summary_path": summary.get("summary_path"),
+                "preview_path": summary.get("preview_path"),
+            },
+        )
+    except KeyError:
+        pass
+    _log_manga(log_file, f"[ok] {stats}")
     logger.info("[Manga Import] job=%s complete %s", task_id, stats)
     return summary
 
 
-def _spawn_manga_job(task_id: str, archive: str, options: Dict[str, Any]) -> None:
+def _spawn_manga_job(
+    task_id: str, archive: str, options: Dict[str, Any], log_path: Optional[str] = None
+) -> None:
     def _runner() -> None:
         try:
-            _execute_manga_import(task_id, archive, options)
+            _execute_manga_import(task_id, archive, options, log_path=log_path)
         except MangaImportError:
             return
         except Exception:
@@ -186,14 +318,8 @@ async def import_chat(
     body: Dict[str, Any], _: bool = Depends(require_scope(["content.write"]))
 ):
     gate = policy_gate.evaluate_action("import.chat")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "import blocked until legal acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        logger.warning("Advisory disclaimer pending for import.chat")
     text = str(body.get("text") or "")
     if not text.strip():
         raise HTTPException(status_code=400, detail="text required")
@@ -291,14 +417,8 @@ async def manga_import(
     payload: Dict[str, Any], _: bool = Depends(require_scope(["content.write"], cost=5))
 ):
     gate = policy_gate.evaluate_action("import.manga")
-    if gate.get("requires_ack") and not gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "import blocked until legal acknowledgement is recorded",
-                "gate": gate,
-            },
-        )
+    if gate.get("requires_ack"):
+        logger.warning("Advisory disclaimer pending for import.manga")
     path_value = payload.get("path") or payload.get("archive_path")
     if not path_value:
         raise HTTPException(status_code=400, detail="path is required")
@@ -332,27 +452,76 @@ async def manga_import(
         message=f"Manga import {archive_path.name}",
         meta={"archive": str(archive_path), "project_id": options.get("project_id")},
     )
+    log_path = MANGA_LOG_DIR / f"manga_{task_id}.log"
+    log_path.touch(exist_ok=True)
+
+    task = task_registry.get(task_id)
+    base_meta = dict(getattr(task, "meta", {}) or {})
+    base_meta.update(
+        {
+            "archive": str(archive_path),
+            "project_id": options.get("project_id"),
+            "logs_path": log_path.as_posix(),
+        }
+    )
+    task_registry.update(task_id, meta=base_meta)
+
+    status_links = {"logs": f"/jobs/logs/{task_id}"}
+    status_meta = {
+        "archive": str(archive_path),
+        "project_id": options.get("project_id"),
+        "translation_enabled": options.get("translation_enabled"),
+        "translation_lang": options.get("translation_lang"),
+    }
+    try:
+        import_status_store.register(
+            "manga",
+            task_id,
+            task_id=task_id,
+            logs_path=log_path.as_posix(),
+            links=status_links,
+            meta=status_meta,
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.debug(
+            "Failed to register manga import status for %s", task_id, exc_info=True
+        )
 
     if blocking:
         try:
-            summary = _execute_manga_import(task_id, str(archive_path), options)
+            summary = _execute_manga_import(
+                task_id, str(archive_path), options, log_path=log_path.as_posix()
+            )
         except MangaImportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except FileNotFoundError as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=500, detail="manga import failed") from exc
-        return {"ok": True, "import": summary, "job": {"id": task_id}}
+        return {
+            "ok": True,
+            "import": summary,
+            "job": {"id": task_id},
+            "logs_path": log_path.as_posix(),
+        }
 
     try:
-        _spawn_manga_job(task_id, str(archive_path), options)
+        _spawn_manga_job(
+            task_id, str(archive_path), options, log_path=log_path.as_posix()
+        )
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to spawn manga import job: %s", exc)
         raise HTTPException(
             status_code=500, detail="manga import spawn failed"
         ) from exc
 
-    return {"ok": True, "job": {"id": task_id}}
+    return {
+        "ok": True,
+        "job": {"id": task_id},
+        "logs_path": log_path.as_posix(),
+        "links": {"logs": f"/jobs/logs/{task_id}"},
+        "gate": gate,
+    }
 
 
 @router.get("/manga/import/{job_id}")

@@ -73,7 +73,7 @@ Audio Provider Settings
 - The Settings panel now exposes dedicated sections for Text-to-Speech and Music Remix services.
 - Open-source, freemium, and paid providers are listed with quick notes and portal links (Bark, Coqui XTTS, ElevenLabs, Azure Speech, Meta AudioCraft, Suno AI, Soundraw, AIVA, etc.).
 - Selecting the ComfyUI option unlocks editable fields for the base URL, workflow JSON, and output directory so the studio can target local or remote ComfyUI hosts.
-- Settings persist to `data/settings/config.json` under the `audio.tts` and `audio.music` keys; the runtime reads these values to decide whether to call ComfyUI or fall back to the synthetic generator.
+- Settings persist to `data/settings/config.json` (mirrored to the SQLite `settings` table) under the `audio.tts` and `audio.music` keys; the runtime reads these values to decide whether to call ComfyUI or fall back to the synthetic generator.
 - Errors raise HTTP 400 for empty text and HTTP 500 for unexpected synthesis failures; both cases record WARN/ERROR entries in the log.
 
 Future Hooks

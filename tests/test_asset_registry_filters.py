@@ -3,6 +3,13 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
+import pytest
+
+try:
+    from PIL import Image  # type: ignore
+except Exception:  # pragma: no cover
+    Image = None  # type: ignore
+
 from comfyvn.core import modder_hooks
 from comfyvn.studio.core.asset_registry import AssetRegistry
 
@@ -121,3 +128,51 @@ def test_asset_modder_hooks_emit_for_registry_events(tmp_path):
 
     removed_event = events["on_asset_removed"][0]
     assert removed_event["uid"] == registered["uid"]
+
+
+def test_register_file_deduplicates_by_hash(tmp_path):
+    registry = _make_registry(tmp_path)
+
+    source = tmp_path / "duplicate.bin"
+    source.write_bytes(b"registry-dedupe-test")
+
+    first = registry.register_file(
+        source,
+        "binary",
+        metadata={"tags": ["first"], "origin": "dedupe"},
+    )
+    second = registry.register_file(
+        source,
+        "binary",
+        metadata={"tags": ["second"], "origin": "dedupe"},
+    )
+
+    assert first["uid"] == second["uid"]
+    assets = registry.list_assets()
+    assert len(assets) == 1
+    stored_meta = assets[0]["meta"]
+    assert isinstance(stored_meta, dict)
+    assert set(stored_meta.get("tags", [])) == {"first", "second"}
+    assert stored_meta.get("origin") == "dedupe"
+
+
+@pytest.mark.skipif(Image is None, reason="Pillow required for thumbnail generation")
+def test_image_thumbnail_generates_multiple_sizes(tmp_path):
+    registry = _make_registry(tmp_path)
+
+    source = tmp_path / "sample.png"
+    img = Image.new("RGB", (32, 32), color="blue")  # type: ignore[attr-defined]
+    img.save(source)  # type: ignore[attr-defined]
+
+    asset = registry.register_file(source, "images")
+    AssetRegistry.wait_for_thumbnails(timeout=10.0)
+
+    meta = asset.get("meta") or {}
+    preview = meta.get("preview") if isinstance(meta, dict) else None
+    assert isinstance(preview, dict)
+    paths = preview.get("paths") or {}
+    assert set(paths.keys()) == {"256", "512"}
+    thumb_root = registry.THUMB_ROOT
+    for rel in paths.values():
+        thumb_path = thumb_root / Path(rel).name
+        assert thumb_path.exists(), f"expected thumbnail at {thumb_path}"

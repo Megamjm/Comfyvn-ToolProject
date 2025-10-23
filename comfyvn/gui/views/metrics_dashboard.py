@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
+from collections import deque
 from typing import Iterable, Mapping
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -15,6 +18,88 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+DEFAULT_WINDOW_SECONDS = 90.0
+
+
+class MetricSparkline(QWidget):
+    """Lightweight line graph tracking metric history over a rolling window."""
+
+    def __init__(
+        self,
+        label: str,
+        color: QColor | str,
+        *,
+        window_seconds: float = DEFAULT_WINDOW_SECONDS,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._label = label
+        self._color = QColor(color) if not isinstance(color, QColor) else color
+        self._window = max(10.0, float(window_seconds))
+        self._samples: deque[tuple[float, float]] = deque()
+        self.setMinimumHeight(60)
+
+    def add_sample(self, value: float) -> None:
+        now = time.time()
+        clamped = max(0.0, min(100.0, float(value)))
+        self._samples.append((now, clamped))
+        self._trim(now)
+        self.update()
+
+    def clear(self) -> None:
+        if self._samples:
+            self._samples.clear()
+            self.update()
+
+    def _trim(self, now: float) -> None:
+        cutoff = now - self._window
+        while self._samples and self._samples[0][0] < cutoff:
+            self._samples.popleft()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        rect = self.rect()
+        painter.fillRect(rect, self.palette().base())
+
+        if len(self._samples) < 2:
+            painter.setPen(QPen(self.palette().mid().color(), 1, Qt.DashLine))
+            painter.drawText(rect, Qt.AlignCenter, f"{self._label}: waiting…")
+            return
+
+        now = self._samples[-1][0]
+        cutoff = max(self._samples[0][0], now - self._window)
+        width = rect.width()
+        height = rect.height()
+        if width <= 2 or height <= 2:
+            return
+
+        # draw reference lines at 25/50/75 percent
+        painter.setPen(QPen(self.palette().midlight().color(), 1, Qt.DotLine))
+        for value in (25, 50, 75):
+            y = rect.bottom() - (value / 100.0) * height
+            painter.drawLine(rect.left(), int(y), rect.right(), int(y))
+
+        scale = width / max(1e-6, now - cutoff)
+        points = []
+        for ts, val in self._samples:
+            if ts < cutoff:
+                continue
+            x = rect.right() - (now - ts) * scale
+            y = rect.bottom() - (val / 100.0) * height
+            points.append(QPointF(x, y))
+
+        if len(points) < 2:
+            painter.setPen(QPen(self.palette().mid().color(), 1, Qt.DashLine))
+            painter.drawText(rect, Qt.AlignCenter, f"{self._label}: waiting…")
+            return
+
+        painter.setPen(QPen(self._color, 2))
+        painter.drawPolyline(QPolygonF(points))
+        painter.setPen(QPen(self._color, 1))
+        painter.drawText(
+            rect.adjusted(4, 2, -4, -2), Qt.AlignTop | Qt.AlignLeft, self._label
+        )
 
 
 class MetricsDashboard(QWidget):
@@ -52,18 +137,34 @@ class MetricsDashboard(QWidget):
         self._cpu_bar = QProgressBar(self)
         self._cpu_bar.setRange(0, 100)
         self._cpu_bar.setFormat("CPU — %p%")
+        self._cpu_graph = MetricSparkline("CPU", QColor("#2ecc71"), parent=self)
 
         self._mem_bar = QProgressBar(self)
         self._mem_bar.setRange(0, 100)
         self._mem_bar.setFormat("Memory — %p%")
+        self._mem_graph = MetricSparkline("RAM", QColor("#3498db"), parent=self)
+
+        cpu_widget = QWidget(self)
+        cpu_layout = QVBoxLayout(cpu_widget)
+        cpu_layout.setContentsMargins(0, 0, 0, 0)
+        cpu_layout.setSpacing(4)
+        cpu_layout.addWidget(self._cpu_bar)
+        cpu_layout.addWidget(self._cpu_graph)
+
+        mem_widget = QWidget(self)
+        mem_layout = QVBoxLayout(mem_widget)
+        mem_layout.setContentsMargins(0, 0, 0, 0)
+        mem_layout.setSpacing(4)
+        mem_layout.addWidget(self._mem_bar)
+        mem_layout.addWidget(self._mem_graph)
 
         self._gpu_list = QListWidget(self)
         self._gpu_list.setObjectName("metricsGpuList")
         self._gpu_list.setAlternatingRowColors(True)
         self._gpu_list.setSelectionMode(QListWidget.NoSelection)
 
-        metrics_layout.addWidget(self._cpu_bar, 0, 0, 1, 1)
-        metrics_layout.addWidget(self._mem_bar, 1, 0, 1, 1)
+        metrics_layout.addWidget(cpu_widget, 0, 0, 1, 1)
+        metrics_layout.addWidget(mem_widget, 1, 0, 1, 1)
         metrics_layout.addWidget(self._gpu_list, 0, 1, 2, 1)
         root.addWidget(metrics_frame, 1)
 
@@ -86,6 +187,8 @@ class MetricsDashboard(QWidget):
             self._cpu_bar.setFormat("CPU — n/a")
             self._mem_bar.setFormat("Memory — n/a")
             self._gpu_list.clear()
+            self._cpu_graph.clear()
+            self._mem_graph.clear()
             return
 
         cpu = self._bound_percent(payload.get("cpu"))
@@ -93,9 +196,11 @@ class MetricsDashboard(QWidget):
 
         self._cpu_bar.setValue(cpu)
         self._cpu_bar.setFormat(f"CPU — {cpu}%")
+        self._cpu_graph.add_sample(cpu)
 
         self._mem_bar.setValue(mem)
         self._mem_bar.setFormat(f"Memory — {mem}%")
+        self._mem_graph.add_sample(mem)
 
         gpu_entries = payload.get("gpus") if isinstance(payload, Mapping) else []
         self._hydrate_gpu_list(gpu_entries)  # type: ignore[arg-type]

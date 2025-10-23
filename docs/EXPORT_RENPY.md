@@ -40,7 +40,7 @@ Updated: 2025-11-04
   }
   ```
 - `battle_labels` are derived heuristically (scene id or label containing "battle"). Hashes are SHA1 prefixes for cache invalidation.
-- A zipped `provenance_bundle.zip` plus a readable `provenance.json` land next to the export output. The bundle mirrors the server-side `/api/export/bundle` format (manifest, provenance, timeline/scenes, referenced assets, embedded Ren'Py snapshot).
+- A zipped `provenance_bundle.zip` plus a readable `provenance.json` land next to the export output. The bundle mirrors the server-side `/api/export/bundle` format (manifest, provenance, timeline/scenes, referenced assets, embedded Ren'Py snapshot). The public mirror lives at `POST /export/bundle` for automation outside the `/api` namespace.
 - Summary payloads expose `provenance_bundle`, `provenance_json`, `provenance_findings`, and `provenance_error` (when generation fails) alongside a nested `provenance` block that carries the raw enforcement payload.
 
 ### Example Summary

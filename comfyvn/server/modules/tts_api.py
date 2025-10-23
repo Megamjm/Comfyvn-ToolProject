@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
+import wave
 from pathlib import Path
 from typing import Any, Optional
 
@@ -11,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from comfyvn.core.audio_cache import AudioCacheManager
 from comfyvn.core.audio_stub import synth_voice
+from comfyvn.core.settings_manager import SettingsManager
 from comfyvn.studio.core import AssetRegistry
 
 LOGGER = logging.getLogger("comfyvn.api.tts")
@@ -33,10 +36,64 @@ def _load_sidecar(sidecar: Optional[str]) -> dict[str, Any]:
         return {}
 
 
+def _resolve_default_lang() -> Optional[str]:
+    try:
+        settings = SettingsManager()
+        cfg = settings.load()
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        LOGGER.debug("Unable to load settings for default lang: %s", exc)
+        return None
+
+    audio_cfg = cfg.get("audio", {})
+    tts_cfg = audio_cfg.get("tts", {})
+    default_lang = tts_cfg.get("default_lang")
+    if default_lang:
+        return str(default_lang)
+    user_cfg = cfg.get("user", {})
+    locale_lang = user_cfg.get("language") or user_cfg.get("locale")
+    if locale_lang:
+        return str(locale_lang)
+    return None
+
+
+def _extract_duration_ms(
+    artifact: str, sidecar_payload: dict[str, Any]
+) -> Optional[int]:
+    raw_seconds = sidecar_payload.get("duration_seconds")
+    if raw_seconds is not None:
+        try:
+            return int(round(float(raw_seconds) * 1000))
+        except (TypeError, ValueError):
+            LOGGER.debug("Invalid duration_seconds in sidecar: %s", raw_seconds)
+    raw_ms = sidecar_payload.get("duration_ms")
+    if raw_ms is not None:
+        try:
+            return int(round(float(raw_ms)))
+        except (TypeError, ValueError):
+            LOGGER.debug("Invalid duration_ms in sidecar: %s", raw_ms)
+
+    artifact_path = Path(artifact)
+    if artifact_path.exists() and artifact_path.suffix.lower() == ".wav":
+        try:
+            with contextlib.closing(wave.open(str(artifact_path), "rb")) as wav_file:
+                frames = wav_file.getnframes()
+                rate = wav_file.getframerate() or 1
+                duration = (frames / float(rate)) * 1000.0
+                return int(round(duration))
+        except wave.Error as exc:
+            LOGGER.debug("Failed to read WAV duration for %s: %s", artifact_path, exc)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.debug(
+                "Unexpected duration read failure for %s: %s", artifact_path, exc
+            )
+    return None
+
+
 def _register_tts_asset(
     *,
     artifact: str,
     sidecar: Optional[str],
+    sidecar_payload: Optional[dict[str, Any]],
     payload: "TTSRequest",
     cache_key: str,
     text_hash: str,
@@ -51,7 +108,7 @@ def _register_tts_asset(
         )
         return None
 
-    sidecar_payload = _load_sidecar(sidecar)
+    sidecar_payload = sidecar_payload or _load_sidecar(sidecar)
     model_hash = (
         payload.model_hash or payload.model or sidecar_payload.get("model_hash")
     )
@@ -154,6 +211,17 @@ class TTSResponse(BaseModel):
     artifact: str
     sidecar: Optional[str]
     cached: bool
+    duration_ms: Optional[int] = Field(
+        default=None,
+        description="Duration of the synthesized clip in milliseconds when available.",
+    )
+    voice_meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Voice metadata summarising the synthesis request.",
+    )
+    asset_id: Optional[str] = Field(
+        default=None, description="Registered asset identifier when available."
+    )
     voice: str
     lang: str
     style: Optional[str]
@@ -169,6 +237,10 @@ def _handle_tts_request(payload: TTSRequest, *, source_route: str) -> TTSRespons
     if not cleaned_text:
         LOGGER.warning("Rejected TTS request: empty text after trimming")
         raise HTTPException(status_code=400, detail="text must not be empty")
+
+    resolved_lang = payload.lang or _resolve_default_lang()
+    if resolved_lang and payload.lang != resolved_lang:
+        payload.lang = resolved_lang
 
     text_hash = _hash_text(cleaned_text)
     model_hash = payload.model_hash or payload.model
@@ -213,9 +285,13 @@ def _handle_tts_request(payload: TTSRequest, *, source_route: str) -> TTSRespons
         LOGGER.exception("Failed TTS synth")
         raise HTTPException(status_code=500, detail="tts synthesis failed") from exc
 
+    sidecar_payload = _load_sidecar(sidecar)
+    duration_ms = _extract_duration_ms(artifact, sidecar_payload)
+
     asset_info = _register_tts_asset(
         artifact=artifact,
         sidecar=sidecar,
+        sidecar_payload=sidecar_payload,
         payload=payload,
         cache_key=cache_key,
         text_hash=text_hash,
@@ -249,13 +325,33 @@ def _handle_tts_request(payload: TTSRequest, *, source_route: str) -> TTSRespons
         "seed": payload.seed,
         "route": source_route,
     }
+    if duration_ms is not None:
+        info_payload["duration_ms"] = duration_ms
     if asset_info:
         info_payload["asset_uid"] = asset_info["uid"]
+
+    voice_meta = {
+        "voice": sidecar_payload.get("voice") or payload.voice,
+        "style": sidecar_payload.get("style") or payload.style or "default",
+        "lang": sidecar_payload.get("lang") or payload.lang or "default",
+        "model": sidecar_payload.get("model") or payload.model,
+        "model_hash": sidecar_payload.get("model_hash") or payload.model_hash,
+        "character_id": payload.character_id,
+        "scene_id": payload.scene_id,
+        "provider": sidecar_payload.get("provider"),
+        "device_hint": sidecar_payload.get("device_hint") or payload.device_hint,
+        "seed": sidecar_payload.get("seed") or payload.seed,
+        "cached": cached,
+    }
+    voice_meta = {key: value for key, value in voice_meta.items() if value is not None}
 
     return TTSResponse(
         artifact=artifact,
         sidecar=sidecar,
         cached=cached,
+        duration_ms=duration_ms,
+        voice_meta=voice_meta,
+        asset_id=asset_info["uid"] if asset_info else None,
         voice=payload.voice,
         lang=payload.lang or "default",
         style=payload.style,

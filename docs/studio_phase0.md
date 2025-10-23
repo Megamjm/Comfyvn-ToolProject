@@ -5,7 +5,7 @@ These scaffolding utilities prepare the repository for the incoming Studio shell
 ### 1. Rebuild database and folders
 
 ```bash
-python setup/apply_phase06_rebuild.py --recreate-all
+python tools/apply_migrations.py --verbose
 ```
 
 This initialises placeholder directories under `data/`, `cache/`, and `logs/` for backwards compatibility. At runtime, mutable data is redirected to the platform-specific locations exposed by `comfyvn.config.runtime_paths`, while the setup script ensures the legacy symlinks or empty folders exist for tooling that still references the repo paths. The SQLite database at `comfyvn/data/comfyvn.db` contains the required v0.6 tables (all tagged with `project_id`).

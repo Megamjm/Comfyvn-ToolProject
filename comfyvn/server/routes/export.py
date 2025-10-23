@@ -240,14 +240,8 @@ def export_publish(payload: PublishRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=403, detail="enable_export_publish disabled")
 
     publish_gate = policy_gate.evaluate_action("export.publish")
-    if publish_gate.get("requires_ack") and not publish_gate.get("allow"):
-        raise HTTPException(
-            status_code=423,
-            detail={
-                "message": "export publish blocked until legal acknowledgement is recorded",
-                "gate": publish_gate,
-            },
-        )
+    if publish_gate.get("requires_ack"):
+        LOGGER.warning("Advisory disclaimer pending for export.publish")
 
     output_dir = (
         Path(payload.out).expanduser() if payload.out else Path("build/renpy_game")

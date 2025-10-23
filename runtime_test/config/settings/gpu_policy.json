@@ -1,5 +1,6 @@
 {
   "mode": "auto",
+  "preferred_id": "cpu",
   "manual_device": "cpu",
   "sticky_device": null,
   "last_selected": "cpu"

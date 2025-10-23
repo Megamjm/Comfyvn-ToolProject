@@ -69,6 +69,7 @@ class AssetRegistry(BaseRegistry):
         ".tiff",
     }
     _AUDIO_WAVEFORM_SUFFIXES = {".wav", ".wave"}
+    THUMB_SIZES = (256, 512)
     _thumb_executor: ThreadPoolExecutor | None = None
     _thumb_executor_lock = threading.Lock()
     _pending_futures: set[Future] = set()
@@ -158,22 +159,74 @@ class AssetRegistry(BaseRegistry):
     def _ensure_schema(self) -> None:
         super()._ensure_schema()
         with self.connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS assets_registry (
-                    id INTEGER PRIMARY KEY,
-                    project_id TEXT DEFAULT 'default',
-                    uid TEXT UNIQUE,
-                    type TEXT,
-                    path_full TEXT,
-                    path_thumb TEXT,
-                    hash TEXT,
-                    bytes INTEGER,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    meta JSON
-                )
-                """
+            info = conn.execute("PRAGMA table_info(assets_registry)").fetchall()
+            existing_columns = {row[1] for row in info}
+            if not existing_columns:
+                self._create_assets_table(conn)
+            elif {"uid", "path_full", "meta"}.issubset(existing_columns):
+                return
+            else:
+                LOGGER.info("Migrating legacy assets_registry schema")
+                self._migrate_legacy_assets_table(conn, existing_columns)
+
+    @staticmethod
+    def _create_assets_table(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS assets_registry (
+                id INTEGER PRIMARY KEY,
+                project_id TEXT DEFAULT 'default',
+                uid TEXT UNIQUE,
+                type TEXT,
+                path_full TEXT,
+                path_thumb TEXT,
+                hash TEXT,
+                bytes INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                meta JSON
             )
+            """
+        )
+
+    def _migrate_legacy_assets_table(
+        self, conn: sqlite3.Connection, existing_columns: set[str]
+    ) -> None:
+        conn.execute("ALTER TABLE assets_registry RENAME TO assets_registry_legacy")
+        self._create_assets_table(conn)
+        select_meta = "meta_json" if "meta_json" in existing_columns else "meta"
+        select_path = "path_full" if "path_full" in existing_columns else "path"
+        conn.execute(
+            f"""
+            INSERT INTO assets_registry (
+                id,
+                project_id,
+                uid,
+                type,
+                path_full,
+                path_thumb,
+                hash,
+                bytes,
+                meta,
+                created_at
+            )
+            SELECT
+                id,
+                'default' AS project_id,
+                CASE
+                    WHEN hash IS NOT NULL AND length(hash) >= 16 THEN substr(hash, 1, 16)
+                    ELSE printf('legacy_%s', id)
+                END AS uid,
+                type,
+                {select_path} AS path_full,
+                NULL AS path_thumb,
+                hash,
+                bytes,
+                COALESCE({select_meta}, '{{}}') AS meta,
+                created_at
+            FROM assets_registry_legacy
+            """
+        )
+        conn.execute("DROP TABLE assets_registry_legacy")
 
     # ---------------------
     # Public query helpers
@@ -428,26 +481,10 @@ class AssetRegistry(BaseRegistry):
         sidecar_path = self._sidecar_path(rel_path)
         if sidecar_path.exists() and not overwrite:
             return sidecar_path
-        meta_payload = dict(asset.get("meta") or {})
-        meta_payload.setdefault("tags", [])
-        payload: Dict[str, Any] = {
-            "id": uid,
-            "uid": uid,
-            "type": asset.get("type"),
-            "path": asset["path"],
-            "hash": asset.get("hash"),
-            "bytes": asset.get("bytes"),
-            "meta": meta_payload,
-        }
-        license_tag = meta_payload.get("license")
-        if license_tag:
-            payload["license"] = license_tag
-        thumb_rel = asset.get("thumb")
-        if thumb_rel:
-            preview_kind = (
-                "waveform" if str(thumb_rel).lower().endswith(".json") else "thumbnail"
-            )
-            payload["preview"] = {"path": thumb_rel, "kind": preview_kind}
+        meta_payload = self._prepare_metadata(dict(asset.get("meta") or {}))
+        asset_snapshot = dict(asset)
+        asset_snapshot["meta"] = meta_payload
+        payload = self._compose_sidecar_payload(asset_snapshot)
         self._write_sidecar(rel_path, payload)
         sidecar_path = self._sidecar_path(rel_path)
         try:
@@ -495,6 +532,63 @@ class AssetRegistry(BaseRegistry):
         dest = (self.ASSETS_ROOT / rel_path).resolve()
         dest.parent.mkdir(parents=True, exist_ok=True)
 
+        if not copy:
+            try:
+                rel_path = source.relative_to(self.ASSETS_ROOT)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Non-copied assets must reside inside the assets root ({self.ASSETS_ROOT}); got {source}"
+                ) from exc
+            dest = source
+
+        hash_source = source if copy else dest
+        size_bytes = hash_source.stat().st_size
+        file_hash = self._sha256(hash_source)
+        uid = file_hash[:16]
+
+        meta_updates = metadata.copy() if metadata else {}
+        if license_tag:
+            meta_updates.setdefault("license", license_tag)
+
+        existing = self.get_asset(uid)
+        if existing:
+            merged_meta = self._merge_metadata(existing.get("meta") or {}, meta_updates)
+            normalized_meta = self._save_asset_meta(existing, merged_meta)
+            provenance_record = None
+            asset_db_id = existing.get("id")
+            if provenance and isinstance(asset_db_id, int):
+                provenance_record = self._record_provenance(
+                    asset_db_id,
+                    uid,
+                    file_hash,
+                    provenance,
+                    normalized_meta,
+                )
+                existing_path = self.resolve_path(uid)
+                if existing_path and provenance_record:
+                    self._embed_provenance_marker(existing_path, provenance_record)
+                asset_snapshot = self.get_asset(uid) or existing
+                payload = self._compose_sidecar_payload(
+                    asset_snapshot, provenance=provenance_record
+                )
+                rel_existing = Path(asset_snapshot["path"])
+                self._write_sidecar(rel_existing, payload)
+            else:
+                asset_snapshot = self.get_asset(uid) or existing
+            LOGGER.info("Reused existing asset %s (%s)", uid, asset_snapshot["path"])
+            response = dict(asset_snapshot)
+            response["hash"] = file_hash
+            if isinstance(response.get("meta"), dict):
+                response["preview"] = response["meta"].get("preview")
+            if provenance and provenance_record is None:
+                LOGGER.warning(
+                    "Provenance payload supplied but primary key missing for uid=%s",
+                    uid,
+                )
+            if provenance_record:
+                response["provenance"] = provenance_record
+            return response
+
         if copy:
             if source != dest:
                 shutil.copy2(source, dest)
@@ -505,47 +599,37 @@ class AssetRegistry(BaseRegistry):
                     source,
                 )
                 copy = False
-        else:
-            try:
-                rel_path = source.relative_to(self.ASSETS_ROOT)
-            except ValueError as exc:
-                raise ValueError(
-                    f"Non-copied assets must reside inside the assets root ({self.ASSETS_ROOT}); got {source}"
-                ) from exc
-            dest = source
 
-        file_hash = self._sha256(dest)
-        uid = file_hash[:16]
-        meta_payload = metadata.copy() if metadata else {}
-        if license_tag:
-            meta_payload.setdefault("license", license_tag)
         size_bytes = dest.stat().st_size
-        preview_rel, preview_kind = self._schedule_preview(dest, uid)
-        if preview_rel:
-            meta_payload.setdefault(
-                "preview", {"path": preview_rel, "kind": preview_kind or "thumbnail"}
+        preview_rel, _preview_kind, preview_payload = self._schedule_preview(dest, uid)
+        meta_payload = dict(meta_updates)
+        if preview_payload:
+            meta_payload.setdefault("preview", preview_payload)
+            paths = preview_payload.get("paths")
+            if isinstance(paths, dict) and paths:
+                meta_payload.setdefault("thumbnails", dict(paths))
+        prepared_meta = self._prepare_metadata(meta_payload)
+        meta_json = self.dumps(prepared_meta)
+        preview_primary = preview_rel
+        if preview_payload:
+            preview_primary = (
+                preview_payload.get("default")
+                or preview_payload.get("path")
+                or preview_primary
             )
 
-        meta_json = self.dumps(meta_payload)
         with self.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO assets_registry (project_id, uid, type, path_full, path_thumb, hash, bytes, meta)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(uid) DO UPDATE SET
-                    type=excluded.type,
-                    path_full=excluded.path_full,
-                    path_thumb=excluded.path_thumb,
-                    hash=excluded.hash,
-                    bytes=excluded.bytes,
-                    meta=excluded.meta
-                """,
+            """,
                 (
                     self.project_id,
                     uid,
                     asset_type,
                     str(rel_path.as_posix()),
-                    preview_rel,
+                    preview_primary,
                     file_hash,
                     size_bytes,
                     meta_json,
@@ -565,7 +649,7 @@ class AssetRegistry(BaseRegistry):
                 uid,
                 file_hash,
                 provenance,
-                meta_payload,
+                prepared_meta,
             )
             if copy:
                 self._embed_provenance_marker(dest, provenance_record)
@@ -574,28 +658,16 @@ class AssetRegistry(BaseRegistry):
                 "Provenance payload supplied but asset id unavailable for uid=%s", uid
             )
 
-        preview_entry = None
-        if preview_rel:
-            preview_entry = {"path": preview_rel, "kind": preview_kind or "thumbnail"}
-
-        sidecar_path = self._sidecar_path(rel_path)
-        sidecar = {
-            "id": uid,
-            "uid": uid,
-            "type": asset_type,
-            "path": str(rel_path.as_posix()),
-            "hash": file_hash,
-            "bytes": size_bytes,
-            "meta": meta_payload,
-        }
-        if license_tag:
-            sidecar["license"] = license_tag
-        if preview_entry:
-            sidecar["preview"] = preview_entry
-        if provenance_record:
-            sidecar["provenance"] = provenance_record
-        self._write_sidecar(rel_path, sidecar)
+        asset_snapshot = self.get_asset(uid)
+        if not asset_snapshot:
+            raise RuntimeError(f"Asset {uid} failed to register in the database.")
+        rel_path = Path(asset_snapshot["path"])
+        payload = self._compose_sidecar_payload(
+            asset_snapshot, provenance=provenance_record
+        )
+        self._write_sidecar(rel_path, payload)
         LOGGER.info("Registered asset %s (%s)", uid, rel_path)
+        sidecar_path = self._sidecar_path(rel_path)
         try:
             sidecar_rel = str(sidecar_path.relative_to(self.ASSETS_ROOT).as_posix())
         except ValueError:
@@ -605,24 +677,20 @@ class AssetRegistry(BaseRegistry):
             {
                 "uid": uid,
                 "type": asset_type,
-                "path": str(rel_path.as_posix()),
-                "meta": meta_payload,
+                "path": asset_snapshot["path"],
+                "meta": prepared_meta,
                 "sidecar": sidecar_rel,
                 "bytes": size_bytes,
             },
         )
-        return {
-            "uid": uid,
-            "type": asset_type,
-            "path": str(rel_path.as_posix()),
-            "thumb": preview_rel,
-            "hash": file_hash,
-            "bytes": size_bytes,
-            "meta": meta_payload,
-            "provenance": provenance_record,
-            "preview": preview_entry,
-            "sidecar": sidecar_rel,
-        }
+        response = dict(asset_snapshot)
+        response["hash"] = file_hash
+        if isinstance(response.get("meta"), dict):
+            response["preview"] = response["meta"].get("preview")
+        if provenance_record:
+            response["provenance"] = provenance_record
+        response["sidecar"] = sidecar_rel
+        return response
 
     def resolve_path(self, uid: str) -> Optional[Path]:
         asset = self.get_asset(uid)
@@ -752,9 +820,36 @@ class AssetRegistry(BaseRegistry):
         meta = payload.get("meta")
         if isinstance(meta, str):
             try:
-                payload["meta"] = json.loads(meta)
+                meta = json.loads(meta)
             except json.JSONDecodeError:
-                payload["meta"] = meta
+                meta = {"raw": meta}
+        if meta is None:
+            meta = {}
+        prepared_meta = self._prepare_metadata(meta)
+        payload["meta"] = prepared_meta
+        if "preview" in prepared_meta and isinstance(prepared_meta["preview"], dict):
+            preview_snapshot = dict(prepared_meta["preview"])
+        elif thumb:
+            preview_snapshot = {
+                "kind": (
+                    "waveform" if str(thumb).lower().endswith(".json") else "thumbnail"
+                ),
+                "path": thumb,
+            }
+            prepared_meta.setdefault("preview", preview_snapshot)
+        else:
+            preview_snapshot = None
+        thumb_map = prepared_meta.get("thumbnails")
+        if isinstance(thumb_map, dict):
+            prepared_meta["thumbnails"] = dict(thumb_map)
+            if preview_snapshot is not None:
+                preview_snapshot.setdefault("paths", dict(thumb_map))
+                if "default" not in preview_snapshot and thumb_map:
+                    try:
+                        first_key = next(iter(sorted(thumb_map)))
+                        preview_snapshot["default"] = thumb_map[first_key]
+                    except StopIteration:
+                        pass
         rel_path = Path(payload["path"])
         sidecar_path = self._sidecar_path(rel_path)
         try:
@@ -762,6 +857,18 @@ class AssetRegistry(BaseRegistry):
             payload["sidecar"] = sidecar_rel.as_posix()
         except Exception:
             payload["sidecar"] = sidecar_path.as_posix()
+        links: Dict[str, Any] = {
+            "file": payload["path"],
+            "sidecar": payload["sidecar"],
+        }
+        if thumb:
+            links["thumbnail"] = thumb
+        if preview_snapshot:
+            if "paths" in preview_snapshot:
+                links["thumbnails"] = dict(preview_snapshot["paths"])
+            elif preview_snapshot.get("path"):
+                links["preview"] = preview_snapshot["path"]
+        payload["links"] = links
         created = payload.pop("created_at", None)
         if created is not None:
             payload["created_at"] = created
@@ -782,35 +889,148 @@ class AssetRegistry(BaseRegistry):
             ordered.append(text)
         return ordered
 
+    def _prepare_metadata(self, meta_payload: Dict[str, Any] | None) -> Dict[str, Any]:
+        """Normalise metadata for persistence and sidecar emission."""
+
+        meta: Dict[str, Any] = dict(meta_payload or {})
+        tags = meta.get("tags")
+        if isinstance(tags, list):
+            meta["tags"] = self._normalise_tags(tags)
+        elif tags in (None, "", []):
+            meta["tags"] = []
+        else:
+            meta["tags"] = self._normalise_tags([tags])
+
+        license_tag = meta.get("license")
+        if isinstance(license_tag, str):
+            meta["license"] = license_tag.strip() or None
+        elif license_tag is not None:
+            meta["license"] = str(license_tag)
+
+        origin = meta.get("origin")
+        if origin is not None:
+            meta["origin"] = str(origin)
+
+        version = meta.get("version")
+        if version is None:
+            meta["version"] = 1
+        else:
+            try:
+                meta["version"] = int(version)
+            except (TypeError, ValueError):
+                meta["version"] = 1
+
+        return meta
+
+    def _merge_metadata(
+        self, existing: Dict[str, Any], updates: Dict[str, Any] | None
+    ) -> Dict[str, Any]:
+        """Merge ``updates`` into ``existing`` preserving tag uniqueness."""
+
+        merged: Dict[str, Any] = dict(existing or {})
+        if not updates:
+            return merged
+
+        for key, value in updates.items():
+            if key == "tags":
+                current = merged.get("tags")
+                current_list = (
+                    list(current)
+                    if isinstance(current, list)
+                    else [current] if current else []
+                )
+                update_list = (
+                    list(value)
+                    if isinstance(value, (list, tuple, set))
+                    else [value] if value not in (None, "", []) else []
+                )
+                merged["tags"] = self._normalise_tags([*current_list, *update_list])
+                continue
+            if key == "license":
+                merged["license"] = (
+                    (value or None) if not isinstance(value, dict) else None
+                )
+                continue
+            if key in {"preview", "thumbnails"} and isinstance(value, dict):
+                merged[key] = dict(value)
+                continue
+            merged[key] = value
+
+        return merged
+
+    def _compose_sidecar_payload(
+        self, asset: Dict[str, Any], *, provenance: Dict[str, Any] | None = None
+    ) -> Dict[str, Any]:
+        """Compose a canonical sidecar payload for ``asset``."""
+
+        meta_payload = self._prepare_metadata(dict(asset.get("meta") or {}))
+        preview_payload: Dict[str, Any] | None = None
+
+        preview_meta = meta_payload.get("preview")
+        if isinstance(preview_meta, dict):
+            preview_payload = dict(preview_meta)
+        elif asset.get("thumb"):
+            thumb = str(asset["thumb"])
+            preview_payload = {
+                "kind": "waveform" if thumb.lower().endswith(".json") else "thumbnail",
+                "path": thumb,
+            }
+
+        thumb_map = meta_payload.get("thumbnails")
+        if isinstance(thumb_map, dict):
+            if preview_payload is None:
+                preview_payload = {"kind": "thumbnail"}
+            preview_payload["paths"] = dict(thumb_map)
+            default_thumb = preview_payload.get("default")
+            if not default_thumb and thumb_map:
+                try:
+                    first_key = next(iter(sorted(thumb_map)))
+                    preview_payload["default"] = thumb_map[first_key]
+                except StopIteration:
+                    pass
+
+        payload: Dict[str, Any] = {
+            "id": asset.get("uid"),
+            "uid": asset.get("uid"),
+            "type": asset.get("type"),
+            "path": asset.get("path"),
+            "hash": asset.get("hash"),
+            "bytes": asset.get("bytes"),
+            "tags": list(meta_payload.get("tags") or []),
+            "license": meta_payload.get("license"),
+            "origin": meta_payload.get("origin"),
+            "version": meta_payload.get("version"),
+            "created_at": asset.get("created_at"),
+            "meta": meta_payload,
+        }
+
+        if preview_payload:
+            payload["preview"] = preview_payload
+
+        links = asset.get("links")
+        if isinstance(links, dict) and links:
+            payload["links"] = dict(links)
+
+        if provenance:
+            payload["provenance"] = dict(provenance)
+
+        return payload
+
     def _save_asset_meta(
         self, asset: Dict[str, Any], meta_payload: Dict[str, Any]
     ) -> Dict[str, Any]:
-        meta_json = self.dumps(meta_payload)
+        prepared_meta = self._prepare_metadata(meta_payload)
+        meta_json = self.dumps(prepared_meta)
         with self.connection() as conn:
             conn.execute(
                 f"UPDATE {self.TABLE} SET meta = ? WHERE project_id = ? AND uid = ?",
                 (meta_json, self.project_id, asset["uid"]),
             )
 
-        payload: Dict[str, Any] = {
-            "uid": asset["uid"],
-            "id": asset["uid"],
-            "type": asset.get("type"),
-            "path": asset["path"],
-            "hash": asset.get("hash"),
-            "bytes": asset.get("bytes"),
-            "meta": meta_payload,
-        }
-        license_tag = meta_payload.get("license")
-        if license_tag:
-            payload["license"] = license_tag
-        thumb_rel = asset.get("thumb")
-        if thumb_rel:
-            kind = (
-                "waveform" if str(thumb_rel).lower().endswith(".json") else "thumbnail"
-            )
-            payload["preview"] = {"path": thumb_rel, "kind": kind}
         rel_path = Path(asset["path"])
+        asset_snapshot = dict(asset)
+        asset_snapshot["meta"] = prepared_meta
+        payload = self._compose_sidecar_payload(asset_snapshot)
         self._write_sidecar(rel_path, payload)
         sidecar_path = self._sidecar_path(rel_path)
         try:
@@ -822,12 +1042,12 @@ class AssetRegistry(BaseRegistry):
             {
                 "uid": asset["uid"],
                 "type": asset.get("type"),
-                "meta": meta_payload,
+                "meta": prepared_meta,
                 "path": asset["path"],
                 "sidecar": sidecar_rel,
             },
         )
-        return meta_payload
+        return prepared_meta
 
     @classmethod
     def _get_thumbnail_executor(cls) -> ThreadPoolExecutor:
@@ -842,29 +1062,59 @@ class AssetRegistry(BaseRegistry):
 
     def _schedule_preview(
         self, dest: Path, uid: str
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
         suffix = dest.suffix.lower()
         preview_kind: Optional[str]
         if suffix in self._IMAGE_SUFFIXES:
             if Image is None:
                 LOGGER.debug("Pillow not available; skipping thumbnail for %s", dest)
-                return (None, None)
-            thumb_path = self.THUMB_ROOT / f"{uid}{suffix}"
+                return (None, None, None)
             preview_kind = "thumbnail"
-        elif suffix in self._AUDIO_WAVEFORM_SUFFIXES:
+            thumb_paths: Dict[str, str] = {}
+            primary_rel: Optional[str] = None
+            executor = self._get_thumbnail_executor()
+            for index, size in enumerate(self.THUMB_SIZES):
+                thumb_path = self.THUMB_ROOT / f"{uid}_{size}{suffix}"
+                thumb_rel = str((self._thumb_rel_base / thumb_path.name).as_posix())
+                thumb_paths[str(size)] = thumb_rel
+                primary_rel = primary_rel or thumb_rel
+                future = executor.submit(
+                    self._thumbnail_job,
+                    dest,
+                    thumb_path,
+                    thumb_rel,
+                    uid,
+                    preview_kind,
+                    size,
+                    primary=index == 0,
+                )
+                self._register_thumbnail_future(future)
+            preview_payload = {
+                "kind": preview_kind,
+                "paths": thumb_paths,
+                "default": primary_rel,
+            }
+            return primary_rel, preview_kind, preview_payload
+        if suffix in self._AUDIO_WAVEFORM_SUFFIXES:
             thumb_path = self.THUMB_ROOT / f"{uid}.waveform.json"
+            thumb_rel = str((self._thumb_rel_base / thumb_path.name).as_posix())
             preview_kind = "waveform"
-        else:
-            LOGGER.debug("Skipping preview for %s (unsupported suffix)", dest)
-            return (None, None)
-
-        thumb_rel = str((self._thumb_rel_base / thumb_path.name).as_posix())
-        executor = self._get_thumbnail_executor()
-        future = executor.submit(
-            self._thumbnail_job, dest, thumb_path, thumb_rel, uid, preview_kind
-        )
-        self._register_thumbnail_future(future)
-        return thumb_rel, preview_kind
+            executor = self._get_thumbnail_executor()
+            future = executor.submit(
+                self._thumbnail_job,
+                dest,
+                thumb_path,
+                thumb_rel,
+                uid,
+                preview_kind,
+                None,
+                primary=True,
+            )
+            self._register_thumbnail_future(future)
+            preview_payload = {"kind": preview_kind, "path": thumb_rel}
+            return thumb_rel, preview_kind, preview_payload
+        LOGGER.debug("Skipping preview for %s (unsupported suffix)", dest)
+        return (None, None, None)
 
     @classmethod
     def _register_thumbnail_future(cls, future: Future) -> None:
@@ -893,8 +1143,11 @@ class AssetRegistry(BaseRegistry):
         thumb_rel: str,
         uid: str,
         preview_kind: Optional[str],
+        thumb_size: Optional[int],
+        *,
+        primary: bool,
     ) -> None:
-        success = self._create_preview_file(source, thumb_path)
+        success = self._create_preview_file(source, thumb_path, thumb_size=thumb_size)
         if not success:
             LOGGER.warning(
                 "Clearing %s preview for %s due to generation failure",
@@ -902,27 +1155,33 @@ class AssetRegistry(BaseRegistry):
                 uid,
             )
             thumb_path.unlink(missing_ok=True)
-            with self.connection() as conn:
-                conn.execute(
-                    f"UPDATE {self.TABLE} SET path_thumb = NULL WHERE project_id = ? AND uid = ?",
-                    (self.project_id, uid),
-                )
+            if primary:
+                with self.connection() as conn:
+                    conn.execute(
+                        f"UPDATE {self.TABLE} SET path_thumb = NULL WHERE project_id = ? AND uid = ?",
+                        (self.project_id, uid),
+                    )
 
-    def _create_preview_file(self, source: Path, thumb_path: Path) -> bool:
+    def _create_preview_file(
+        self, source: Path, thumb_path: Path, *, thumb_size: Optional[int]
+    ) -> bool:
         suffix = source.suffix.lower()
         if suffix in self._IMAGE_SUFFIXES:
-            return self._create_image_thumbnail(source, thumb_path)
+            return self._create_image_thumbnail(source, thumb_path, thumb_size)
         if suffix in self._AUDIO_WAVEFORM_SUFFIXES:
             return self._create_waveform_preview(source, thumb_path)
         return False
 
     @staticmethod
-    def _create_image_thumbnail(source: Path, thumb_path: Path) -> bool:
+    def _create_image_thumbnail(
+        source: Path, thumb_path: Path, thumb_size: Optional[int]
+    ) -> bool:
         if Image is None:
             return False
         try:
             with Image.open(source) as img:  # type: ignore[attr-defined]
-                img.thumbnail((256, 256))
+                size = int(thumb_size or 256)
+                img.thumbnail((size, size))
                 thumb_path.parent.mkdir(parents=True, exist_ok=True)
                 img.save(thumb_path)
             return True

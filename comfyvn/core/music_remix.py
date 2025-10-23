@@ -15,9 +15,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from comfyvn.config.runtime_paths import music_cache_file
-from comfyvn.core.comfyui_audio import (ComfyUIAudioRunner,
-                                        ComfyUIWorkflowConfig,
-                                        ComfyUIWorkflowError)
+from comfyvn.core.comfyui_audio import (
+    ComfyUIAudioRunner,
+    ComfyUIWorkflowConfig,
+    ComfyUIWorkflowError,
+)
 from comfyvn.core.settings_manager import SettingsManager
 
 LOGGER = logging.getLogger("comfyvn.audio.music")
@@ -271,6 +273,24 @@ def _run_comfyui_music(
     artifact.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, artifact)
 
+    duration_seconds: Optional[float] = payload.get("duration_seconds")
+    sample_rate: Optional[int] = payload.get("sample_rate")
+    if artifact.suffix.lower() == ".wav":
+        try:
+            with wave.open(str(artifact), "rb") as wav_file:
+                sample_rate = wav_file.getframerate()
+                frames = wav_file.getnframes()
+                if sample_rate:
+                    duration_seconds = frames / float(sample_rate)
+        except wave.Error as exc:
+            LOGGER.debug(
+                "ComfyUI music unable to read WAV metadata %s: %s", artifact, exc
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.debug(
+                "ComfyUI music unexpected metadata read failure %s: %s", artifact, exc
+            )
+
     created_at = time.time()
     payload.update(
         {
@@ -285,6 +305,10 @@ def _run_comfyui_music(
             },
         }
     )
+    if duration_seconds is not None:
+        payload["duration_seconds"] = duration_seconds
+    if sample_rate is not None:
+        payload["sample_rate"] = sample_rate
     sidecar = artifact.with_suffix(".json")
     sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -315,8 +339,11 @@ def remix_track(
     source_track: Optional[str] = None,
     seed: Optional[int] = None,
     mood_tags: Optional[list[str]] = None,
-) -> Tuple[str, str]:
-    """Generate a deterministic synthetic remix with metadata+cache."""
+) -> Tuple[str, str, bool, Dict[str, Any]]:
+    """Generate a deterministic synthetic remix with metadata+cache.
+
+    Returns a tuple of (artifact_path, sidecar_path, cached, metadata).
+    """
 
     target = target_style.strip() or "default"
     scene = scene_id.strip() or "scene-unknown"
@@ -332,7 +359,8 @@ def remix_track(
 
     cached = music_cache.lookup(cache_key)
     if cached:
-        return cached.artifact, cached.sidecar
+        cached_meta = dict(cached.metadata or {})
+        return cached.artifact, cached.sidecar, True, cached_meta
 
     outdir = Path(os.getenv("COMFYVN_MUSIC_EXPORT_DIR", "exports/music"))
     outdir.mkdir(parents=True, exist_ok=True)
@@ -363,13 +391,13 @@ def remix_track(
 
     if provider and str(provider.get("id", "")).startswith("comfyui"):
         try:
-            artifact_path, sidecar_path, _meta = _run_comfyui_music(
+            artifact_path, sidecar_path, meta_payload = _run_comfyui_music(
                 provider=provider,
                 cache_key=cache_key,
                 artifact=artifact,
                 payload=payload,
             )
-            return str(artifact_path), str(sidecar_path)
+            return str(artifact_path), str(sidecar_path), False, dict(meta_payload)
         except ComfyUIWorkflowError as exc:
             LOGGER.warning("ComfyUI music unavailable, falling back: %s", exc)
         except Exception as exc:  # pragma: no cover - defensive logging
@@ -418,4 +446,4 @@ def remix_track(
         payload["duration_seconds"],
         artifact.name,
     )
-    return str(artifact), str(sidecar)
+    return str(artifact), str(sidecar), False, dict(payload)

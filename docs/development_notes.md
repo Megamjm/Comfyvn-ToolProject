@@ -11,6 +11,7 @@ Runtime Debugging
 - Flat → Layers pipeline: enable `features.enable_flat2layers`, then watch hooks from `comfyvn.pipelines.flat2layers.FlatToLayersPipeline` (`on_mask_ready`, `on_plane_exported`, `on_debug`). Pair with `tools/depth_planes.py` for threshold tuning and the Playground SAM channel (`flat2layers.sam`) to record brush edits.
 - Performance budgets & profiler: enable `features.enable_perf` (legacy `enable_perf_budgets` / `enable_perf_profiler_dashboard`) for local testing, then call `feature_flags.refresh_cache()` in long-running processes. REST helpers live under `/api/perf/*`; see `docs/PERF_BUDGETS.md`, `docs/dev_notes_observability_perf.md`, and `docs/development/perf_budgets_profiler.md` for curl examples, lazy asset eviction hooks, and the `on_perf_budget_state` / `on_perf_profiler_snapshot` modder envelopes.
 - Integration guardrail: run `python tools/doctor_phase8.py --pretty` after touching router wiring, feature defaults, or modder hook specs. The doctor instantiates `create_app()` headless, asserts key debug surfaces (`/api/weather/state`, `/api/props/*`, `/api/battle/*`, `/api/modder/hooks`, `/api/viewer/mini/*`, `/api/narrator/status`, `/api/pov/confirm_switch`), checks for duplicate routes, validates the hook catalogue, and confirms feature defaults (Mini-VN/web viewer ON, external providers OFF, compute ON). CI should fail fast if the script reports `"pass": false`.
+- Request tracing: `curl http://127.0.0.1:8001/status` now returns `{routers[], base_url, log_path, routes[]}` so diagnostics bundles can capture the active surfaces. Each request receives an `X-Request-ID`; the middleware mirrors it in the JSON log line (`logs/server.log`) and in JSON error envelopes (`{ok:false, code, message, details?, request_id?}`). Subscribe to `/ws/events` (or the legacy `/events/ws`) or `/events/sse` to confirm the async event hub is live.
 
 Dungeon Runtime & Snapshot Hooks
 --------------------------------
@@ -56,6 +57,8 @@ Viewer & Export Updates
 - Mini-VN snapshot payloads surface `mini_digest` and thumbnail URLs; automation can call `/api/viewer/mini/refresh` with a deterministic seed to rebuild caches.
 - Modder hook `on_thumbnail_captured` fires when thumbnails refresh.
 - `scripts/export_renpy.py` / `/api/export/renpy/*` now raise `on_export_started` / `on_export_completed` and honour `--bake-weather` (`enable_export_bake` default). Successful exports write `<out>/label_manifest.json` summarising POV and battle labels; dry runs embed the manifest inline.
+- Public exporter routes (`POST /export/renpy`, `POST /export/bundle`) live in `comfyvn/server/routes/export_public.py`, returning the same manifest/diff/provenance payloads as the CLI while defaulting outputs under `exports/`.
+- Shared helper module `comfyvn/exporters/export_helpers.py` centralises label manifest generation, provenance bundle creation, slug handling, and diff serialization so CLI/HTTP stay in lock-step.
 - Golden harness (`HeadlessPlaytestRunner`) now produces deterministic timestamps and offers `run_per_pov_suite(plan)` to capture the linear / choice-heavy / battle trio per POV. Reference `docs/GOLDEN_TESTS.md` for suite planning.
 
 Security & Sandbox Audit
@@ -64,6 +67,13 @@ Security & Sandbox Audit
 - Audit lines append to `${COMFYVN_SECURITY_LOG_FILE:-logs/security.log}` capturing `secrets.read`, `secrets.write`, `secrets.key.rotated`, and sandbox denials. Tail with `jq` or view through `GET /api/security/audit`.
 - Plugin sandbox network guard defaults to strict mode (`features.enable_security_sandbox_guard`: true). Use `SANDBOX_NETWORK_ALLOW` or per-job `network_allow` to open specific hosts. Disable the flag only for legacy integrations.
 - Modder hooks: subscribe to `security.secret_read`, `security.key_rotated`, and `security.sandbox_blocked` (WS topics) for dashboards and CI checks. Additional workflows and curl samples live in `docs/dev_notes_security.md`.
+
+Database Migrations & Settings
+------------------------------
+- Schema management now flows through `comfyvn/db/migrations.py`. Run `python tools/apply_migrations.py --list` to inspect pending versions, `--dry-run` before deployments, or `--verbose` when debugging.
+- `python tools/db_integrity_check.py` executes `PRAGMA integrity_check` after ensuring migrations are applied. Return value `ok` should gate release automation.
+- Seed data helper: `python tools/seed_demo_data.py [--force]` writes demo scenes, characters, jobs, and providers. Useful for local smoke tests and CI warmup fixtures.
+- Settings persist through the Pydantic-based `SettingsManager` and mirror to both `settings/config.json` and the SQLite `settings` table. FastAPI exposes `/system/settings` for read/write plus `/system/settings/schema` for schema + defaults snapshots.
 
 Observability & Privacy Telemetry
 ---------------------------------
@@ -120,7 +130,7 @@ Policy Enforcement & Audit
 --------------------------
 - Feature flag: `features.enable_policy_enforcer` (default `true`) enables the new enforcement pipeline. Toggle via **Settings → Debug & Feature Flags** and call `feature_flags.refresh_cache()` in long-lived processes.
 - REST helpers:
-  - `POST /api/policy/enforce` → returns `{allow, counts, findings, log_path, gate}` for the supplied bundle. Expect HTTP `423` with `result.blocked` when scanners emit `level: block`.
+  - `POST /api/policy/enforce` → returns `{allow, counts, findings, log_path, gate}` for the supplied bundle. Enforcement always returns 200; consumers inspect the findings to decide follow-up actions.
   - `GET /api/policy/audit?limit=25&export=1` → returns the latest enforcement events (`events`, `summary`) and writes a JSON report to `logs/policy/policy_audit_<ts>.json` when `export=1`.
 - Logs: JSONL entries append to `logs/policy/enforcer.jsonl`; import/export responses bubble the enforcement decision under `enforcement` and provenance payloads include the raw findings.
 - Modder hook: `on_policy_enforced` publishes `{action, allow, counts, blocked, warnings, log_path, timestamp}` to the REST + WebSocket surfaces (`/api/modder/hooks`, `/api/modder/hooks/ws`). Use this for dashboard overlays or CI alarms when builds trip hard policy rules.
@@ -268,6 +278,6 @@ LLM Proxy & Emulation
 Asset Debug Hooks
 -----------------
 - Set `COMFYVN_ASSETS_ROOT=/path/to/modpack/assets` before launching the backend to stage a temporary asset sandbox without moving the canonical repository files. Pair with `COMFYVN_RUNTIME_ROOT` when running experiments you plan to discard.
-- Run `python tools/rebuild_asset_registry.py --assets-dir <assets> --db-path comfyvn/data/comfyvn.db` after bulk edits to reconcile the registry with on-disk changes; the script replays sidecar metadata and highlights any failures.
+- Run `python tools/rebuild_asset_registry.py --assets-dir <assets> --db-path comfyvn/data/comfyvn.db` after bulk edits to reconcile the registry with on-disk changes; the script replays sidecar metadata, logs orphaned sidecars or missing thumbnails, and reuses hash-matched rows instead of flooding duplicates.
 - Call `GET /assets/?type=portrait&limit=500` (or any supported `type=` filter) to verify that new files registered under the expected buckets before promoting them to production branches.
 - Trigger `GET /api/export/renpy/preview` before and after hooking a new asset pack; the `missing_assets` section highlights backgrounds/portraits that still need coverage while the diff entries confirm copied files.

@@ -88,7 +88,7 @@ class SettingsPanel(QDockWidget):
         port_config = ports_config.get_config()
         self.api = QLineEdit(self.bridge.base)
         self.remote_list = QLineEdit(
-            self.bridge.get(
+            self.bridge.get_cached(
                 "REMOTE_GPU_LIST", default=default_base_url()  # legacy remote fallback
             )
         )

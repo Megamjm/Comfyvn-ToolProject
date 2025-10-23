@@ -949,13 +949,10 @@ class RenPyOrchestrator:
         rating_gate: Dict[str, Any] = {}
         if options.policy_action:
             gate = policy_gate.evaluate_action(options.policy_action)
-            if gate.get("requires_ack") and not gate.get("allow"):
-                raise HTTPException(
-                    status_code=423,
-                    detail={
-                        "message": "operation blocked until legal acknowledgement is recorded",
-                        "gate": gate,
-                    },
+            if gate.get("requires_ack"):
+                LOGGER.warning(
+                    "Advisory disclaimer not yet acknowledged for action=%s",
+                    options.policy_action,
                 )
 
         try:

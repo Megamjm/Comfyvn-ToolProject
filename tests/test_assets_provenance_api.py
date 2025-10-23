@@ -23,8 +23,12 @@ def _auth_headers() -> dict[str, str]:
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch):
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("API_TOKEN", "testtoken")
+    assets_root = tmp_path / "assets"
+    thumbs_root = tmp_path / "thumbs"
+    monkeypatch.setenv("COMFYVN_ASSETS_ROOT", str(assets_root))
+    monkeypatch.setenv("COMFYVN_THUMBS_ROOT", str(thumbs_root))
     app = create_app()
     with TestClient(app) as c:
         yield c
@@ -97,6 +101,43 @@ def test_upload_audio_embeds_id3_provenance_marker(client: TestClient, tmp_path:
     saved = Path("data/assets") / asset["path"]
     data = saved.read_bytes()
     assert b"comfyvn_provenance" in data  # expected to fail until implemented
+
+
+def test_public_asset_register_and_fetch(client: TestClient, tmp_path: Path):
+    source = tmp_path / "api_asset.txt"
+    source.write_text("api-asset", encoding="utf-8")
+
+    payload = {
+        "path": str(source),
+        "asset_type": "documents",
+        "metadata": {"tags": ["api-test"], "license": "CC-BY-4.0"},
+    }
+
+    register_resp = client.post("/api/assets/register", json=payload)
+    assert register_resp.status_code == 200, register_resp.text
+    register_payload = register_resp.json()
+    asset_id = register_payload["asset_id"]
+    asset_body = register_payload["asset"]
+    assert asset_body["id"] == asset_id
+    assert asset_body["metadata"]["tags"] == ["api-test"]
+    assert "links" in asset_body and "file" in asset_body["links"]
+
+    fetch_resp = client.get(f"/api/assets/{asset_id}")
+    assert fetch_resp.status_code == 200, fetch_resp.text
+    fetched = fetch_resp.json()["asset"]
+    assert fetched["id"] == asset_id
+    assert fetched["metadata"]["license"] == "CC-BY-4.0"
+
+    search_resp = client.get("/api/assets/search", params={"q": source.name})
+    assert search_resp.status_code == 200, search_resp.text
+    search_payload = search_resp.json()
+    assert search_payload["filters"]["q"] == source.name
+    assert search_payload["total"] >= 1
+    assert any(item["id"] == asset_id for item in search_payload["items"])
+
+    duplicate_resp = client.post("/api/assets/register", json=payload)
+    assert duplicate_resp.status_code == 200, duplicate_resp.text
+    assert duplicate_resp.json()["asset_id"] == asset_id
 
 
 def test_asset_debug_endpoints_surface_modder_hooks(client: TestClient):

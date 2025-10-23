@@ -75,6 +75,7 @@ renpy_project/
 .venv
 .bak
 tools/renpy/
+tools/cache/
 
 .venv/
 venv/

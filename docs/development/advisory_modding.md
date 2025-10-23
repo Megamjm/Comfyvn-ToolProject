@@ -3,9 +3,9 @@
 This sheet keeps studio contributors and modders aligned on advisory expectations, debug hooks, and the plugin surface exposed by the new scanner pipeline. You remain free to build any stories or assets you want—ComfyVN simply highlights risks so you can accept responsibility before you ship.
 
 ## Creative Freedom, Legal Responsibility
-- Acknowledge the liability gate once per install through **Studio → Settings → Advisory** or by calling `POST /api/policy/ack`. The acknowledgement records _who_ accepted the terms and when.
-- The advisory scanner never deletes content. Instead, it grades findings as `info`, `warn`, or `block`. You decide how to respond, but block-level issues must be cleared (or waived by policy owners) before exports succeed.
-- CLI exports (`python scripts/export_bundle.py --project <id>`) surface warnings on stderr and exit with code `2` when blockers remain, ensuring automated pipelines halt until a human signs off.
+- Acknowledge the advisory disclaimer once per install through **Studio → Settings → Advisory** or by calling `POST /api/advisory/ack`. The acknowledgement records _who_ accepted the terms and when.
+- The advisory scanner never deletes content. Instead, it grades findings as `info`, `warn`, or `block`. You decide how to respond; block-level issues should be cleared or documented before you share builds, but the platform leaves the final decision to you.
+- CLI exports (`python scripts/export_bundle.py --project <id>`) surface warnings on stderr and include `warning_count` / `blocker_count` fields in the JSON output so automation can halt when policy owners require it.
 - Review provenance bundles: `provenance.json` includes scanner findings, making downstream distribution traceable back to the point where the user accepted responsibility.
 
 ## Scanner Plugin Surface
@@ -40,12 +40,12 @@ This sheet keeps studio contributors and modders aligned on advisory expectation
 
 ## API Matrix for Modders
 - Advisory core:
-  - `POST /api/advisory/scan` – synchronous text scan.
+  - `GET /api/advisory/disclaimer` – current disclaimer text and acknowledgement metadata.
+  - `POST /api/advisory/ack` – record acknowledgement (Studio uses this).
+  - `POST /api/advisory/scan` – bundle scan (see `include_debug` for descriptors).
   - `GET /api/advisory/logs?resolved=` – list findings (use `false` for unresolved).
   - `POST /api/advisory/resolve` – mark issues resolved with optional notes.
-- Policy gate:
-  - `GET /api/policy/status` – current acknowledgement + override flag.
-  - `POST /api/policy/ack` – record acknowledgement (Studio uses this).
+- Policy helpers:
   - `POST /api/policy/evaluate` – dry-run exports/imports; include `{action, override}`.
   - `GET/POST /api/policy/filters` – manage SFW/Warn/Unrestricted content modes.
   - `POST /api/policy/filter-preview` – test how content would be classified.
@@ -56,6 +56,6 @@ This sheet keeps studio contributors and modders aligned on advisory expectation
 
 ## Workflow Tips
 - During development, keep the Advisory panel open in Studio (**Window → Advisory**). It refreshes findings per action and surfaces blockers before you invest in long renders.
-- Automation pipelines should check the CLI JSON payload; `blocked: true` means halt. When only warnings remain, include the advisory payload in release notes so reviewers know you accepted the risk.
+- Automation pipelines should check the CLI JSON payload; use `blocker_count`/`warning_count` to decide when to halt. When only warnings remain, include the advisory payload in release notes so reviewers know you accepted the risk.
 - Mod submissions should ship their own scanner plugins alongside documentation describing what they enforce. The host user always decides whether to enable those plugins.
 - When contributing new hooks, add a short section to this doc (pull request welcome) describing the plugin name, purpose, and any environment variables it expects.

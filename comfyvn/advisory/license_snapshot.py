@@ -314,28 +314,38 @@ def status(asset_id: str, *, include_text: bool = False) -> Dict[str, Any]:
 
 
 def require_ack(asset_id: str, *, hash_value: Optional[str] = None) -> Dict[str, Any]:
-    """Raise ``LicenseAcknowledgementRequired`` when a matching acknowledgement is absent."""
+    """Check acknowledgement status for ``asset_id`` and return advisory metadata."""
 
     info = status(asset_id, include_text=False)
     ack_map = info.get("acknowledgements") or {}
-    if hash_value and info.get("hash") and hash_value != info.get("hash"):
-        raise LicenseAcknowledgementRequired(
-            f"Snapshot hash mismatch for {asset_id}; ack must target hash {info.get('hash')}."
+    messages: list[str] = []
+    ack_required = False
+
+    recorded_hash = info.get("hash")
+    if hash_value and recorded_hash and hash_value != recorded_hash:
+        ack_required = True
+        messages.append(
+            f"Snapshot hash mismatch for {asset_id}; acknowledgement recorded for {recorded_hash}."
         )
+
     if not ack_map:
-        raise LicenseAcknowledgementRequired(
-            f"Licence acknowledgement required for asset '{asset_id}'."
-        )
-    if hash_value:
+        ack_required = True
+        messages.append(f"Acknowledgement recommended for asset '{asset_id}'.")
+    elif hash_value:
         matching = [
             k
             for k, v in ack_map.items()
             if isinstance(v, Mapping) and v.get("hash") == hash_value
         ]
         if not matching:
-            raise LicenseAcknowledgementRequired(
-                f"Acknowledgement for asset '{asset_id}' does not cover hash {hash_value}."
+            ack_required = True
+            messages.append(
+                f"No acknowledgement covers hash {hash_value} for asset '{asset_id}'."
             )
+
+    info["ack_required"] = ack_required
+    if messages:
+        info.setdefault("warnings", messages)
     return info
 
 

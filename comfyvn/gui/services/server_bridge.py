@@ -3,21 +3,26 @@ from __future__ import annotations
 # comfyvn/gui/services/server_bridge.py
 # [ComfyVN Architect | Phase 2.05 | Async Bridge + Non-blocking refresh]
 import asyncio
+import json
 import logging
 import os
 import threading
 import time
+from collections import defaultdict
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
 import httpx
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
+from PySide6.QtNetwork import QAbstractSocket
+from PySide6.QtWebSockets import QWebSocket
 
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from comfyvn.config import feature_flags
 from comfyvn.config.baseurl_authority import current_authority, default_base_url
+from comfyvn.gui.services.job_stream import JobStreamClient
 
 _AUTHORITY = current_authority()
 DEFAULT_BASE = (os.getenv("COMFYVN_SERVER_BASE") or _AUTHORITY.base_url).rstrip("/")
@@ -40,13 +45,14 @@ _UNSET = object()
 class ServerBridge(QObject):
     status_updated = Signal(dict)
     warnings_updated = Signal(list)
+    event_triggered = Signal(str, dict)
 
     def __init__(self, base: Optional[str] = None):
         super().__init__()
         self.base_url = (base or DEFAULT_BASE).rstrip("/")
         self._stop = False
         self._thread: Optional[threading.Thread] = None
-        self._base_interval = 2.5
+        self._base_interval = 3.0
         self._backoff_schedule: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0)
         self._backoff_step = 0
         self._current_interval = self._base_interval
@@ -60,6 +66,12 @@ class ServerBridge(QObject):
         )
         self._last_status_ok = True
         self._last_failure_detail: str | None = None
+        self._subscribers: dict[str, list[Callable[[dict[str, Any]], None]]] = (
+            defaultdict(list)
+        )
+        self._ws_clients: list[BridgeWebSocket] = []
+        self._job_stream: JobStreamClient | None = None
+        self.event_triggered.connect(self._dispatch_event)
 
     # ─────────────────────────────
     # Async polling loop (non-blocking)
@@ -117,6 +129,7 @@ class ServerBridge(QObject):
                     overall_ok, combined, debug_enabled=debug_enabled
                 )
                 self.status_updated.emit(dict(combined))
+                self._emit_event("system:metrics", dict(combined))
 
                 if metrics_ok and overall_ok:
                     await self._process_warnings(cli)
@@ -136,6 +149,7 @@ class ServerBridge(QObject):
             }
             self._log_status_change(False, self._latest, debug_enabled=False)
             self.status_updated.emit(dict(self._latest))
+            self._emit_event("system:metrics", dict(self._latest))
         finally:
             self._poll_lock.release()
 
@@ -392,6 +406,64 @@ class ServerBridge(QObject):
             return thread
         return worker()
 
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        data: Any = None,
+        json_payload: Any = None,
+        files: Any = None,
+        timeout: float = 5.0,
+    ) -> Dict[str, Any]:
+        method_upper = method.upper()
+        url = self._build_url(path)
+        result: Dict[str, Any] = {"ok": False, "status": None, "data": None}
+        try:
+            with httpx.Client(timeout=timeout) as cli:
+                response = cli.request(
+                    method_upper,
+                    url,
+                    params=params,
+                    data=data,
+                    json=json_payload,
+                    files=files,
+                )
+        except Exception as exc:
+            logger.warning("HTTP %s %s failed: %s", method_upper, url, exc)
+            result["error"] = str(exc)
+            return result
+
+        result["status"] = response.status_code
+        result["ok"] = response.status_code < 400
+        try:
+            result["data"] = response.json()
+        except Exception:
+            result["data"] = response.text
+        logger.debug("HTTP %s %s -> %s", method_upper, url, response.status_code)
+        return result
+
+    def get(
+        self,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: float = 5.0,
+        default: Any = _UNSET,
+    ):
+        result = self.request(
+            "GET",
+            path,
+            params=params,
+            timeout=timeout,
+        )
+        if result.get("ok"):
+            return result
+        if default is not _UNSET:
+            return default
+        return result
+
     def get_json(
         self,
         path: str,
@@ -436,21 +508,65 @@ class ServerBridge(QObject):
     ):
         if not isinstance(payload, dict):
             payload = {}
-        return self.post_json(path, payload, cb=callback)
+        return self.post(path, payload, cb=callback)
 
     def save_settings(self, payload: dict, callback=None):
-        return self._post("/settings/save", payload, callback)
+        return self._post("/system/settings", payload, callback)
 
     def post(
         self,
         path: str,
-        payload: Dict[str, Any],
+        payload: Optional[Dict[str, Any]] = None,
         *,
         timeout: float = 5.0,
         cb: Optional[Callable[[Dict[str, Any]], None]] = None,
         default: Any = _UNSET,
+        data: Any = None,
+        json: Any = None,
+        files: Any = None,
     ):
-        return self.post_json(path, payload, timeout=timeout, cb=cb, default=default)
+        json_payload = json if json is not None else payload
+
+        def _run_request() -> Dict[str, Any]:
+            return self.request(
+                "POST",
+                path,
+                data=data,
+                json_payload=json_payload,
+                files=files,
+                timeout=timeout,
+            )
+
+        if cb:
+
+            def _worker():
+                result = _run_request()
+                try:
+                    cb(result)
+                except Exception:
+                    logger.exception("ServerBridge post callback failed")
+                if not result.get("ok"):
+                    self._emit_event(
+                        "bridge:error",
+                        {"path": path, "method": "POST", "payload": result},
+                    )
+                return result
+
+            thread = threading.Thread(
+                target=_worker, daemon=True, name=f"ServerBridgePOST:{path}"
+            )
+            thread.start()
+            return thread
+
+        result = _run_request()
+        if result.get("ok"):
+            return result
+        if default is not _UNSET:
+            return default
+        self._emit_event(
+            "bridge:error", {"path": path, "method": "POST", "payload": result}
+        )
+        return result
 
     def providers_list(self) -> Optional[Dict[str, Any]]:
         result = self.get_json("/api/providers/list", default=None)
@@ -625,6 +741,7 @@ class ServerBridge(QObject):
 
     def set_host(self, host: str):
         self.base_url = host
+        self._restart_job_stream_if_needed()
         return self.base_url
 
     @property
@@ -635,7 +752,7 @@ class ServerBridge(QObject):
     def base(self, value: str) -> None:
         self.set_host(value)
 
-    def get(self, path: str, default=None):
+    def get_cached(self, path: str, default=None):
         try:
             return self._latest.get(path, default)
         except Exception:
@@ -649,3 +766,182 @@ class ServerBridge(QObject):
         parsed = urlparse(self.base_url)
         host = (parsed.hostname or "").lower()
         return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+    # ─────────────────────────────
+    # Event subscriptions & websocket helpers
+    # ─────────────────────────────
+    def subscribe(
+        self, event: str, callback: Callable[[dict[str, Any]], None]
+    ) -> Callable[[], None]:
+        event_key = event.strip().lower()
+        listeners = self._subscribers[event_key]
+        listeners.append(callback)
+        logger.debug(
+            "ServerBridge subscribe %s -> %d listeners", event_key, len(listeners)
+        )
+
+        if event_key in {"jobs:progress", "imports:status"}:
+            self._ensure_job_stream()
+        elif event_key == "system:metrics" and self._latest:
+            snapshot = dict(self._latest)
+            QTimer.singleShot(0, lambda: callback(snapshot))
+
+        def unsubscribe() -> None:
+            bucket = self._subscribers.get(event_key)
+            if not bucket:
+                return
+            try:
+                bucket.remove(callback)
+            except ValueError:
+                return
+            logger.debug(
+                "ServerBridge unsubscribe %s -> %d listeners",
+                event_key,
+                len(bucket),
+            )
+            if not bucket:
+                self._teardown_subscription(event_key)
+
+        return unsubscribe
+
+    def ws(self, path: str) -> "BridgeWebSocket":
+        client = BridgeWebSocket(self._build_ws_url(path), parent=self)
+        self._ws_clients.append(client)
+
+        def _cleanup() -> None:
+            if client in self._ws_clients:
+                self._ws_clients.remove(client)
+
+        client.closed.connect(_cleanup)
+        return client
+
+    def _build_ws_url(self, path: str) -> QUrl:
+        if path.startswith(("ws://", "wss://")):
+            return QUrl(path)
+        base = self.base_url
+        if base.startswith("https://"):
+            prefix = "wss://"
+            rest = base[len("https://") :]
+        elif base.startswith("http://"):
+            prefix = "ws://"
+            rest = base[len("http://") :]
+        else:
+            prefix = "ws://"
+            rest = base
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return QUrl(f"{prefix}{rest}{path}")
+
+    def _emit_event(self, event: str, payload: dict[str, Any]) -> None:
+        if not self._subscribers.get(event):
+            return
+        self.event_triggered.emit(event, dict(payload))
+
+    def _dispatch_event(self, event: str, payload: dict[str, Any]) -> None:
+        for listener in list(self._subscribers.get(event) or []):
+            try:
+                listener(dict(payload))
+            except Exception:
+                logger.exception("ServerBridge subscriber error for %s", event)
+
+    def _ensure_job_stream(self) -> None:
+        if self._job_stream is not None:
+            return
+        self._job_stream = JobStreamClient(self.base_url, self)
+        self._job_stream.event_received.connect(self._handle_job_stream_event)
+        self._job_stream.state_changed.connect(self._handle_job_stream_state)
+        self._job_stream.start()
+        logger.info("ServerBridge job stream started for %s", self.base_url)
+
+    def _restart_job_stream_if_needed(self) -> None:
+        if self._job_stream is None:
+            return
+        self._job_stream.stop()
+        self._job_stream.deleteLater()
+        self._job_stream = None
+        if any(self._subscribers.get(ev) for ev in ("jobs:progress", "imports:status")):
+            self._ensure_job_stream()
+
+    def _teardown_subscription(self, event_key: str) -> None:
+        if event_key in {"jobs:progress", "imports:status"}:
+            remaining = sum(
+                len(self._subscribers.get(ev) or [])
+                for ev in ("jobs:progress", "imports:status")
+            )
+            if remaining == 0 and self._job_stream is not None:
+                logger.info("ServerBridge job stream stopped (no listeners)")
+                self._job_stream.stop()
+                self._job_stream.deleteLater()
+                self._job_stream = None
+
+    def _handle_job_stream_event(self, payload: dict) -> None:
+        event_type = str(payload.get("type") or "").lower()
+        if not event_type:
+            return
+        if event_type == "snapshot":
+            jobs = payload.get("jobs")
+            if isinstance(jobs, list):
+                self._emit_event("imports:status", {"type": "snapshot", "jobs": jobs})
+                for job in jobs:
+                    if isinstance(job, dict):
+                        self._emit_event("jobs:progress", dict(job))
+        elif event_type in {"job.update", "job.progress"}:
+            job = payload.get("job")
+            if isinstance(job, dict):
+                self._emit_event("jobs:progress", dict(job))
+        else:
+            self._emit_event("imports:status", dict(payload))
+
+    def _handle_job_stream_state(self, state: str) -> None:
+        self._emit_event("imports:status", {"type": "state", "state": state})
+
+
+class BridgeWebSocket(QObject):
+    message = Signal(object)
+    state_changed = Signal(str)
+    closed = Signal()
+
+    def __init__(self, url: QUrl, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._url = url
+        self._socket = QWebSocket()
+        self._socket.textMessageReceived.connect(self._on_text_message)
+        self._socket.binaryMessageReceived.connect(self._on_binary_message)
+        self._socket.errorOccurred.connect(self._on_error)
+        self._socket.connected.connect(lambda: self.state_changed.emit("connected"))
+        self._socket.disconnected.connect(self._handle_closed)
+        self._socket.open(url)
+
+    def send(self, payload: object) -> None:
+        if isinstance(payload, (dict, list)):
+            try:
+                message = json.dumps(payload)
+            except Exception:
+                message = str(payload)
+            self._socket.sendTextMessage(message)
+            return
+        if isinstance(payload, (bytes, bytearray)):
+            self._socket.sendBinaryMessage(payload)
+            return
+        self._socket.sendTextMessage(str(payload))
+
+    def close(self) -> None:
+        if self._socket.state() != QAbstractSocket.UnconnectedState:
+            self._socket.close()
+
+    def _handle_closed(self) -> None:
+        self.state_changed.emit("disconnected")
+        self.closed.emit()
+
+    def _on_text_message(self, message: str) -> None:
+        try:
+            payload = json.loads(message)
+        except Exception:
+            payload = {"raw": message}
+        self.message.emit(payload)
+
+    def _on_binary_message(self, message: bytes) -> None:
+        self.message.emit({"raw": message})
+
+    def _on_error(self, error: QAbstractSocket.SocketError) -> None:
+        self.state_changed.emit(f"error:{error}")

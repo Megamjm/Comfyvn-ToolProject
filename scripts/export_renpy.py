@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -21,8 +20,13 @@ from fastapi import HTTPException
 from comfyvn.config import feature_flags
 from comfyvn.core import modder_hooks
 from comfyvn.core.modder_hooks import HookSpec
+from comfyvn.exporters.export_helpers import (
+    build_label_manifest,
+    diff_entry_to_dict,
+    generate_provenance_bundle,
+    write_label_manifest,
+)
 from comfyvn.exporters.renpy_orchestrator import (
-    DiffEntry,
     ExportOptions,
     PublishOptions,
     RenPyOrchestrator,
@@ -191,16 +195,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _diff_to_dict(entry: DiffEntry) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
-        "path": entry.path,
-        "status": entry.status,
-    }
-    if entry.detail:
-        payload["detail"] = entry.detail
-    return payload
-
-
 def _publish_path(args: argparse.Namespace, project: str, timeline: str) -> Path:
     if args.publish_out:
         candidate = Path(args.publish_out).expanduser()
@@ -213,115 +207,6 @@ def _publish_path(args: argparse.Namespace, project: str, timeline: str) -> Path
     if not candidate.suffix:
         return candidate.with_suffix(".zip")
     return candidate
-
-
-def _is_battle_scene(scene_id: str, label: str) -> bool:
-    token = f"{scene_id} {label}".lower()
-    return "battle" in token
-
-
-def _build_label_manifest(export_result: Any, *, weather_bake: bool) -> Dict[str, Any]:
-    manifest: Dict[str, Any] = {
-        "project": export_result.project_id,
-        "timeline": export_result.timeline_id,
-        "generated_at": export_result.generated_at,
-        "weather_bake": weather_bake,
-        "pov_labels": [],
-        "battle_labels": [],
-    }
-    for entry in export_result.label_map or []:
-        if not isinstance(entry, dict):
-            continue
-        scene_id = entry.get("scene_id")
-        label = entry.get("label")
-        if not scene_id or not label:
-            continue
-        manifest["pov_labels"].append(
-            {
-                "scene_id": scene_id,
-                "label": label,
-                "pov_ids": list(entry.get("pov_ids") or []),
-                "pov_names": entry.get("povs") or {},
-            }
-        )
-        if _is_battle_scene(str(scene_id), str(label)):
-            digest = hashlib.sha1(f"{scene_id}:{label}".encode("utf-8")).hexdigest()
-            manifest["battle_labels"].append(
-                {
-                    "scene_id": scene_id,
-                    "label": label,
-                    "hash": digest[:12],
-                }
-            )
-    return manifest
-
-
-def _write_label_manifest(output_dir: Path, manifest: Dict[str, Any]) -> Path:
-    path = output_dir / "label_manifest.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    return path
-
-
-def _collect_scene_payloads(
-    project_id: str, scene_ids: Iterable[str]
-) -> Tuple[Dict[str, Any], Dict[str, Path]]:
-    scenes: Dict[str, Any] = {}
-    scene_sources: Dict[str, Path] = {}
-    for scene_id in scene_ids:
-        if not scene_id:
-            continue
-        try:
-            scene, scene_path = export_api._load_scene(scene_id, project_id)
-        except HTTPException:
-            LOGGER.debug(
-                "Skipping missing scene during provenance build: %s",
-                scene_id,
-                exc_info=True,
-            )
-            continue
-        if scene:
-            scenes[scene_id] = scene
-        if scene_path:
-            scene_sources[scene_id] = scene_path
-    return scenes, scene_sources
-
-
-def _generate_provenance_bundle(
-    export_result: Any,
-    timeline_id: str,
-    project_data: dict,
-    timeline_data: dict,
-    timeline_path: Path,
-) -> Tuple[Path, Path, Dict[str, Any]]:
-    scene_ids = export_api._scene_ids_from_timeline(timeline_data, project_data)
-    scenes, scene_sources = _collect_scene_payloads(export_result.project_id, scene_ids)
-    renpy_info = {
-        "generated_at": export_result.generated_at,
-        "renpy_root": export_result.output_dir,
-        "script_path": export_result.script_path,
-        "labels": export_result.label_map,
-        "scenes": scenes,
-        "scene_sources": scene_sources,
-    }
-    bundle_target = export_result.output_dir / "provenance_bundle.zip"
-    bundle_path, provenance, enforcement = export_api._build_bundle_archive(
-        project_id=export_result.project_id,
-        project_data=project_data,
-        timeline_id=timeline_id,
-        timeline_data=timeline_data,
-        timeline_path=timeline_path,
-        renpy_info=renpy_info,
-        bundle_path=bundle_target,
-    )
-    provenance_path = export_result.output_dir / "provenance.json"
-    provenance_path.write_text(
-        json.dumps(provenance, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    enforcement_payload = (
-        enforcement.to_dict() if hasattr(enforcement, "to_dict") else {}
-    )
-    return bundle_path, provenance_path, enforcement_payload
 
 
 def _error_payload(exc: HTTPException) -> Dict[str, Any]:
@@ -405,7 +290,7 @@ def main() -> int:
         print(json.dumps(payload, indent=2), file=sys.stderr)
         return exc.status_code or 1
 
-    label_manifest = _build_label_manifest(
+    label_manifest = build_label_manifest(
         export_result, weather_bake=bool(args.bake_weather)
     )
 
@@ -416,7 +301,7 @@ def main() -> int:
             "timeline": export_result.timeline_id,
             "dry_run": True,
             "output_dir": export_result.output_dir.as_posix(),
-            "diffs": [_diff_to_dict(entry) for entry in export_result.diffs],
+            "diffs": [diff_entry_to_dict(entry) for entry in export_result.diffs],
             "missing_assets": export_result.manifest_payload["missing_assets"],
             "gate": export_result.gate,
             "rating_gate": export_result.rating_gate,
@@ -452,9 +337,7 @@ def main() -> int:
             pass
         return 0
 
-    label_manifest_path = _write_label_manifest(
-        export_result.output_dir, label_manifest
-    )
+    label_manifest_path = write_label_manifest(export_result.output_dir, label_manifest)
 
     provenance_bundle_path: Optional[Path] = None
     provenance_json_path: Optional[Path] = None
@@ -469,12 +352,12 @@ def main() -> int:
                 project_data,
             )
         )
-        bundle_path, prov_path, enforcement_payload = _generate_provenance_bundle(
+        bundle_path, prov_path, enforcement_payload = generate_provenance_bundle(
             export_result,
-            resolved_timeline,
-            project_data,
-            timeline_data,
-            timeline_path,
+            timeline_id=resolved_timeline,
+            project_data=project_data,
+            timeline_data=timeline_data,
+            timeline_path=timeline_path,
         )
         provenance_bundle_path = bundle_path
         provenance_json_path = prov_path

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
 import logging
-from typing import Dict, Iterable, List, Optional
+import time
+from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
@@ -20,11 +24,28 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from comfyvn.gui.panels.debug_integrations import DebugIntegrationsPanel
 from comfyvn.gui.services.job_stream import JobStreamClient
+from comfyvn.gui.services.server_bridge import ServerBridge
 from comfyvn.studio.core.asset_registry import AssetRegistry
 from comfyvn.studio.core.timeline_registry import TimelineRegistry
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _sample_bundle_payload() -> Dict[str, Any]:
+    return {
+        "raw": {
+            "id": "studio-preview",
+            "dialogue": [
+                {
+                    "type": "line",
+                    "speaker": "Guide",
+                    "text": "Welcome to the Studio shell!",
+                }
+            ],
+        }
+    }
 
 
 class TimelineSummaryView(QWidget):
@@ -207,18 +228,31 @@ class ImportsJobsView(QWidget):
             "Done", "Completed or failed import jobs."
         )
 
-        buckets_row = QHBoxLayout()
-        buckets_row.addWidget(self.queued_list["frame"], 1)
-        buckets_row.addWidget(self.active_list["frame"], 1)
-        buckets_row.addWidget(self.done_list["frame"], 1)
+        buckets_widget = QWidget(self)
+        buckets_layout = QHBoxLayout(buckets_widget)
+        buckets_layout.setContentsMargins(0, 0, 0, 0)
+        buckets_layout.setSpacing(12)
+        buckets_layout.addWidget(self.queued_list["frame"], 1)
+        buckets_layout.addWidget(self.active_list["frame"], 1)
+        buckets_layout.addWidget(self.done_list["frame"], 1)
 
-        refresh_btn = QPushButton("Refresh", self)
-        refresh_btn.clicked.connect(self._request_snapshot)
+        self.raw_toggle = QCheckBox("Show raw response", self)
+        self.raw_toggle.stateChanged.connect(self._toggle_raw)
+
+        self._refresh_button = QPushButton("Refresh", self)
+        self._refresh_button.clicked.connect(self._request_snapshot)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.status_label)
-        layout.addLayout(buckets_row)
-        layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
+        layout.addWidget(self.raw_toggle, alignment=Qt.AlignRight)
+        self._buckets_widget = buckets_widget
+        layout.addWidget(buckets_widget, 1)
+        layout.addWidget(self._refresh_button, alignment=Qt.AlignRight)
+
+        self.raw_view = QPlainTextEdit(self)
+        self.raw_view.setReadOnly(True)
+        self.raw_view.hide()
+        layout.addWidget(self.raw_view, 1)
 
         self.stream = JobStreamClient(self.base_url, self)
         self.stream.event_received.connect(self._handle_event)
@@ -319,6 +353,7 @@ class ImportsJobsView(QWidget):
                 reverse=True,
             )
             self._hydrate_bucket(holder["list"], holder["label"], items)
+        self._update_raw_view()
 
     def _hydrate_bucket(
         self, widget: QListWidget, label: QLabel, jobs: List[dict]
@@ -330,6 +365,40 @@ class ImportsJobsView(QWidget):
             message = job.get("message") or job.get("kind", "")
             widget.addItem(f"{job_id} — {message} ({status})")
         label.setText(f"{label.property('bucket_name')} ({len(jobs)})")
+
+    def _toggle_raw(self, state: int) -> None:
+        enabled = state == Qt.Checked
+        self._buckets_widget.setVisible(not enabled)
+        self._refresh_button.setVisible(not enabled)
+        self.raw_view.setVisible(enabled)
+        if enabled:
+            self._update_raw_view()
+
+    def _update_raw_view(self) -> None:
+        if not self.raw_view.isVisible():
+            return
+        snapshot = {
+            "jobs": list(self.jobs.values()),
+            "updated_at": time.time(),
+        }
+        try:
+            text = json.dumps(snapshot, indent=2, sort_keys=True)
+        except TypeError:
+            text = repr(snapshot)
+        self.raw_view.setPlainText(text)
+
+    def set_base_url(self, base_url: str) -> None:
+        new_base = base_url.rstrip("/")
+        if not new_base or new_base == self.base_url:
+            return
+        self.base_url = new_base
+        try:
+            self.stream.stop()
+        except Exception:
+            LOGGER.debug("Failed to stop job stream before base switch", exc_info=True)
+        self.stream.base = self.base_url
+        self.stream.start()
+        self._request_snapshot()
 
     # ------------------------------------------------------------------
     # Utility helpers
@@ -377,3 +446,180 @@ class ImportsJobsView(QWidget):
     # Public refresh hook for callers that expect a refresh() method
     def refresh(self) -> None:
         self._request_snapshot()
+
+
+class ComputeSummaryView(QWidget):
+    """Wraps the provider diagnostics panel for the Studio Compute view."""
+
+    def __init__(self, base_url: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.base_url = base_url.rstrip("/")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.panel = DebugIntegrationsPanel(base=self.base_url, parent=self)
+        layout.addWidget(self.panel)
+
+    def set_base_url(self, base_url: str) -> None:
+        new_base = base_url.rstrip("/")
+        if not new_base or new_base == self.base_url:
+            return
+        self.base_url = new_base
+        self.panel.base = self.base_url
+        try:
+            self.panel.refresh()
+        except Exception:
+            LOGGER.debug("Compute diagnostics refresh failed", exc_info=True)
+
+
+class ExportStatusView(QWidget):
+    """Simple controller for requesting bundle exports and inspecting responses."""
+
+    def __init__(self, bridge: ServerBridge, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.bridge = bridge
+        self._last_result: Optional[Dict[str, Any]] = None
+        self._raw_mode = False
+        self._inflight = False
+        self._status_base = bridge.base_url
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        self.status_label = QLabel("Trigger a bundle export to view status.", self)
+        self.status_label.setWordWrap(True)
+
+        self.path_input = QLineEdit(self)
+        self.path_input.setPlaceholderText("Optional raw scene JSON path…")
+
+        control_row = QHBoxLayout()
+        self.sample_button = QPushButton("Export Sample Bundle", self)
+        self.sample_button.clicked.connect(lambda: self._trigger_export(sample=True))
+        self.export_button = QPushButton("Export Bundle", self)
+        self.export_button.clicked.connect(lambda: self._trigger_export(sample=False))
+        control_row.addWidget(self.sample_button)
+        control_row.addWidget(self.export_button)
+        control_row.addStretch(1)
+
+        self.raw_toggle = QCheckBox("Show raw response", self)
+        self.raw_toggle.stateChanged.connect(
+            lambda state: self._set_raw_mode(state == Qt.Checked)
+        )
+
+        self.result_view = QPlainTextEdit(self)
+        self.result_view.setReadOnly(True)
+
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.path_input)
+        layout.addLayout(control_row)
+        layout.addWidget(self.raw_toggle, alignment=Qt.AlignRight)
+        layout.addWidget(self.result_view, 1)
+
+    def set_base_url(self, base_url: str) -> None:
+        new_base = base_url.rstrip("/")
+        if new_base:
+            self._status_base = new_base
+            if self._last_result is None:
+                self.status_label.setText(f"Exports will target {self._status_base}.")
+
+    def _trigger_export(self, *, sample: bool) -> None:
+        if self._inflight:
+            return
+        payload = self._build_payload(sample=sample)
+        self._set_busy(True)
+
+        def _complete(result: Dict[str, Any]) -> None:
+            QTimer.singleShot(0, lambda: self._apply_result(result))
+
+        self.bridge.post(
+            "/api/studio/export_bundle",
+            payload,
+            cb=_complete,
+            timeout=15.0,
+        )
+
+    def _build_payload(self, *, sample: bool) -> Dict[str, Any]:
+        if not sample:
+            raw_path = self.path_input.text().strip()
+            if raw_path:
+                return {"raw_path": raw_path}
+        return _sample_bundle_payload()
+
+    def _apply_result(self, result: Dict[str, Any]) -> None:
+        self._set_busy(False)
+        if not isinstance(result, dict):
+            self.status_label.setText("Export failed: invalid response.")
+            self._last_result = None
+            self._update_result_view()
+            return
+        self._last_result = result
+        if result.get("ok"):
+            bundle = result.get("bundle") or result.get("data")
+            summary = self._summarise_bundle(bundle)
+            if self._status_base:
+                summary = f"{summary} (base {self._status_base})"
+            self.status_label.setText(summary)
+        else:
+            error = result.get("error") or result.get("data")
+            if isinstance(error, dict):
+                error = error.get("detail") or error.get("message")
+            self.status_label.setText(f"Export failed: {error or 'Unknown error'}")
+        self._update_result_view()
+
+    def _summarise_bundle(self, bundle: Any) -> str:
+        if isinstance(bundle, dict):
+            parts = []
+            name = bundle.get("name") or bundle.get("id")
+            if name:
+                parts.append(f"Bundle {name}")
+            size = bundle.get("size") or bundle.get("bytes")
+            if isinstance(size, (int, float)):
+                parts.append(f"size {int(size)} bytes")
+            target = bundle.get("path") or bundle.get("destination")
+            if target:
+                parts.append(str(target))
+            return "Export completed: " + (", ".join(parts) or "bundle ready")
+        return "Export completed."
+
+    def _update_result_view(self) -> None:
+        if self._raw_mode:
+            self.result_view.setPlainText(self._raw_text())
+            return
+        if not isinstance(self._last_result, dict):
+            self.result_view.setPlainText("No response captured yet.")
+            return
+        bundle = self._last_result.get("bundle") or self._last_result.get("data")
+        if isinstance(bundle, dict):
+            lines = []
+            for key in ("id", "name", "path", "destination", "size", "bytes"):
+                if key in bundle:
+                    lines.append(f"{key}: {bundle[key]}")
+            if not lines:
+                lines = [json.dumps(bundle, indent=2, sort_keys=True)]
+            self.result_view.setPlainText("\n".join(lines))
+        else:
+            self.result_view.setPlainText(
+                json.dumps(self._last_result, indent=2, sort_keys=True)
+            )
+
+    def _set_busy(self, busy: bool) -> None:
+        self._inflight = busy
+        self.sample_button.setEnabled(not busy)
+        self.export_button.setEnabled(not busy)
+        self.path_input.setEnabled(not busy)
+        if busy:
+            self.status_label.setText("Export in progress…")
+
+    def _set_raw_mode(self, enabled: bool) -> None:
+        if self._raw_mode == enabled:
+            return
+        self._raw_mode = enabled
+        self._update_result_view()
+
+    def _raw_text(self) -> str:
+        payload = self._last_result
+        if payload is None:
+            return "No response captured yet."
+        try:
+            return json.dumps(payload, indent=2, sort_keys=True)
+        except TypeError:
+            return repr(payload)

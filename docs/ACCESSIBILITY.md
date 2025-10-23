@@ -27,7 +27,7 @@ Settings → **Input & Controllers** exposes matching controls for keyboard/cont
 
 ## Persistence & Files
 
-- Runtime state: `config/settings/accessibility.json`
+- Runtime state: `config/settings/accessibility.json` (mirrored to the SQLite `settings` table through the shared `SettingsManager`)
 - Logs: `logs/accessibility.log`
 - Default presets: `comfyvn/core/settings_manager.py` (`DEFAULTS["accessibility"]` and `DEFAULTS["input_map"]`)
 

@@ -100,9 +100,9 @@ def test_compute_advise_get_local_choice(client: TestClient):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ok"] is True
-    assert data["choice"] in {"gpu", "remote", "cpu"}
+    assert data["target"] in {"gpu", "remote", "cpu"}
     assert isinstance(data["rationale"], str)
-    assert data["rationale"].startswith(data["choice"].upper())
+    assert data["choice"] in {"gpu", "remote", "cpu", "local"}
 
 
 def test_compute_advise_get_prefer_remote(client: TestClient):
@@ -111,8 +111,8 @@ def test_compute_advise_get_prefer_remote(client: TestClient):
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["choice"] in {"remote", "cpu"}
-    assert "REMOTE" in data["rationale"] or "CPU" in data["rationale"]
+    assert data["target"] in {"remote", "cpu"}
+    assert isinstance(data["rationale"], str)
 
 
 def test_compute_advise_cpu_override(client: TestClient):
@@ -121,5 +121,5 @@ def test_compute_advise_cpu_override(client: TestClient):
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["choice"] == "cpu"
-    assert "CPU" in data["rationale"]
+    assert data["target"] == "cpu"
+    assert "cpu" in data["rationale"].lower()

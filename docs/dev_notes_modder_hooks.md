@@ -645,7 +645,7 @@ curl -s -X POST http://127.0.0.1:8001/st/session/sync \
 
 ### 7.1 Export publish hooks
 
-- Feature flags: set `enable_export_publish` plus `enable_export_publish_{steam,itch}` to `true` in `config/comfyvn.json` (or patch via `/api/settings`) before calling `POST /api/export/publish`. They default to `false` so local builds remain private by default.
+- Feature flags: set `enable_export_publish` plus `enable_export_publish_{steam,itch}` to `true` in `config/comfyvn.json` (or patch via `/system/settings`) before calling `POST /api/export/publish`. They default to `false` so local builds remain private by default.
 - Dry-run preview (`"dry_run": true`) emits `on_export_publish_preview` with the requested targets, planned platforms, and diff summaries:
   ```jsonc
   {

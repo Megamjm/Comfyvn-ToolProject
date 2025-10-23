@@ -171,10 +171,12 @@ comfyvn/
       export_view.py
       logs_view.py
 scripts/
-  install_manager.py
+  install_manager.py  (orchestrates external integrations — SillyTavern sync, Ren'Py bootstrap, ComfyUI packs, model checks; writes JSONL runs to logs/install_report.log and shares tools/cache/ for downloads)
   run_comfyvn.py
-setup/
-  apply_phase06_rebuild.py
+tools/
+  apply_migrations.py
+  db_integrity_check.py
+  seed_demo_data.py
 data/
   templates/
   worlds/
@@ -231,6 +233,7 @@ Observability & diagnostics
 - Consent + routing: Feature flags `enable_observability` (legacy alias `enable_privacy_telemetry`) and `enable_crash_uploader` default to `false` under `config/comfyvn.json → features`. User intent persists in the adjacent `telemetry` section (`telemetry_opt_in`, `crash_opt_in`, `diagnostics_opt_in`, `dry_run`). FastAPI mounts `/api/telemetry/{summary,settings,events,features,hooks,crashes,diagnostics,health,opt_in}`; callers receive hashed `anonymous_id` values, per-feature counters, recent hook samples, health snapshots, and zipped diagnostics bundles (manifest + telemetry snapshot + crash summaries + consent metadata) once diagnostics opt-in is granted.
 - Modder hook sampling: `comfyvn/core/modder_hooks.py` taps `TelemetryStore.record_hook_event`, storing the last five anonymised payload samples for each hook alongside counters. Observability dashboards and custom tooling can now introspect hook activity without ingesting raw asset IDs or file paths.
 - Structured Logging: `comfyvn/obs/structlog_adapter.py` implements `get_logger(name, **context)` and a `LoggerAdapter`-style `bind`/`unbind` API that emits deterministically sorted JSON lines, keeping log ingestion simple without depending on `structlog`.
+- 2025-10-23 — Core server diagnostics: `comfyvn/server/app.create_app()` now initialises logging before any router imports, installs the `RequestIDMiddleware` and `TimingMiddleware`, registers the unified JSON error envelope, and keeps a router catalogue for `/status`. `/status` returns `{version, routes[], routers[], base_url, log_path}`, while `AsyncEventHub` (`comfyvn/server/core/event_stream.py`) powers `/ws/events` (with `/events/ws` as a legacy alias) and `/events/sse`. Every log line in `logs/server.log` is JSON with an `request_id`, and non-2xx responses follow `{ok:false, code, message, details?, request_id?}` for clipboard-friendly diagnostics.
 - Health doctor: `tools/doctor_phase4.py` probes `/health`, simulates a crash, and verifies structured logging. The script prints a JSON report and exits non-zero when any probe fails, making it safe for desktop troubleshooters and CI smoke jobs.
 - Golden contracts: `tests/e2e/test_scenario_flow.py` drives `/api/scenario/*`, `/api/save/*`, `/api/presentation/plan`, and `/api/export/*` against the recorded payloads in `tests/e2e/golden/phase4_payloads.json`. Updating the golden file must be intentional and accompanied by a changelog note for downstream tool authors.
 - Docs: `docs/development/observability_debug.md` walks modders through crash triage, structured log capture, doctor usage, and asset registry hook registration for provenance automation.
@@ -314,7 +317,7 @@ Acceptance: ~~Re-run writes to the same files; log rotation policy documented.~~
 
 Phase 1 — Stability follow-ups (next)
 - ~~Silence the Pydantic field warning by renaming `RegisterAssetRequest.copy`.~~ ✅ 2025-10-23 — Boolean renamed to `copy_file` (alias `copy`) inside `comfyvn/server/modules/assets_api.py`, removing the Pydantic shadow warning without breaking the API.
-- ~~Add regression coverage for `/settings/save` to confirm deep-merge semantics on the shared settings file.~~ ✅ 2025-10-23 — `tests/test_settings_api.py::test_settings_save_deep_merge` patches the settings manager and verifies nested keys survive incremental saves.
+- ~~Add regression coverage for `/system/settings` to confirm deep-merge semantics on the shared settings store.~~ ✅ 2025-10-23 — `tests/test_settings_api.py::test_settings_save_deep_merge` patches the settings manager and verifies nested keys survive incremental saves.
 - ~~Track launcher/settings alignment via a smoke test that exercises `run_comfyvn.py --server-only` and probes `/health` + `/status`.~~ ✅ 2025-10-23 — `tests/test_launcher_smoke.py` parses launcher arguments, applies the environment, boots uvicorn, and polls both endpoints.
 - Document the port-resolution pathway and environment overrides in public-facing docs (owner: Project Integration) — README updated 2025-10-21; keep parity in future release notes.
 - ✅ 2025-10-27 — Scenario graph foundation landed: canonical scene schema (`comfyvn/schema/scenario_schema.json`), deterministic runner (`comfyvn/runner/scenario_runner.py` + seeded RNG), and `/api/scenario/{validate,run/step}` endpoints unblock branching playback tests; authoring GUI + callbacks remain on the backlog.
@@ -333,7 +336,7 @@ Outputs (tables):
 
 ~~imports, jobs, providers, translations, settings~~ ✅ 2025-10-20
 
-Acceptance: ~~Migration script creates/updates schema idempotently; apply_phase06_rebuild.py passes.~~ ✅ Verified 2025-10-20
+Acceptance: ~~Migration script creates/updates schema idempotently; apply_phase06_rebuild.py passes.~~ ✅ Verified 2025-10-20 (now covered by `tools/apply_migrations.py` + migration tests)
 
 Notes: Store large assets on disk with JSON sidecars; registry row contains hash + pointers.
 
@@ -444,7 +447,10 @@ Status:
 
 Phase 4 — Studio views
 
-Recent Phase 4 updates (2025-10-22):
+Recent Phase 4 updates (2025-10-24):
+- ✅ Studio shell ships an expanded navigation stack: Compute (provider diagnostics), Audio playback toggles, Advisory gate, Import Processing stream, Export bundle console, and Logs hub now live alongside Scenes/Characters/Timeline/Assets. Each view consumes the shared `ServerBridge` so swapping hosts updates every panel in sync.
+- ✅ Scenes, Characters, Import Processing, and Export tabs gained an idempotent “Show raw response” toggle that dumps the backing JSON in-place for debugging without leaving the GUI.
+- ✅ Metrics dashboard renders rolling CPU/RAM sparklines (≈90 s window) and keeps the GPU summary plus “Start Embedded Server” control inline with the status banner.
 - ✅ Unified the Studio shell under `gui/main_window` with the legacy `studio_window` gating development toggles only; ServerBridge wiring, layout persistence, and menu flows now live in a single entrypoint.
 - ✅ Scenes and Characters panels gained in-place editors backed by `/api/scenes/*` and `/api/characters/*`, keeping registry refreshes in-sync without regressing polling performance.
 - ✅ Persisted server port selector now issues a relaunch reminder, writes through `ServerBridge.save_settings()`, and verifies the handshake against the backend before accepting the value.
@@ -853,6 +859,7 @@ Status:
 - ✅ 2025-10-20 — `comfyvn/server/modules/export_scene_api.py` writes per-scene `.rpy` stubs; `/bundle/renpy` bundles staged files.
 - ✅ 2025-10-20 — `comfyvn/scene_bundle.py` + `docs/scene_bundle.md` define scene bundle schema and conversions.
 - ✅ 2025-10-27 — `comfyvn/exporters/renpy_orchestrator.py` orchestrates multi-scene exports, asset staging, dry-run diffs, and publish zips; CLI + `/api/export/renpy/preview` share the implementation.
+- ✅ 2025-10-23 — Public routes `POST /export/renpy` + `POST /export/bundle` (see `comfyvn/server/routes/export_public.py`) reuse the orchestrator + shared helpers so Studio automation can stage playable builds outside the `/api/export/*` namespace.
 
 Next:
 - Wire Ren’Py lint/dry-run execution (`renpy.sh launcher lint`) into the publish preset and persist logs under `exports/renpy/validation.log`.
@@ -871,6 +878,7 @@ Acceptance: Bundle re-importable; provenance intact.
 
 Status:
 - ✅ 2025-10-20 — Bundle scaffolding exists through `/bundle/renpy` (zip) and scene bundle converters.
+- ✅ 2025-10-23 — Public Studio bundle endpoint (`POST /export/bundle`) builds the ZIP alongside provenance + asset validation summaries, defaulting outputs to `exports/bundles/<slug>.zip`.
 - ⚠ Need unified export bundle (studio-focused) combining scene bundles, assets, provenance json, and README/license copy.
 
 Next:
@@ -984,6 +992,8 @@ Server Core Production: app.py, /server/modules/*, runtime APIs, streaming, vari
 GUI Code Production (Studio): studio_window.py, views/*, ServerBridge, graphs, inspectors
 
 v0.5 Scaffold & DB: migrations, db_manager.py, schema/versioning
+- SQLite schema now applies via `comfyvn/db/migrations.py` with SQL payloads stored under `comfyvn/db/sql`. `MigrationRunner` records versions in `schema_migrations`, enabling idempotent reruns and dry-run checks for tooling.
+- Settings persistence uses a Pydantic model (`comfyvn/core/settings_manager.py`) that mirrors data to both `settings/config.json` and the new SQLite `settings` table; FastAPI exposes `/system/settings` plus `/system/settings/schema` for defaults + introspection.
 
 Asset & Sprite System: registry, thumbnails, sidecars, asset browser
 
@@ -995,6 +1005,8 @@ Remote Compute & GPU Access: gpu_manager, providers registry, compute advisor
 - Advisor now emits optional debug payloads (pixels, VRAM demand, queue thresholds) so Studio can explain why jobs stayed local.
 - `JobScheduler.preview_cost()` powers `/api/compute/costs`, returning numeric breakdowns plus human readable hints without touching providers.
 - Provider registry exposes `stats()` for dashboards (`/api/providers?debug=1`) and compute REST responses always echo the `enable_compute` feature flag so remote offload stays explicitly opt-in.
+- GPU policy (mode/manual/sticky) now persists alongside other settings, with `/api/gpu/list` mirroring the shared `preferred_id` and summarised VRAM metrics for dashboards.
+- `/api/compute/advise` normalises its payload through a `target` key (`cpu|gpu|remote`), and a lightweight `echo` adapter ships for remote health smoke-tests without wiring real providers.
 
 Audio & Effects: TTS, remix, audio cache
 
