@@ -1,6 +1,8 @@
 {
   "features": {
     "enable_policy_enforcer": true,
+    "enable_advisory": true,
+    "enable_export_bundle": true,
     "enable_comfy_bridge_hardening": false,
     "enable_comfy_preview_stream": false,
     "enable_compute": false,

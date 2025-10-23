@@ -704,6 +704,20 @@ def launch_app() -> None:
         log(f"GUI target server: {server_base}")
     if os.environ.get("COMFYVN_SERVER_AUTOSTART") == "0":
         log("Auto-start for local server is disabled (COMFYVN_SERVER_AUTOSTART=0).")
+
+    autostart_flag = os.environ.get("COMFYVN_SERVER_AUTOSTART", "1").lower()
+    if autostart_flag not in {"0", "false", "no"}:
+        try:
+            from comfyvn.gui.server_boot import wait_for_server
+
+            log("Waiting for embedded server to report healthy …")
+            if not wait_for_server(autostart=True, deadline=20.0):
+                log(
+                    "Embedded server did not report healthy within 20s; GUI will continue and retry in background."
+                )
+        except Exception as exc:  # pragma: no cover - defensive
+            log(f"Embedded server wait failed: {exc}")
+
     init_gui_logging(str(gui_log_dir), filename="gui.log")
     from PySide6.QtGui import QAction  # noqa: F401
 
