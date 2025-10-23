@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -859,38 +860,95 @@ class RoleplayImportWidget(QWidget):
             )
             return
 
+        transcript = text
+        meta: Dict[str, Any] = {}
         if path_obj.suffix.lower() in {".json", ".jsonl"}:
-            try:
-                payload = json.loads(text)
-            except json.JSONDecodeError as exc:
-                QMessageBox.warning(
-                    self, "Invalid JSON", f"Failed to parse JSON transcript:\n{exc}"
+            extracted = self._extract_transcript_from_json(text)
+            if extracted:
+                transcript, meta = extracted
+                self.status_label.setText("JSON transcript parsed successfully.")
+            else:
+                self.status_label.setText(
+                    "JSON parsing failed; loaded transcript as plain text."
                 )
-                return
-            transcript = (
-                payload.get("text")
-                or payload.get("transcript")
-                or payload.get("content")
-                or ""
-            )
-            if not transcript and isinstance(payload.get("lines"), list):
-                transcript = "\n".join(
-                    str(line.get("text") or line.get("content") or "")
-                    for line in payload.get("lines")
-                    if isinstance(line, dict)
-                )
-            self.text_edit.setPlainText(transcript)
-            if payload.get("title"):
-                self.title_edit.setText(str(payload.get("title")))
-            if payload.get("world"):
-                self.world_edit.setText(str(payload.get("world")))
-        else:
-            self.text_edit.setPlainText(text)
-
+        self.text_edit.setPlainText(transcript)
+        if meta.get("title"):
+            self.title_edit.setText(str(meta["title"]))
+        if meta.get("world"):
+            self.world_edit.setText(str(meta["world"]))
+        detail = meta.get("detail_level") or meta.get("detailLevel")
+        if detail:
+            idx = self.detail_combo.findData(detail)
+            if idx >= 0:
+                self.detail_combo.setCurrentIndex(idx)
         self._loaded_path = path_obj
         self.status_label.setText(
             f"Loaded {path_obj.name} ({len(self.text_edit.toPlainText().splitlines())} lines)."
         )
+
+    def _extract_transcript_from_json(
+        self, raw: str
+    ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            normalized = raw.strip()
+            if not normalized:
+                return None
+            glue = re.sub(r"}\s*{\s*", "},{", normalized)
+            try:
+                payload_list = json.loads(f"[{glue}]")
+            except json.JSONDecodeError:
+                return None
+            lines: List[str] = []
+            for entry in payload_list:
+                if not isinstance(entry, dict):
+                    continue
+                text_value = (
+                    entry.get("text")
+                    or entry.get("mes")
+                    or entry.get("content")
+                    or entry.get("message")
+                    or ""
+                )
+                if text_value:
+                    lines.append(str(text_value))
+            if not lines:
+                return None
+            return ("\n".join(lines), {})
+        transcript = (
+            payload.get("text")
+            or payload.get("transcript")
+            or payload.get("content")
+            or ""
+        )
+        if not transcript and isinstance(payload.get("lines"), list):
+            collected: List[str] = []
+            for item in payload["lines"]:
+                if isinstance(item, dict):
+                    collected.append(
+                        str(
+                            item.get("text")
+                            or item.get("mes")
+                            or item.get("content")
+                            or ""
+                        )
+                    )
+            transcript = "\n".join(filter(None, collected))
+        if not transcript and isinstance(payload.get("messages"), list):
+            collected = [
+                str(item.get("text") or item.get("mes") or item.get("content") or "")
+                for item in payload["messages"]
+                if isinstance(item, dict)
+            ]
+            transcript = "\n".join(filter(None, collected))
+        if not transcript:
+            return None
+        meta: Dict[str, Any] = {}
+        for key in ("title", "world", "detail_level", "detailLevel"):
+            if payload.get(key):
+                meta[key] = payload[key]
+        return transcript, meta
 
     def _import_payload(self) -> None:
         transcript = self.text_edit.toPlainText().strip()
