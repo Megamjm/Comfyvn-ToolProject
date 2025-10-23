@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from comfyvn.advisory.policy import gate_status as advisory_gate_status
+from comfyvn.advisory.policy import get_ack_record
 from comfyvn.core.content_filter import content_filter
 from comfyvn.core.policy_gate import policy_gate
 from comfyvn.policy.audit import policy_audit
@@ -55,13 +57,17 @@ class AuditResponse(BaseModel):
 
 @router.get("/status", response_model=GateResponse, summary="Get liability gate status")
 def get_status() -> GateResponse:
-    status = policy_gate.status()
+    status = advisory_gate_status()
+    record = get_ack_record()
     message = (
         "Legal acknowledgement required before completing exports."
         if status.requires_ack
         else "Legal acknowledgement recorded; continue responsibly."
     )
     return GateResponse(
+        ack=bool(record.get("ack")),
+        name=record.get("name"),
+        at=record.get("at"),
         status=status.to_dict(),
         message=message,
         allow_override=status.warn_override_enabled,

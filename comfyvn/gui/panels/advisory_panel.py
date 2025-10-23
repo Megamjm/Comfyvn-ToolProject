@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Dict, List, Optional
 
 import requests
@@ -140,9 +141,11 @@ class AdvisoryPanel(QWidget):
             return
 
         data = resp.json()
-        status = data.get("status", {})
+        status = data.get("status", {}) or {}
         requires_ack = bool(status.get("requires_ack"))
-        timestamp = status.get("ack_timestamp")
+        acknowledged = bool(data.get("ack") or status.get("ack_legal_v1"))
+        name = (data.get("name") or status.get("ack_user") or "").strip()
+        timestamp = data.get("at") or status.get("ack_timestamp")
         override_enabled = bool(status.get("warn_override_enabled", True))
         message = data.get("message") or (
             "Legal acknowledgement required before continuing."
@@ -150,12 +153,24 @@ class AdvisoryPanel(QWidget):
             else "Legal acknowledgement recorded; continue responsibly."
         )
 
-        summary = f"Requires acknowledgement: {'yes' if requires_ack else 'no'}" + (
-            f" • acknowledged at {timestamp}" if timestamp else ""
-        )
+        summary_parts = [f"Requires acknowledgement: {'yes' if requires_ack else 'no'}"]
+        if acknowledged:
+            detail_bits: List[str] = []
+            if name:
+                detail_bits.append(f"by {name}")
+            if timestamp:
+                try:
+                    when = datetime.fromtimestamp(float(timestamp))
+                    detail_bits.append(
+                        f"at {when.isoformat(sep=' ', timespec='seconds')}"
+                    )
+                except Exception:
+                    detail_bits.append(f"at {timestamp}")
+            if detail_bits:
+                summary_parts.append(" • acknowledged " + " ".join(detail_bits))
         self.override_checkbox.setEnabled(override_enabled)
         self.override_checkbox.setChecked(False)
-        self.gate_status_label.setText(f"{message}\n{summary}")
+        self.gate_status_label.setText(f"{message}\n{' '.join(summary_parts)}")
 
     def _acknowledge(self) -> None:
         from PySide6.QtWidgets import (
@@ -174,7 +189,8 @@ class AdvisoryPanel(QWidget):
             "Optional Notes",
             "Add acknowledgement notes (optional):",
         )
-        payload: Dict[str, str] = {"user": user.strip() or "anonymous"}
+        display_name = user.strip() or "anonymous"
+        payload: Dict[str, str] = {"user": display_name, "name": display_name}
         if ok_notes and notes.strip():
             payload["notes"] = notes.strip()
         try:

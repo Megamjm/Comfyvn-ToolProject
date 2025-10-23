@@ -106,7 +106,6 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
             except AttributeError:
                 logger.debug("ServerBridge stub missing status_updated signal")
         self.dockman = DockManager(self)
-        self._tools_import_menu_action = None
         workspace_store = runtime_paths.workspace_dir()
         self.workspace = WorkspaceController(self, workspace_store)
         self._recent_projects = load_recent()
@@ -247,25 +246,24 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         for action in menubar.actions():
             if not isValid(action):
                 continue
-            if action.text().replace("&", "") == "Tools":
-                tools_menu = action.menu()
-                break
-        if tools_menu is not None and not isValid(tools_menu):
-            tools_menu = None
+            menu = action.menu()
+            if menu is not None and isValid(menu):
+                if action.text().replace("&", "") == "Tools":
+                    tools_menu = menu
+                    break
         if tools_menu is None or not isValid(tools_menu):
             return
-        previous_action = getattr(self, "_tools_import_menu_action", None)
-        if previous_action is not None and isValid(previous_action):
-            try:
-                tools_menu.removeAction(previous_action)
-            except RuntimeError:
-                logger.debug("Previous import menu action already removed by Qt")
-            self._tools_import_menu_action = None
 
-        existing_menu = getattr(self, "_tools_import_menu", None)
-        if existing_menu is not None and isValid(existing_menu):
-            existing_menu.deleteLater()
-        self._tools_import_menu = None
+        # Remove any previously injected Import submenu safely.
+        for action in list(tools_menu.actions()):
+            if not isValid(action):
+                continue
+            menu = action.menu()
+            if menu is None or not isValid(menu):
+                continue
+            if menu.objectName() == "tools_import_processing_submenu":
+                tools_menu.removeAction(action)
+                menu.deleteLater()
 
         import_menu = QMenu("Import Processing", self)
         import_menu.setObjectName("tools_import_processing_submenu")
@@ -279,39 +277,31 @@ class MainWindow(ShellStudio, QuickAccessToolbarMixin):
         import_menu.addAction("FurAffinity Export…", self.open_import_furaffinity)
         import_menu.addAction("Roleplay Transcript…", self.open_import_roleplay)
 
-        actions = tools_menu.actions()
-        insert_index = None
-        for idx, action in enumerate(actions):
-            if not isValid(action):
-                continue
+        actions = [act for act in tools_menu.actions() if isValid(act)]
+        before_action = None
+        for action in actions:
             if str(action.property("_sourceLabel") or "") == "Import Assets":
-                insert_index = idx + 1
+                before_action = action
                 break
-        inserted = False
-        if insert_index is not None and insert_index < len(actions):
-            before_action = actions[insert_index]
-            if before_action is not None and isValid(before_action):
-                try:
-                    tools_menu.insertMenu(before_action, import_menu)
-                    inserted = True
-                except RuntimeError:
-                    logger.debug(
-                        "Tools menu insertMenu failed; falling back to addMenu",
-                        exc_info=True,
-                    )
-        if not inserted:
+
+        try:
+            if before_action is not None:
+                tools_menu.insertMenu(before_action, import_menu)
+            else:
+                tools_menu.addMenu(import_menu)
+        except RuntimeError:
+            logger.debug(
+                "Unable to attach Import submenu via insertMenu; retrying with addMenu",
+                exc_info=True,
+            )
             try:
                 tools_menu.addMenu(import_menu)
-                inserted = True
             except RuntimeError:
                 logger.exception("Failed to add import submenu to Tools menu")
                 import_menu.deleteLater()
                 return
 
-        menu_action = import_menu.menuAction()
-        menu_action.setProperty("_sourceLabel", "Import Processing")
-        self._tools_import_menu_action = menu_action
-        self._tools_import_menu = import_menu
+        import_menu.menuAction().setProperty("_sourceLabel", "Import Processing")
 
     def import_from_file(self) -> None:
         caption = "Select Import Payload"

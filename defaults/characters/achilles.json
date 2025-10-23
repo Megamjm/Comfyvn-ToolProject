@@ -1,0 +1,27 @@
+{
+  "id": "achilles",
+  "name": "Achilles",
+  "role": "Blade",
+  "tags": [
+    "throne_of_echoes",
+    "Blade",
+    "Legendary: Achilles",
+    "Origin: Greek"
+  ],
+  "culture": "Greek mythology",
+  "epoch": {
+    "birth": null,
+    "death": null
+  },
+  "aspects": [
+    "Legendary: Achilles",
+    "Origin: Greek"
+  ],
+  "notes": "Seed (CC0 data).",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}

@@ -87,6 +87,30 @@ class CharacterManager:
                 continue
             record = self._normalise_record(resolved_id, payload)
             self.characters[resolved_id] = record
+            handled.add(resolved_id)
+
+        if not self.characters:
+            self._load_defaults()
+
+    def _load_defaults(self) -> None:
+        defaults_dir = Path(__file__).resolve().parents[2] / "defaults" / "characters"
+        if not defaults_dir.exists():
+            return
+        for entry in sorted(defaults_dir.glob("*.json")):
+            payload = self._read_json(entry)
+            if payload is None:
+                continue
+            character_id = str(payload.get("id") or entry.stem).strip() or entry.stem
+            if character_id in self.characters:
+                continue
+            record = self._normalise_record(character_id, payload)
+            self.characters[character_id] = record
+            try:
+                self._save_character(character_id, record)
+            except Exception as exc:
+                LOGGER.debug(
+                    "Failed to persist default character %s: %s", character_id, exc
+                )
 
     def _read_json(self, path: Path) -> Optional[Dict[str, Any]]:
         try:

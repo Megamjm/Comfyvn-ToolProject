@@ -1,0 +1,97 @@
+{
+  "id": "grayshore",
+  "name": "Grayshore",
+  "summary": "Grayshore is a wind-carved coast of coves and drowned forts. Trade runs on fog and rumor. The old road appears at low tide.",
+  "tone": "fantasy, sandbox, coastal, factions",
+  "tags": [
+    "fantasy",
+    "sandbox",
+    "coastal",
+    "factions"
+  ],
+  "rules": {
+    "systems": [
+      "generic",
+      "FateSRD-CCBY"
+    ],
+    "assets": {
+      "maps": [],
+      "art": []
+    },
+    "license": {
+      "id": "CC0-1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "locations": {
+    "low_tide_road": {
+      "name": "Low-Tide Road",
+      "notes": "Revealed twice nightly; stones slick with kelp."
+    },
+    "drowned_fort": {
+      "name": "Drowned Fort",
+      "notes": "Bell still tolls beneath the waterline."
+    }
+  },
+  "factions": {
+    "shipwrights_guild": {
+      "name": "Shipwrights' Guild",
+      "influence": 3,
+      "notes": "Controls drydocks and hardwood trade."
+    },
+    "mistwardens": {
+      "name": "Mistwardens",
+      "influence": 2,
+      "notes": "Lantern-keepers who map fog channels at night."
+    }
+  },
+  "lore": {
+    "summary": "Grayshore is a wind-carved coast of coves and drowned forts. Trade runs on fog and rumor. The old road appears at low tide.",
+    "notes": []
+  },
+  "openers": [
+    {
+      "id": "gs_low_tide_road",
+      "title": "Low-Tide Road",
+      "summary": "The road rises from the sea.",
+      "location": "Shore Causeway",
+      "tags": [
+        "mystery",
+        "coast"
+      ]
+    },
+    {
+      "id": "gs_drowned_fort",
+      "title": "Drowned Fort Bell",
+      "summary": "Underwater bell tolls.",
+      "location": "Ruined Fort",
+      "tags": [
+        "eerie"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "tide_age",
+      "label": "Tide Age",
+      "start": null,
+      "end": null,
+      "notes": "Drowned forts and fog lanes."
+    },
+    {
+      "id": "lantern_wars",
+      "label": "Lantern Wars",
+      "start": null,
+      "end": null,
+      "notes": "Guild skirmishes in the mist."
+    }
+  ],
+  "prompt_templates": {
+    "scene_hooks": "- A bell tolls beneath the water.\n- A gull drops a wax-sealed key on your boot.\n- Scrimshaw maps hint at a shortcut.",
+    "session_zero": "You arrive where the road surfaces from the sea. A lantern bobs in the fog."
+  },
+  "source": {
+    "name": "Community seed (PD/CC0)",
+    "url": ""
+  }
+}

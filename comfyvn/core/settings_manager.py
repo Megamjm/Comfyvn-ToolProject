@@ -36,6 +36,7 @@ DEFAULTS = {
         "ack_legal_v1": False,
         "ack_timestamp": None,
         "warn_override_enabled": True,
+        "ack_user": None,
     },
     "accessibility": {
         "font_scale": 1.0,

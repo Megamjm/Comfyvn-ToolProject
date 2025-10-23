@@ -14,7 +14,7 @@ from typing import (
     Sequence,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, FieldValidationInfo, field_validator
 
 __all__ = [
     "PersonaValidationError",
@@ -129,8 +129,8 @@ class PersonaPronouns(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    @validator("subject", "object", "possessive", "reflexive", pre=True)
-    def _default(cls, value: Any, field):  # type: ignore[override]
+    @field_validator("subject", "object", "possessive", "reflexive", mode="before")
+    def _default(cls, value: Any, info: FieldValidationInfo) -> str:
         text = str(value or "").strip().lower()
         if not text:
             defaults = {
@@ -139,7 +139,7 @@ class PersonaPronouns(BaseModel):
                 "possessive": "their",
                 "reflexive": "themselves",
             }
-            return defaults[field.alias or field.name]
+            return defaults.get(info.field_name, "they")
         return text
 
 
@@ -150,12 +150,12 @@ class PersonaTagSet(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("general", "style", "nsfw", pre=True)
-    def _prepare(cls, value: Any):  # type: ignore[override]
+    @field_validator("general", "style", "nsfw", mode="before")
+    def _prepare(cls, value: Any):
         return normalise_tags(value)
 
-    @validator("general", "style", "nsfw")
-    def _dedupe(cls, value: List[str]):  # type: ignore[override]
+    @field_validator("general", "style", "nsfw", mode="after")
+    def _dedupe(cls, value: List[str]):
         seen: set[str] = set()
         normalised: List[str] = []
         for tag in value:
@@ -174,13 +174,13 @@ class PersonaPaletteSwatch(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    @validator("name", pre=True)
-    def _name(cls, value: Any):  # type: ignore[override]
+    @field_validator("name", mode="before")
+    def _name(cls, value: Any):
         text = str(value or "").strip()
         return text or "swatch"
 
-    @validator("hex", pre=True)
-    def _hex(cls, value: Any):  # type: ignore[override]
+    @field_validator("hex", mode="before")
+    def _hex(cls, value: Any):
         text = str(value or "").strip().lower()
         match = _COLOR_RE.search(text)
         return match.group(0) if match else "#777777"
@@ -194,16 +194,16 @@ class PersonaPalette(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("primary", "secondary", "accent", pre=True)
-    def _color(cls, value: Any):  # type: ignore[override]
+    @field_validator("primary", "secondary", "accent", mode="before")
+    def _color(cls, value: Any):
         if not value:
             return None
         text = str(value).strip()
         match = _COLOR_RE.search(text)
         return match.group(0) if match else None
 
-    @validator("swatches", mode="before")
-    def _swatches(cls, value: Any):  # type: ignore[override]
+    @field_validator("swatches", mode="before")
+    def _swatches(cls, value: Any):
         if value is None:
             return []
         if isinstance(value, list):
@@ -221,8 +221,8 @@ class PersonaAppearance(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("traits", "notable_features", "style", pre=True)
-    def _list(cls, value: Any):  # type: ignore[override]
+    @field_validator("traits", "notable_features", "style", mode="before")
+    def _list(cls, value: Any):
         return _normalise_list(value)
 
 
@@ -234,8 +234,8 @@ class PersonaLore(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("hooks", "quotes", pre=True)
-    def _list(cls, value: Any):  # type: ignore[override]
+    @field_validator("hooks", "quotes", mode="before")
+    def _list(cls, value: Any):
         return _normalise_list(value)
 
 
@@ -247,13 +247,13 @@ class PersonaRelationship(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    @validator("name", pre=True)
-    def _name(cls, value: Any):  # type: ignore[override]
+    @field_validator("name", mode="before")
+    def _name(cls, value: Any):
         text = str(value or "").strip()
         return text or "unknown"
 
-    @validator("tags", pre=True)
-    def _tags(cls, value: Any):  # type: ignore[override]
+    @field_validator("tags", mode="before")
+    def _tags(cls, value: Any):
         return normalise_tags(value)
 
 
@@ -266,8 +266,8 @@ class PersonaVoice(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("hints", pre=True)
-    def _list(cls, value: Any):  # type: ignore[override]
+    @field_validator("hints", mode="before")
+    def _list(cls, value: Any):
         return _normalise_list(value)
 
 
@@ -278,8 +278,8 @@ class PersonaPreferences(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("likes", "dislikes", "nope", pre=True)
-    def _prepare(cls, value: Any):  # type: ignore[override]
+    @field_validator("likes", "dislikes", "nope", mode="before")
+    def _prepare(cls, value: Any):
         return _normalise_list(value)
 
 
@@ -290,8 +290,8 @@ class PersonaNSFW(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("tags", pre=True)
-    def _tags(cls, value: Any):  # type: ignore[override]
+    @field_validator("tags", mode="before")
+    def _tags(cls, value: Any):
         return normalise_tags(value)
 
 
@@ -304,8 +304,8 @@ class PersonaSourceRef(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    @validator("type", pre=True)
-    def _type(cls, value: Any):  # type: ignore[override]
+    @field_validator("type", mode="before")
+    def _type(cls, value: Any):
         text = str(value or "").strip().lower()
         return text or "manual"
 
@@ -335,15 +335,15 @@ class PersonaProfile(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    @validator("role", pre=True)
-    def _role(cls, value: Any):  # type: ignore[override]
+    @field_validator("role", mode="before")
+    def _role(cls, value: Any):
         text = str(value or "").strip().lower()
         if text not in ALLOWED_ROLES:
             return "npc"
         return text
 
-    @validator("species", pre=True)
-    def _species(cls, value: Any):  # type: ignore[override]
+    @field_validator("species", mode="before")
+    def _species(cls, value: Any):
         if value is None:
             return []
         if isinstance(value, str):
@@ -356,16 +356,16 @@ class PersonaProfile(BaseModel):
             entries = [str(value).strip()]
         return [entry for entry in entries if entry]
 
-    @validator("relationships", pre=True)
-    def _relationships(cls, value: Any):  # type: ignore[override]
+    @field_validator("relationships", mode="before")
+    def _relationships(cls, value: Any):
         if value is None:
             return []
         if isinstance(value, list):
             return value
         return [value]
 
-    @validator("anchors", pre=True)
-    def _anchors(cls, value: Any):  # type: ignore[override]
+    @field_validator("anchors", mode="before")
+    def _anchors(cls, value: Any):
         if not isinstance(value, dict):
             return deepcopy(DEFAULT_STAGE_ANCHORS)
         if "stage" not in value:

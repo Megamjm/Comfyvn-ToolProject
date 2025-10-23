@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException
 from fastapi import status as http_status
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from comfyvn.manga.pipeline import (
     build_config,
@@ -46,9 +46,20 @@ class MangaPipelineStartRequest(BaseModel):
     providers: ProviderSelection = Field(default_factory=ProviderSelection)
     provider_settings: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
-    @validator("sources", each_item=True)
-    def _normalize_source(cls, value: str) -> str:
-        return value.strip()
+    @field_validator("sources", mode="before")
+    def _normalize_source(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        if isinstance(value, dict):
+            return [str(value).strip()]
+        if isinstance(value, (list, tuple, set)):
+            trimmed = [str(entry).strip() for entry in value if str(entry).strip()]
+            return trimmed
+        text = str(value).strip()
+        return [text] if text else []
 
 
 @router.get("/providers")

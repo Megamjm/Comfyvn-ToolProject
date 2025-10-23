@@ -1,0 +1,79 @@
+{
+  "id": "veiled_age",
+  "name": "The Veiled Age",
+  "summary": "High fantasy in the afterglow of a vanished empire. City-states bargain with masked oracles; rivers remember old names.",
+  "tone": "fantasy, collaborative, mythic, city-states",
+  "tags": [
+    "fantasy",
+    "collaborative",
+    "mythic",
+    "city-states"
+  ],
+  "rules": {
+    "systems": [
+      "generic",
+      "FateSRD-CCBY"
+    ],
+    "assets": {
+      "maps": [],
+      "art": []
+    },
+    "license": {
+      "id": "Public Domain",
+      "url": ""
+    }
+  },
+  "locations": {},
+  "factions": {},
+  "lore": {
+    "summary": "High fantasy in the afterglow of a vanished empire. City-states bargain with masked oracles; rivers remember old names.",
+    "notes": [],
+    "oracle_tables": {
+      "omens": [
+        "Cracked moon",
+        "Salt in the well",
+        "Lantern goes out"
+      ],
+      "factions": [
+        "Mask-Guild",
+        "Archivists",
+        "River Wardens"
+      ],
+      "masks": [
+        "Laughing Copper",
+        "Blind Marble",
+        "Horned Glass"
+      ]
+    }
+  },
+  "openers": [
+    {
+      "id": "va_market_masks",
+      "title": "Market of Masks",
+      "summary": "Bid on a prophecy shard.",
+      "location": "Mask Bazaar",
+      "tags": [
+        "intrigue"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "afterglow",
+      "label": "Afterglow",
+      "notes": "Empire gone; oracles bargain in alleys."
+    },
+    {
+      "id": "river_pacts",
+      "label": "River Pacts",
+      "notes": "Cities swear by old waters."
+    }
+  ],
+  "prompt_templates": {
+    "starter_md": "- Market of Masks at dusk; bidding on a prophecy fragment.\n- A river-spirit offers a bargain for your name.\n- A courier drops a signet ring etched with three waves.\n"
+  },
+  "source": {
+    "name": "Community PD forum seed",
+    "url": ""
+  }
+}

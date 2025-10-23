@@ -1,0 +1,27 @@
+{
+  "id": "artemis",
+  "name": "Artemis",
+  "role": "Bow",
+  "tags": [
+    "throne_of_echoes",
+    "Bow",
+    "Legendary: Artemis",
+    "Origin: Greek"
+  ],
+  "culture": "Greek mythology",
+  "epoch": {
+    "birth": null,
+    "death": null
+  },
+  "aspects": [
+    "Legendary: Artemis",
+    "Origin: Greek"
+  ],
+  "notes": "Seed (CC0 data).",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}

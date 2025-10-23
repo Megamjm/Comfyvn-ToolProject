@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from comfyvn.registry.rebuild import RebuildSummary, audit_sidecars, rebuild_from_disk
 from comfyvn.studio.core.asset_registry import AssetRegistry
@@ -115,7 +115,7 @@ class RegistryRebuildRequest(BaseModel):
         description="Wait for queued thumbnail generation tasks to complete.",
     )
 
-    @validator("assets_root", "db_path", "thumbs_root", pre=True)
+    @field_validator("assets_root", "db_path", "thumbs_root", mode="before")
     def _blank_to_none(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None

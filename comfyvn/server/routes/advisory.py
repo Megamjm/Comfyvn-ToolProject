@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from comfyvn.advisory.policy import (
     gate_status,
-    get_ack,
+    get_ack_record,
     require_ack_or_raise,
     set_ack,
 )
@@ -17,6 +17,9 @@ from comfyvn.policy.enforcer import policy_enforcer
 
 class AckRequest(BaseModel):
     user: str = Field("anonymous", description="User acknowledging the policy")
+    name: str | None = Field(
+        None, description="Display name recorded with the acknowledgement"
+    )
     notes: str | None = Field(
         None, description="Optional acknowledgement notes stored with the status"
     )
@@ -46,9 +49,14 @@ class ScanRequest(BaseModel):
 
 
 class GateResponse(BaseModel):
-    status: Dict[str, Any]
-    message: str
+    ack: bool
+    status: Dict[str, Any] = Field(default_factory=dict)
+    name: str | None = None
+    at: float | None = None
+    message: str | None = None
     allow_override: bool = False
+
+    model_config = ConfigDict(extra="ignore")
 
 
 policy_router = APIRouter(prefix="/api/policy", tags=["Advisory"])
@@ -58,23 +66,26 @@ router.include_router(policy_router)
 router.include_router(advisory_router)
 
 
-def _ack_payload(message: Optional[str] = None) -> Dict[str, Any]:
+def _ack_payload(message: Optional[str] = None) -> GateResponse:
     status = gate_status()
-    return {
-        "ack": bool(status.ack_legal_v1),
-        "status": status.to_dict(),
-        "allow_override": status.warn_override_enabled,
-        "message": message
-        or (
-            "Legal acknowledgement required before completing exports."
-            if status.requires_ack
-            else "Legal acknowledgement recorded; proceed responsibly."
-        ),
-    }
+    record = get_ack_record()
+    detail = message or (
+        "Legal acknowledgement required before completing exports."
+        if status.requires_ack
+        else "Legal acknowledgement recorded; proceed responsibly."
+    )
+    return GateResponse(
+        ack=bool(record.get("ack")),
+        name=record.get("name"),
+        at=record.get("at"),
+        status=status.to_dict(),
+        allow_override=status.warn_override_enabled,
+        message=detail,
+    )
 
 
 @policy_router.get("/ack", summary="Read acknowledgement status")
-def read_ack() -> Dict[str, Any]:
+def read_ack() -> GateResponse:
     """Return the persisted acknowledgement flag and gate metadata."""
     return _ack_payload()
 
@@ -83,8 +94,8 @@ def read_ack() -> Dict[str, Any]:
     "/ack",
     summary="Persist acknowledgement for liability gate",
 )
-def write_ack(payload: AckRequest = Body(...)) -> Dict[str, Any]:
-    set_ack(True, user=payload.user, notes=payload.notes)
+def write_ack(payload: AckRequest = Body(...)) -> GateResponse:
+    set_ack(True, user=payload.user, name=payload.name, notes=payload.notes)
     return _ack_payload("Acknowledgement recorded. Proceed with caution.")
 
 
@@ -92,7 +103,7 @@ def write_ack(payload: AckRequest = Body(...)) -> Dict[str, Any]:
     "/ack",
     summary="Clear acknowledgement (development/testing only)",
 )
-def clear_ack() -> Dict[str, Any]:
+def clear_ack() -> GateResponse:
     set_ack(False, user="system", notes="cleared via API")
     return _ack_payload("Acknowledgement cleared.")
 
@@ -123,6 +134,9 @@ def scan_bundle(payload: ScanRequest = Body(...)) -> Dict[str, Any]:
         source=payload.source or "api.advisory.scan",
     ).to_dict()
 
+    status = gate_status()
+    ack_record = get_ack_record()
+
     response: Dict[str, Any] = {
         "allow": result.get("allow", False),
         "gate": result.get("gate") or {},
@@ -132,8 +146,9 @@ def scan_bundle(payload: ScanRequest = Body(...)) -> Dict[str, Any]:
         "blocked": result.get("blocked") or [],
         "info": result.get("info") or [],
         "log_path": result.get("log_path"),
-        "status": gate_status().to_dict(),
-        "ack": get_ack(),
+        "status": status.to_dict(),
+        "ack": bool(ack_record.get("ack")),
+        "ack_detail": ack_record,
     }
     if payload.include_debug:
         response["bundle"] = result.get("bundle") or {}

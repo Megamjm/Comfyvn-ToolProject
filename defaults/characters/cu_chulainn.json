@@ -1,0 +1,27 @@
+{
+  "id": "cu_chulainn",
+  "name": "Cú Chulainn",
+  "role": "Blade",
+  "tags": [
+    "throne_of_echoes",
+    "Blade",
+    "Legendary: Cú Chulainn",
+    "Origin: Irish"
+  ],
+  "culture": "Irish mythology",
+  "epoch": {
+    "birth": null,
+    "death": null
+  },
+  "aspects": [
+    "Legendary: Cú Chulainn",
+    "Origin: Irish"
+  ],
+  "notes": "Seed (CC0 data).",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}

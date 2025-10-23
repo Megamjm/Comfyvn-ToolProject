@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, List, Mapping, Optional, Sequence
 
 from PIL import Image, ImageDraw, ImageFont
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from comfyvn.config.runtime_paths import cache_dir
 from comfyvn.core import modder_hooks
@@ -136,7 +136,7 @@ class SnapshotSheetRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    @validator("outputs", pre=True)
+    @field_validator("outputs", mode="before")
     def _coerce_outputs(cls, value: Any) -> List[str]:
         if value is None:
             return ["png"]

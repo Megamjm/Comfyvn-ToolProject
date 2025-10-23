@@ -1,0 +1,64 @@
+{
+  "id": "throne_of_echoes",
+  "name": "Throne of Echoes",
+  "summary": "When the city sleeps, the river counts the names of old heroes. Masks, sigils, relics—the bait and the binding. Seven factions. One night that keeps repeating until someone breaks the oath that started it.",
+  "tone": "modern-fantasy, mythic, summons, factions",
+  "tags": [
+    "modern-fantasy",
+    "mythic",
+    "summons",
+    "factions"
+  ],
+  "rules": {
+    "systems": [
+      "generic",
+      "FateSRD-CCBY"
+    ],
+    "assets": {
+      "maps": [],
+      "art": []
+    },
+    "license": {
+      "id": "CC0-1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "locations": {},
+  "factions": {},
+  "lore": {
+    "summary": "When the city sleeps, the river counts the names of old heroes. Masks, sigils, relics—the bait and the binding. Seven factions. One night that keeps repeating until someone breaks the oath that started it.",
+    "notes": [],
+    "rules_text": "> Uses concepts compatible with the Fate Core SRD (CC-BY). Include Evil Hat's attribution block in credits.\n\nAspects: Title • Legendary Deed • Fatal Flaw\nApproaches: Force • Finesse • Wit • Will\nStunts: 2 per hero; +2 when Legendary Deed clearly applies.\nStress: 3 boxes; Consequences: Mild/Moderate.\n"
+  },
+  "openers": [
+    {
+      "id": "toe_museum",
+      "title": "Museum after hours",
+      "summary": "Relic hums; voice bargains.",
+      "location": "City Museum",
+      "tags": [
+        "mythic",
+        "modern"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "first_oath",
+      "label": "First Oath",
+      "notes": "The binding that soured the city."
+    },
+    {
+      "id": "repeating_night",
+      "label": "Repeating Night",
+      "notes": "The night that loops until the oath breaks."
+    }
+  ],
+  "prompt_templates": {
+    "opening_md": "[Scene] Empty museum at 2:07 AM.\nA cracked amphora hums. Air tastes like copper. A shadow speaks with your voice: \"Name your price.\"\nWhat relic did you bring, and who answers it?\n"
+  },
+  "source": {
+    "name": "Wikidata (CC0) + Original CC0 text",
+    "url": "https://www.wikidata.org/"
+  }
+}

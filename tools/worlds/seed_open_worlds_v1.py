@@ -7,6 +7,8 @@ Creates:
 - comfyvn/schemas/*.json (world, scene, timeline, asset)
 - comfyvn/policies/licensing_policy.yaml
 - data/worlds/{grayshore,veiled_age,throne_of_echoes}/...
+- defaults/worlds/*.json summary payloads for the legacy world loader
+- defaults/characters/*.json seeds for CharacterManager bootstrap
 - exports/assets/worlds/* empty buckets for future renders
 Safe to run multiple times (idempotent-ish).
 """
@@ -15,11 +17,16 @@ import json
 import textwrap
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMAS = ROOT / "comfyvn" / "schemas"
 POLICIES = ROOT / "comfyvn" / "policies"
 WORLDS = ROOT / "data" / "worlds"
 EXPORTS = ROOT / "exports" / "assets" / "worlds"
+DEFAULT_WORLDS = ROOT / "defaults" / "worlds"
+DEFAULT_CHARACTERS = ROOT / "defaults" / "characters"
+CHARACTERS_DATA = ROOT / "data" / "characters"
 
 
 def write(path: Path, content: str):
@@ -30,8 +37,118 @@ def write(path: Path, content: str):
     path.write_text(content, encoding="utf-8")
 
 
+def write_json(path: Path, payload: dict) -> None:
+    write(path, json.dumps(payload, indent=2, ensure_ascii=False))
+
+
 def jdump(obj) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False)
+
+
+def _structured_map(entries, *, key_field: str = "id") -> dict:
+    mapping: dict[str, dict] = {}
+    if not isinstance(entries, list):
+        return mapping
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get(key_field) or entry.get("name") or "").strip()
+        if not key:
+            continue
+        payload = {k: v for k, v in entry.items() if k != key_field}
+        mapping[key] = payload
+    return mapping
+
+
+def _build_world_default_payload(
+    world_id: str,
+    *,
+    meta_yaml: str,
+    summary_text: str,
+    payload: dict,
+    openers: list[dict],
+    epochs: dict,
+) -> dict:
+    try:
+        meta = yaml.safe_load(meta_yaml) or {}
+    except Exception:
+        meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    title = str(meta.get("title") or world_id).strip()
+    tags = [str(tag).strip() for tag in meta.get("tags", []) if str(tag).strip()]
+    tone = ", ".join(tags) if tags else "Shared CC0 seed"
+    locations = _structured_map(payload.get("locations_json") or [], key_field="id")
+    factions = _structured_map(payload.get("factions_json") or [], key_field="id")
+    lore_payload: dict = {
+        "summary": summary_text.strip(),
+        "notes": payload.get("notes", []),
+    }
+    if payload.get("oracle_tables"):
+        lore_payload["oracle_tables"] = payload["oracle_tables"]
+    if payload.get("quickplay_md"):
+        lore_payload["rules_text"] = payload["quickplay_md"]
+    timeline_epochs = epochs.get("epochs") or []
+    prompt_templates = {
+        "scene_hooks": payload.get("scene_hooks"),
+        "session_zero": payload.get("session_zero"),
+        "starter_md": payload.get("starters_md"),
+        "opening_md": payload.get("opening_md"),
+    }
+    openers_payload = []
+    for entry in openers:
+        if not isinstance(entry, dict):
+            continue
+        openers_payload.append(
+            {
+                "id": entry.get("id"),
+                "title": entry.get("title"),
+                "summary": entry.get("summary"),
+                "location": entry.get("location"),
+                "tags": entry.get("tags", []),
+            }
+        )
+    return {
+        "id": world_id,
+        "name": title,
+        "summary": summary_text.strip(),
+        "tone": tone,
+        "tags": tags,
+        "rules": {
+            "systems": meta.get("compat", {}).get("systems", []),
+            "assets": meta.get("assets", {}),
+            "license": meta.get("license", {}),
+        },
+        "locations": locations,
+        "factions": factions,
+        "lore": lore_payload,
+        "openers": openers_payload,
+        "timeline": timeline_epochs,
+        "prompt_templates": {k: v for k, v in prompt_templates.items() if v},
+        "source": meta.get("source") or {},
+    }
+
+
+def _character_record(world_id: str, entry: dict) -> dict:
+    aspects = [str(value).strip() for value in entry.get("aspects", []) if value]
+    tags = [world_id, *(str(entry.get("role") or "").split()), *aspects]
+    notes = str(entry.get("notes") or "").strip()
+    return {
+        "id": entry.get("id"),
+        "name": entry.get("name"),
+        "role": entry.get("role"),
+        "tags": [tag for tag in tags if tag],
+        "culture": entry.get("culture"),
+        "epoch": entry.get("epoch"),
+        "aspects": aspects,
+        "notes": notes or None,
+        "created_at": entry.get("created_at"),
+        "updated_at": entry.get("updated_at"),
+        "meta": {
+            "world_id": world_id,
+            "source": "world_seed_v1",
+        },
+    }
 
 
 # ---------- Schemas ----------
@@ -385,6 +502,56 @@ def throne_of_echoes():
                 "stunts": [],
                 "notes": "Seed (CC0 data).",
             },
+            {
+                "id": "sun_wukong",
+                "name": "Sun Wukong",
+                "role": "Shadow",
+                "culture": "Chinese mythology",
+                "epoch": {"birth": None, "death": None},
+                "aspects": ["Legendary: Sun Wukong", "Origin: Chinese"],
+                "stunts": [],
+                "notes": "Journey to the West is public domain; facts drawn from PD translations.",
+            },
+            {
+                "id": "gilgamesh",
+                "name": "Gilgamesh",
+                "role": "Valor",
+                "culture": "Mesopotamian mythology",
+                "epoch": {"birth": None, "death": None},
+                "aspects": ["Legendary: Gilgamesh", "Origin: Mesopotamian"],
+                "stunts": [],
+                "notes": "Epic of Gilgamesh is public domain.",
+            },
+            {
+                "id": "joan_of_arc",
+                "name": "Joan of Arc",
+                "role": "Will",
+                "culture": "French history",
+                "epoch": {"birth": "1412-01-06", "death": "1431-05-30"},
+                "aspects": ["Legendary: Joan of Arc", "Origin: French"],
+                "stunts": [],
+                "notes": "Historical figure in the public domain.",
+            },
+            {
+                "id": "anansi",
+                "name": "Anansi",
+                "role": "Wit",
+                "culture": "Akan folklore",
+                "epoch": {"birth": None, "death": None},
+                "aspects": ["Legendary: Anansi", "Origin: Akan"],
+                "stunts": [],
+                "notes": "Folktales recorded in the public domain.",
+            },
+            {
+                "id": "thor",
+                "name": "Thor",
+                "role": "Force",
+                "culture": "Norse mythology",
+                "epoch": {"birth": None, "death": None},
+                "aspects": ["Legendary: Thor", "Origin: Norse"],
+                "stunts": [],
+                "notes": "Poetic and Prose Edda translations are public domain.",
+            },
         ],
     }
 
@@ -553,26 +720,94 @@ def seed_world(folder: Path, payload: dict, openers: list, epochs: dict):
 
 
 def seed_exports_buckets(world_ids):
-    for w in world_ids:
+    for world_id in world_ids:
         for sub in ["portraits", "sprites", "backgrounds", "ui", "audio", "meta"]:
-            (EXPORTS / w / sub).mkdir(parents=True, exist_ok=True)
+            (EXPORTS / world_id / sub).mkdir(parents=True, exist_ok=True)
+
+
+def seed_default_world_payloads(world_entries):
+    DEFAULT_WORLDS.mkdir(parents=True, exist_ok=True)
+    for entry in world_entries:
+        payload = _build_world_default_payload(
+            entry["id"],
+            meta_yaml=entry["payload"]["world_yaml"],
+            summary_text=entry["payload"]["summary_md"],
+            payload=entry["payload"],
+            openers=entry["openers"],
+            epochs=entry["epochs"],
+        )
+        write_json(DEFAULT_WORLDS / f"{entry['id']}.json", payload)
+
+
+def seed_default_characters(world_entries):
+    DEFAULT_CHARACTERS.mkdir(parents=True, exist_ok=True)
+    CHARACTERS_DATA.mkdir(parents=True, exist_ok=True)
+    for entry in world_entries:
+        roster = entry["payload"].get("roster_json")
+        if not roster:
+            continue
+        world_id = entry["id"]
+        for character in roster:
+            record = _character_record(world_id, character)
+            char_id = record.get("id")
+            if not char_id:
+                continue
+            write_json(DEFAULT_CHARACTERS / f"{char_id}.json", record)
+            runtime_dir = CHARACTERS_DATA / char_id
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            write_json(runtime_dir / "character.json", record)
 
 
 def main():
     seed_schemas_and_policies()
+
+    seeded_worlds = []
+
+    payload_grayshore = grayshore()
     seed_world(
-        WORLDS / "grayshore", grayshore(), OPENERS["grayshore"], GRAYSHORE_EPOCHS
+        WORLDS / "grayshore", payload_grayshore, OPENERS["grayshore"], GRAYSHORE_EPOCHS
     )
+    seeded_worlds.append(
+        {
+            "id": "grayshore",
+            "payload": payload_grayshore,
+            "openers": OPENERS["grayshore"],
+            "epochs": GRAYSHORE_EPOCHS,
+        }
+    )
+
+    payload_veiled = veiled_age()
     seed_world(
-        WORLDS / "veiled_age", veiled_age(), OPENERS["veiled_age"], VEILED_AGE_EPOCHS
+        WORLDS / "veiled_age", payload_veiled, OPENERS["veiled_age"], VEILED_AGE_EPOCHS
     )
+    seeded_worlds.append(
+        {
+            "id": "veiled_age",
+            "payload": payload_veiled,
+            "openers": OPENERS["veiled_age"],
+            "epochs": VEILED_AGE_EPOCHS,
+        }
+    )
+
+    payload_toe = throne_of_echoes()
     seed_world(
         WORLDS / "throne_of_echoes",
-        throne_of_echoes(),
+        payload_toe,
         OPENERS["throne_of_echoes"],
         TOE_EPOCHS,
     )
-    seed_exports_buckets(["grayshore", "veiled_age", "throne_of_echoes"])
+    seeded_worlds.append(
+        {
+            "id": "throne_of_echoes",
+            "payload": payload_toe,
+            "openers": OPENERS["throne_of_echoes"],
+            "epochs": TOE_EPOCHS,
+        }
+    )
+
+    seed_exports_buckets([world["id"] for world in seeded_worlds])
+    seed_default_world_payloads(seeded_worlds)
+    seed_default_characters(seeded_worlds)
     print("✅ Seed complete.")
 
 

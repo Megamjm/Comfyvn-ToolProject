@@ -21,6 +21,7 @@ Studio highlights for this drop:
 
 **Licensing note:** Original files are CC0. If you add CC-BY images/audio, keep attribution in the asset sidecar and in the Credits.
 - ComfyUI jobs that include `metadata.asset_pipeline` now save PNGs + JSON sidecars straight into `exports/assets/worlds/<world_id>/<type>/...` and keep `meta/assets_index.json` up to date for that world.
+- World Manager auto-loads the seeded JSON summaries under `defaults/worlds/`, character modules pull starter rosters from `defaults/characters/`, and the Timeline view bootstraps `* Openers` sequences from the scene samples in `data/worlds/`.
 
 Highlights:
 

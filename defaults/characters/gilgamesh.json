@@ -1,0 +1,27 @@
+{
+  "id": "gilgamesh",
+  "name": "Gilgamesh",
+  "role": "Valor",
+  "tags": [
+    "throne_of_echoes",
+    "Valor",
+    "Legendary: Gilgamesh",
+    "Origin: Mesopotamian"
+  ],
+  "culture": "Mesopotamian mythology",
+  "epoch": {
+    "birth": null,
+    "death": null
+  },
+  "aspects": [
+    "Legendary: Gilgamesh",
+    "Origin: Mesopotamian"
+  ],
+  "notes": "Epic of Gilgamesh is public domain.",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}

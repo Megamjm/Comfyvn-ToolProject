@@ -1,0 +1,27 @@
+{
+  "id": "morgan_le_fay",
+  "name": "Morgan le Fay",
+  "role": "Arcana",
+  "tags": [
+    "throne_of_echoes",
+    "Arcana",
+    "Legendary: Morgan le Fay",
+    "Origin: Arthurian"
+  ],
+  "culture": "Arthurian legend",
+  "epoch": {
+    "birth": null,
+    "death": null
+  },
+  "aspects": [
+    "Legendary: Morgan le Fay",
+    "Origin: Arthurian"
+  ],
+  "notes": "Seed (CC0 data).",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}

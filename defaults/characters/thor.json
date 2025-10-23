@@ -1,0 +1,27 @@
+{
+  "id": "thor",
+  "name": "Thor",
+  "role": "Force",
+  "tags": [
+    "throne_of_echoes",
+    "Force",
+    "Legendary: Thor",
+    "Origin: Norse"
+  ],
+  "culture": "Norse mythology",
+  "epoch": {
+    "birth": null,
+    "death": null
+  },
+  "aspects": [
+    "Legendary: Thor",
+    "Origin: Norse"
+  ],
+  "notes": "Poetic and Prose Edda translations are public domain.",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}

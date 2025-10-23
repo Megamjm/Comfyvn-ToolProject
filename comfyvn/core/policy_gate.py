@@ -14,16 +14,18 @@ LOGGER = logging.getLogger("comfyvn.policy.gate")
 class PolicyStatus:
     ack_legal_v1: bool
     ack_timestamp: Optional[float]
+    ack_user: Optional[str]
     warn_override_enabled: bool
 
     @property
     def requires_ack(self) -> bool:
         return not self.ack_legal_v1
 
-    def to_dict(self) -> Dict[str, Optional[float | bool]]:
+    def to_dict(self) -> Dict[str, object]:
         return {
             "ack_legal_v1": self.ack_legal_v1,
             "ack_timestamp": self.ack_timestamp,
+            "ack_user": self.ack_user,
             "warn_override_enabled": self.warn_override_enabled,
             "requires_ack": self.requires_ack,
         }
@@ -39,17 +41,29 @@ class PolicyGate:
         return PolicyStatus(
             ack_legal_v1=bool(policy.get("ack_legal_v1", False)),
             ack_timestamp=policy.get("ack_timestamp"),
+            ack_user=policy.get("ack_user"),
             warn_override_enabled=bool(policy.get("warn_override_enabled", True)),
         )
 
-    def acknowledge(self, *, user: str, notes: Optional[str] = None) -> PolicyStatus:
+    def acknowledge(
+        self,
+        *,
+        user: str,
+        notes: Optional[str] = None,
+        timestamp: Optional[float] = None,
+    ) -> PolicyStatus:
         cfg = self.settings.load()
         policy = cfg.get("policy", {})
         policy["ack_legal_v1"] = True
-        policy["ack_timestamp"] = time.time()
+        policy["ack_timestamp"] = timestamp or time.time()
+        policy["ack_user"] = str(user or "").strip() or None
         if notes:
             policy.setdefault("ack_notes", []).append(
-                {"user": user, "notes": notes, "ts": policy["ack_timestamp"]}
+                {
+                    "user": user,
+                    "notes": notes,
+                    "ts": policy["ack_timestamp"],
+                }
             )
         cfg["policy"] = policy
         self.settings.save(cfg)
@@ -61,6 +75,7 @@ class PolicyGate:
         cfg["policy"] = {
             "ack_legal_v1": False,
             "ack_timestamp": None,
+            "ack_user": None,
             "warn_override_enabled": cfg.get("policy", {}).get(
                 "warn_override_enabled", True
             ),

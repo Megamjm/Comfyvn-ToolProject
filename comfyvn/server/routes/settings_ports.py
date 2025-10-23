@@ -4,7 +4,7 @@ import logging
 
 import httpx
 from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from comfyvn.config import ports as ports_config
 
@@ -22,13 +22,13 @@ class PortsPayload(BaseModel):
         default=None, description="Optional externally reachable base URL."
     )
 
-    @validator("host")
+    @field_validator("host")
     def _validate_host(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Host cannot be blank.")
         return value.strip()
 
-    @validator("ports")
+    @field_validator("ports")
     def _validate_ports(cls, value: list[int]) -> list[int]:
         seen: set[int] = set()
         cleaned: list[int] = []

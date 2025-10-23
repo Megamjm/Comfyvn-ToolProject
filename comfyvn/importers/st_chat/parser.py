@@ -223,6 +223,8 @@ def _normalise_json_message(
     session_id: Optional[str],
     conversation_title: Optional[str],
     default_role: Optional[str],
+    source: str,
+    extra_meta: Optional[Mapping[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     text = _extract_text(entry)
     speaker = _extract_speaker(entry, default="Narrator" if not text else "")
@@ -245,9 +247,14 @@ def _normalise_json_message(
                         break
 
     payload_meta: Dict[str, Any] = {
-        "source": "st_json",
+        "source": source,
         "index": index,
+        "raw": dict(entry),
     }
+    if extra_meta:
+        for key, value in extra_meta.items():
+            if value is not None:
+                payload_meta[key] = value
     if session_id:
         payload_meta["session"] = session_id
     if conversation_title:
@@ -333,6 +340,7 @@ def _parse_json_payload(data: Any) -> List[Dict[str, Any]]:
                 session_id=session_id,
                 conversation_title=conversation_title,
                 default_role=default_role,
+                source="st_json",
             )
             if normalised:
                 turns.append(normalised)
@@ -386,6 +394,8 @@ def _parse_json_text(text: str) -> List[Dict[str, Any]]:
                 session_id=None,
                 conversation_title=None,
                 default_role=None,
+                source="st_jsonl",
+                extra_meta={"line": index},
             )
             if normalised:
                 turns.append(normalised)

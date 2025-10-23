@@ -1,0 +1,27 @@
+{
+  "id": "joan_of_arc",
+  "name": "Joan of Arc",
+  "role": "Will",
+  "tags": [
+    "throne_of_echoes",
+    "Will",
+    "Legendary: Joan of Arc",
+    "Origin: French"
+  ],
+  "culture": "French history",
+  "epoch": {
+    "birth": "1412-01-06",
+    "death": "1431-05-30"
+  },
+  "aspects": [
+    "Legendary: Joan of Arc",
+    "Origin: French"
+  ],
+  "notes": "Historical figure in the public domain.",
+  "created_at": null,
+  "updated_at": null,
+  "meta": {
+    "world_id": "throne_of_echoes",
+    "source": "world_seed_v1"
+  }
+}
