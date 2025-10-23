@@ -19,6 +19,10 @@ from comfyvn.config.runtime_paths import settings_file
 from comfyvn.core.comfyui_client import ComfyUIClient
 from comfyvn.core.gpu_manager import get_gpu_manager
 from comfyvn.core.task_registry import task_registry
+from comfyvn.core.world_asset_pipeline import (
+    WorldAssetPipelineError,
+    save_world_asset,
+)
 from comfyvn.studio.core import AssetRegistry
 
 # comfyvn/server/modules/playground_api.py
@@ -273,6 +277,8 @@ def _download_and_register_asset(
     entry: Dict[str, Any],
     kind: str,
     request_meta: Dict[str, Any],
+    workflow_hash: Optional[str],
+    workflow_label: Optional[str],
 ) -> Dict[str, Any]:
     filename = _safe_filename(
         entry.get("filename"), fallback=f"{kind}_{uuid.uuid4().hex}.bin"
@@ -299,6 +305,37 @@ def _download_and_register_asset(
         tmp.write(response.content)
         tmp_path = Path(tmp.name)
     try:
+        world_asset: Optional[Dict[str, Any]] = None
+        meta_section = request_meta.get("metadata")
+        pipeline_meta = None
+        if isinstance(meta_section, dict):
+            candidate = meta_section.get("asset_pipeline") or meta_section.get(
+                "world_asset"
+            )
+            if isinstance(candidate, dict):
+                pipeline_meta = candidate
+        if pipeline_meta:
+            try:
+                world_asset = save_world_asset(
+                    tmp_path,
+                    pipeline_meta=pipeline_meta,
+                    entry=entry,
+                    prompt_id=prompt_id,
+                    workflow_hash=workflow_hash,
+                    workflow_label=workflow_label,
+                    request_meta=request_meta,
+                )
+            except WorldAssetPipelineError as exc:
+                LOGGER.warning(
+                    "World asset pipeline rejected %s: %s",
+                    entry.get("filename") or filename,
+                    exc,
+                )
+            except Exception:  # pragma: no cover - defensive
+                LOGGER.exception(
+                    "Failed to persist world asset for %s",
+                    entry.get("filename") or filename,
+                )
         asset_type = _asset_type_for(kind, entry.get("type", ""))
         dest = Path("comfyui") / kind / f"{prompt_id}_{filename}"
         metadata = {
@@ -334,6 +371,8 @@ def _download_and_register_asset(
             copy=True,
             provenance=provenance,
         )
+        if world_asset:
+            asset["world_asset"] = world_asset
     finally:
         tmp_path.unlink(missing_ok=True)
     return asset
@@ -371,6 +410,8 @@ def _register_outputs(
     request_meta: Dict[str, Any],
     outputs_filter: Optional[Iterable[str]],
     connector_meta: Dict[str, Any],
+    workflow_hash: Optional[str],
+    workflow_label: Optional[str],
 ) -> List[Dict[str, Any]]:
     outputs = _collect_outputs(record)
     if outputs_filter:
@@ -406,6 +447,8 @@ def _register_outputs(
                 entry=entry,
                 kind=kind,
                 request_meta=request_meta,
+                workflow_hash=workflow_hash,
+                workflow_label=workflow_label,
             )
             assets.append(asset)
         except Exception as exc:  # pragma: no cover - defensive
@@ -581,6 +624,8 @@ def _run_pipeline_job(task_id: str, options: Dict[str, Any]) -> List[Dict[str, A
             request_meta=request_meta,
             outputs_filter=outputs_filter,
             connector_meta=connector_meta,
+            workflow_hash=options.get("workflow_hash"),
+            workflow_label=options.get("workflow_label"),
         )
     except Exception as exc:
         LOGGER.warning("ComfyUI output processing failed job=%s: %s", task_id, exc)

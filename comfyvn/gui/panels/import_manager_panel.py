@@ -888,7 +888,8 @@ class RoleplayImportWidget(QWidget):
             if idx >= 0:
                 self.detail_combo.setCurrentIndex(idx)
         self._loaded_path = path_obj
-        self._update_analysis(transcript)
+        preset_speakers = meta.get("speakers")
+        self._update_analysis(transcript, preset_speakers=preset_speakers)
         self.status_label.setText(
             f"Loaded {path_obj.name} ({len(self.text_edit.toPlainText().splitlines())} lines)."
         )
@@ -907,6 +908,7 @@ class RoleplayImportWidget(QWidget):
             length = len(normalized)
             transcripts: List[str] = []
             combined_meta: Dict[str, Any] = {}
+            speaker_pool: set[str] = set()
             while idx < length:
                 try:
                     obj, offset = decoder.raw_decode(normalized, idx)
@@ -919,26 +921,41 @@ class RoleplayImportWidget(QWidget):
                     text, meta = self._transcript_from_payload(obj)
                     if text:
                         transcripts.append(text)
-                    combined_meta.update(meta)
+                        for name in meta.get("speakers", []):
+                            speaker_pool.add(name)
+                    combined_meta.update(
+                        {k: v for k, v in meta.items() if k != "speakers"}
+                    )
             if transcripts:
+                if speaker_pool:
+                    combined_meta["speakers"] = sorted(speaker_pool)
                 return ("\n\n".join(transcripts), combined_meta)
             return None
         if isinstance(payload, list):
             transcripts: List[str] = []
             combined_meta: Dict[str, Any] = {}
+            speaker_pool: set[str] = set()
             for item in payload:
                 if not isinstance(item, dict):
                     continue
                 text, meta = self._transcript_from_payload(item)
                 if text:
                     transcripts.append(text)
-                combined_meta.update(meta)
+                    for name in meta.get("speakers", []):
+                        speaker_pool.add(name)
+                combined_meta.update({k: v for k, v in meta.items() if k != "speakers"})
             if transcripts:
+                if speaker_pool:
+                    combined_meta["speakers"] = sorted(speaker_pool)
                 return ("\n\n".join(transcripts), combined_meta)
             return None
         if isinstance(payload, dict):
             text, meta = self._transcript_from_payload(payload)
             if text:
+                speakers = meta.get("speakers")
+                if speakers:
+                    meta = dict(meta)
+                    meta["speakers"] = sorted(set(speakers))
                 return text, meta
         return None
 
@@ -1027,9 +1044,13 @@ class RoleplayImportWidget(QWidget):
                 break
         return speakers
 
-    def _update_analysis(self, text: str) -> None:
+    def _update_analysis(
+        self, text: str, *, preset_speakers: Optional[List[str]] = None
+    ) -> None:
         cleaned = self._normalise_transcript(text)
-        speakers = self._guess_speakers(cleaned)
+        speakers = (
+            list(preset_speakers) if preset_speakers else self._guess_speakers(cleaned)
+        )
         words = len(cleaned.split())
         lines = len(cleaned.splitlines())
         summary = f"Approx. {words} word(s), {lines} line(s)."
@@ -1045,30 +1066,78 @@ class RoleplayImportWidget(QWidget):
     def _transcript_from_payload(
         self, payload: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any]]:
-        transcript = (
+        meta: Dict[str, Any] = {}
+        speaker_names: List[str] = []
+
+        def _speaker_name(data: Dict[str, Any]) -> str:
+            if bool(data.get("is_user")):
+                return "You"
+            for key in (
+                "name",
+                "character_name",
+                "character",
+                "display_name",
+                "role",
+            ):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return "Narrator"
+
+        def _merge_child_data(child_text: str, child_meta: Dict[str, Any]) -> None:
+            if child_text:
+                collected.append(child_text)
+            for entry in child_meta.get("speakers", []):
+                if entry not in speaker_names:
+                    speaker_names.append(entry)
+            for key in ("title", "world", "detail_level", "detailLevel"):
+                if key in child_meta and key not in meta:
+                    meta[key] = child_meta[key]
+
+        if "mes" in payload:
+            speaker = _speaker_name(payload)
+            text = str(payload.get("mes") or "")
+            cleaned = self._normalise_transcript(text)
+            if cleaned:
+                if speaker not in speaker_names:
+                    speaker_names.append(speaker)
+                meta["speakers"] = speaker_names.copy()
+                return f"{speaker}: {cleaned}", meta
+
+        transcript = str(
             payload.get("text")
             or payload.get("transcript")
             or payload.get("content")
             or ""
         )
+        collected: List[str] = []
         if not transcript and isinstance(payload.get("lines"), list):
-            collected = [
-                str(line.get("text") or line.get("mes") or line.get("content") or "")
-                for line in payload["lines"]
-                if isinstance(line, dict)
-            ]
+            for line in payload["lines"]:
+                if not isinstance(line, dict):
+                    continue
+                child_text, child_meta = self._transcript_from_payload(line)
+                _merge_child_data(child_text, child_meta)
             transcript = "\n".join(filter(None, collected))
         if not transcript and isinstance(payload.get("messages"), list):
-            collected = [
-                str(line.get("text") or line.get("mes") or line.get("content") or "")
-                for line in payload["messages"]
-                if isinstance(line, dict)
-            ]
+            for entry in payload["messages"]:
+                if not isinstance(entry, dict):
+                    continue
+                child_text, child_meta = self._transcript_from_payload(entry)
+                _merge_child_data(child_text, child_meta)
             transcript = "\n".join(filter(None, collected))
-        meta: Dict[str, Any] = {}
+        if not transcript and isinstance(payload.get("entries"), list):
+            for entry in payload["entries"]:
+                if not isinstance(entry, dict):
+                    continue
+                child_text, child_meta = self._transcript_from_payload(entry)
+                _merge_child_data(child_text, child_meta)
+            transcript = "\n".join(filter(None, collected))
+
         for key in ("title", "world", "detail_level", "detailLevel"):
             if payload.get(key):
                 meta[key] = payload[key]
+        if speaker_names:
+            meta["speakers"] = speaker_names.copy()
         return self._normalise_transcript(transcript), meta
 
 

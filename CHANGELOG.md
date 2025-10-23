@@ -2,6 +2,7 @@
 - Added schemas for world/scene/timeline/assets.
 - Seeded 3 open worlds with timelines and scene openers.
 - Standardized ComfyUI → PNG+JSON sidecar pipeline under `exports/assets/worlds/<world_id>/...`.
+- ComfyUI connector now honors `metadata.asset_pipeline` to drop renders + schema sidecars into the world export tree and refresh per-world manifests.
 
 ### 2025-10-21 — VN Loader Panel & Mini-VN Scene Debugger
 - Introduced the SillyTavern chat importer (`comfyvn/importers/st_chat/{parser,mapper}.py`) plus FastAPI router `comfyvn/server/routes/import_st.py`, mounted via `server/modules/st_import_api.py` and gated by `features.enable_st_importer` (default OFF). The pipeline parses SillyTavern `.json`/`.txt` transcripts, segments them into scenario graphs, persists run artefacts under `imports/<runId>/`, writes scenes to `data/scenes/<id>.json`, and appends project history to `data/projects/<projectId>.json`.

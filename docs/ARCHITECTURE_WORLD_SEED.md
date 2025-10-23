@@ -3,6 +3,7 @@
 - Worlds live under `data/worlds/<id>/`.
 - Renders + sidecars live under `exports/assets/worlds/<id>/<type>/`.
 - Everything here ships CC0 unless sidecars specify otherwise.
+- ComfyUI connector jobs that include `metadata.asset_pipeline` will copy PNG/WAV outputs into the export tree, stamp schema-valid sidecars, and refresh `exports/assets/worlds/<id>/meta/assets_index.json`.
 
 Integration:
 - SillyTavern: use `/examples/*.md` as conversation starters.

@@ -20,6 +20,7 @@ Studio highlights for this drop:
 - **Throne of Echoes** — CC0 original. Summoned legends in a modern city.
 
 **Licensing note:** Original files are CC0. If you add CC-BY images/audio, keep attribution in the asset sidecar and in the Credits.
+- ComfyUI jobs that include `metadata.asset_pipeline` now save PNGs + JSON sidecars straight into `exports/assets/worlds/<world_id>/<type>/...` and keep `meta/assets_index.json` up to date for that world.
 
 Highlights:
 
