@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ComfyVN Asset Metadata",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "world_id",
+    "path",
+    "license"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "portrait",
+        "sprite",
+        "background",
+        "ui",
+        "audio",
+        "fx"
+      ]
+    },
+    "world_id": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "sidecar": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "license": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "width": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "height": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "attribution": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

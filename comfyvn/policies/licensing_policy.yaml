@@ -1,0 +1,11 @@
+allowed_ids:
+  - "CC0-1.0"
+  - "Public Domain"
+  - "CC-BY-4.0"
+  - "CC-BY-SA-4.0"
+require_attribution_for:
+  - "CC-BY-4.0"
+  - "CC-BY-SA-4.0"
+block_art_for:
+  - id: "CC-BY-SA-4.0"
+    note: "Ship text/maps only unless artwork for that file is explicitly CC-BY-SA."

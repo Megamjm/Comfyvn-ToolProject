@@ -1,3 +1,8 @@
+## v0.5.0-world-seed
+- Added schemas for world/scene/timeline/assets.
+- Seeded 3 open worlds with timelines and scene openers.
+- Standardized ComfyUI → PNG+JSON sidecar pipeline under `exports/assets/worlds/<world_id>/...`.
+
 ### 2025-10-21 — VN Loader Panel & Mini-VN Scene Debugger
 - Introduced the SillyTavern chat importer (`comfyvn/importers/st_chat/{parser,mapper}.py`) plus FastAPI router `comfyvn/server/routes/import_st.py`, mounted via `server/modules/st_import_api.py` and gated by `features.enable_st_importer` (default OFF). The pipeline parses SillyTavern `.json`/`.txt` transcripts, segments them into scenario graphs, persists run artefacts under `imports/<runId>/`, writes scenes to `data/scenes/<id>.json`, and appends project history to `data/projects/<projectId>.json`.
 - New REST surface `/api/import/st/start` / `/api/import/st/status/{runId}` emits structured progress (`phase`, `progress`, `scenes`, `warnings`, `preview`) and broadcasts modder hooks `on_st_import_started`, `on_st_import_scene_ready`, `on_st_import_completed`, and `on_st_import_failed` so dashboards can follow import runs without scraping logs.

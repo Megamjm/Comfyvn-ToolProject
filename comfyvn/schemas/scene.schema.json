@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ComfyVN Scene",
+  "type": "object",
+  "required": [
+    "id",
+    "world_id",
+    "title",
+    "beats"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "world_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "timeline_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "beats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "narration",
+              "dialogue",
+              "choice",
+              "effect"
+            ]
+          },
+          "speaker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "asset.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -14,6 +14,13 @@ Studio highlights for this drop:
 - SillyTavern bridge settings now expose host, port, and plugin base controls in Studio Basics; `/st/health` and import flows honour the configured base URL, and `/st/import` responds to browser preflights so the bundled extension can post payloads without extra configuration.
 - CLI helpers (`tools/check_current_system.py`, `tools/doctor_phase_all.py`) reuse the new `discover_base()` helper so scripted diagnostics honour the same rollover order (CLI override → env → public base → configured ports → fallback).
 
+### Included Worlds (Base)
+- **Grayshore** — CC0. Coastal sandbox; fog lanes and drowned forts.
+- **The Veiled Age** — Public Domain contributions. Masks, oracles, city-states.
+- **Throne of Echoes** — CC0 original. Summoned legends in a modern city.
+
+**Licensing note:** Original files are CC0. If you add CC-BY images/audio, keep attribution in the asset sidecar and in the Credits.
+
 Highlights:
 
 🛡️ Legal & Creative Responsibility

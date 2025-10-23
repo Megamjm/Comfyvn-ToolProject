@@ -825,6 +825,11 @@ class RoleplayImportWidget(QWidget):
         self.text_edit.setMinimumHeight(200)
         layout.addWidget(self.text_edit, 1)
 
+        self.analysis_label = QLabel("")
+        self.analysis_label.setWordWrap(True)
+        self.analysis_label.setObjectName("roleplay-analysis-label")
+        layout.addWidget(self.analysis_label)
+
         buttons = QHBoxLayout()
         self.import_button = QPushButton("Import Transcript")
         self.import_button.clicked.connect(self._import_payload)
@@ -841,6 +846,7 @@ class RoleplayImportWidget(QWidget):
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
+        self._last_speakers: List[str] = []
 
     def _load_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -882,6 +888,7 @@ class RoleplayImportWidget(QWidget):
             if idx >= 0:
                 self.detail_combo.setCurrentIndex(idx)
         self._loaded_path = path_obj
+        self._update_analysis(transcript)
         self.status_label.setText(
             f"Loaded {path_obj.name} ({len(self.text_edit.toPlainText().splitlines())} lines)."
         )
@@ -895,76 +902,72 @@ class RoleplayImportWidget(QWidget):
             normalized = raw.strip()
             if not normalized:
                 return None
-            glue = re.sub(r"}\s*{\s*", "},{", normalized)
-            try:
-                payload_list = json.loads(f"[{glue}]")
-            except json.JSONDecodeError:
-                return None
-            lines: List[str] = []
-            for entry in payload_list:
-                if not isinstance(entry, dict):
-                    continue
-                text_value = (
-                    entry.get("text")
-                    or entry.get("mes")
-                    or entry.get("content")
-                    or entry.get("message")
-                    or ""
-                )
-                if text_value:
-                    lines.append(str(text_value))
-            if not lines:
-                return None
-            return ("\n".join(lines), {})
-        transcript = (
-            payload.get("text")
-            or payload.get("transcript")
-            or payload.get("content")
-            or ""
-        )
-        if not transcript and isinstance(payload.get("lines"), list):
-            collected: List[str] = []
-            for item in payload["lines"]:
-                if isinstance(item, dict):
-                    collected.append(
-                        str(
-                            item.get("text")
-                            or item.get("mes")
-                            or item.get("content")
-                            or ""
-                        )
-                    )
-            transcript = "\n".join(filter(None, collected))
-        if not transcript and isinstance(payload.get("messages"), list):
-            collected = [
-                str(item.get("text") or item.get("mes") or item.get("content") or "")
-                for item in payload["messages"]
-                if isinstance(item, dict)
-            ]
-            transcript = "\n".join(filter(None, collected))
-        if not transcript:
+            decoder = json.JSONDecoder()
+            idx = 0
+            length = len(normalized)
+            transcripts: List[str] = []
+            combined_meta: Dict[str, Any] = {}
+            while idx < length:
+                try:
+                    obj, offset = decoder.raw_decode(normalized, idx)
+                except json.JSONDecodeError:
+                    break
+                idx = offset
+                while idx < length and normalized[idx].isspace():
+                    idx += 1
+                if isinstance(obj, dict):
+                    text, meta = self._transcript_from_payload(obj)
+                    if text:
+                        transcripts.append(text)
+                    combined_meta.update(meta)
+            if transcripts:
+                return ("\n\n".join(transcripts), combined_meta)
             return None
-        meta: Dict[str, Any] = {}
-        for key in ("title", "world", "detail_level", "detailLevel"):
-            if payload.get(key):
-                meta[key] = payload[key]
-        return transcript, meta
+        if isinstance(payload, list):
+            transcripts: List[str] = []
+            combined_meta: Dict[str, Any] = {}
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                text, meta = self._transcript_from_payload(item)
+                if text:
+                    transcripts.append(text)
+                combined_meta.update(meta)
+            if transcripts:
+                return ("\n\n".join(transcripts), combined_meta)
+            return None
+        if isinstance(payload, dict):
+            text, meta = self._transcript_from_payload(payload)
+            if text:
+                return text, meta
+        return None
 
     def _import_payload(self) -> None:
-        transcript = self.text_edit.toPlainText().strip()
-        if not transcript:
+        transcript_raw = self.text_edit.toPlainText().strip()
+        if not transcript_raw:
             QMessageBox.information(
                 self, "No Transcript", "Paste or load a transcript before importing."
             )
             return
+        transcript_clean = self._normalise_transcript(transcript_raw)
+        if transcript_clean != transcript_raw:
+            self.text_edit.setPlainText(transcript_clean)
+        self._update_analysis(transcript_clean)
         payload: Dict[str, Any] = {
-            "text": transcript,
+            "text": transcript_clean,
             "title": self.title_edit.text().strip() or None,
             "world": self.world_edit.text().strip() or None,
             "source": "studio.gui",
             "detail_level": self.detail_combo.currentData(),
             "blocking": True,
         }
+        metadata: Dict[str, Any] = {}
+        if self._loaded_path:
+            metadata["source_path"] = str(self._loaded_path)
+        if self._last_speakers:
+            metadata["detected_speakers"] = self._last_speakers
+        if metadata:
+            payload["metadata"] = metadata
         self.import_button.setEnabled(False)
         result = self.bridge.post_json(
             "/api/imports/roleplay", payload, timeout=60.0, default=None
@@ -998,6 +1001,75 @@ class RoleplayImportWidget(QWidget):
         handler = getattr(window, handler_name, None)
         if callable(handler):
             handler()
+
+    def _normalise_transcript(self, text: str) -> str:
+        cleaned = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+        cleaned = re.sub(r"\[[^\]]*\]\((https?://[^)]+)\)", r"\1", cleaned)
+        cleaned = re.sub(r"\r\n?", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
+    def _guess_speakers(self, text: str) -> List[str]:
+        speakers: List[str] = []
+        seen: set[str] = set()
+        pattern = re.compile(r"^\s*([A-Za-z0-9 _'\-]{2,40})\s*[:：]\s+")
+        for line in text.splitlines():
+            match = pattern.match(line)
+            if not match:
+                continue
+            name = match.group(1).strip()
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            speakers.append(name)
+            if len(speakers) >= 8:
+                break
+        return speakers
+
+    def _update_analysis(self, text: str) -> None:
+        cleaned = self._normalise_transcript(text)
+        speakers = self._guess_speakers(cleaned)
+        words = len(cleaned.split())
+        lines = len(cleaned.splitlines())
+        summary = f"Approx. {words} word(s), {lines} line(s)."
+        if speakers:
+            summary += " Detected speakers: " + ", ".join(speakers)
+            if len(speakers) >= 8:
+                summary += "…"
+        else:
+            summary += " (No speaker prefixes detected.)"
+        self.analysis_label.setText(summary)
+        self._last_speakers = speakers
+
+    def _transcript_from_payload(
+        self, payload: Dict[str, Any]
+    ) -> Tuple[str, Dict[str, Any]]:
+        transcript = (
+            payload.get("text")
+            or payload.get("transcript")
+            or payload.get("content")
+            or ""
+        )
+        if not transcript and isinstance(payload.get("lines"), list):
+            collected = [
+                str(line.get("text") or line.get("mes") or line.get("content") or "")
+                for line in payload["lines"]
+                if isinstance(line, dict)
+            ]
+            transcript = "\n".join(filter(None, collected))
+        if not transcript and isinstance(payload.get("messages"), list):
+            collected = [
+                str(line.get("text") or line.get("mes") or line.get("content") or "")
+                for line in payload["messages"]
+                if isinstance(line, dict)
+            ]
+            transcript = "\n".join(filter(None, collected))
+        meta: Dict[str, Any] = {}
+        for key in ("title", "world", "detail_level", "detailLevel"):
+            if payload.get(key):
+                meta[key] = payload[key]
+        return self._normalise_transcript(transcript), meta
 
 
 class LLMSummariseDialog(QDialog):
