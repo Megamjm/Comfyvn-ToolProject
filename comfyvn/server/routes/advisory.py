@@ -45,6 +45,12 @@ class ScanRequest(BaseModel):
     )
 
 
+class GateResponse(BaseModel):
+    status: Dict[str, Any]
+    message: str
+    allow_override: bool = False
+
+
 policy_router = APIRouter(prefix="/api/policy", tags=["Advisory"])
 advisory_router = APIRouter(prefix="/api/advisory", tags=["Advisory"])
 router = APIRouter(tags=["Advisory"])

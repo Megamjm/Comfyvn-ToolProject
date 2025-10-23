@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 import json
 import os
 import threading
+from typing import Dict, List
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -75,10 +76,13 @@ class RoleplayImportUI(QWidget):
         self.btn_llm.setEnabled(False)
         self.btn_savecorr = QPushButton("Save Corrections")
         self.btn_savecorr.setEnabled(False)
+        self.btn_export = QPushButton("Export Cleaned Log")
+        self.btn_export.setEnabled(False)
         btn_row.addWidget(self.btn_upload)
         btn_row.addWidget(self.btn_finalize)
         btn_row.addWidget(self.btn_llm)
         btn_row.addWidget(self.btn_savecorr)
+        btn_row.addWidget(self.btn_export)
         layout.addLayout(btn_row)
 
         self.table = QTableWidget(0, 3)
@@ -112,6 +116,7 @@ class RoleplayImportUI(QWidget):
         self.btn_finalize.clicked.connect(self._finalize)
         self.btn_llm.clicked.connect(self._generate_llm_sample)
         self.btn_savecorr.clicked.connect(self._save_corrections)
+        self.btn_export.clicked.connect(self._export_cleaned_log)
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -177,6 +182,7 @@ class RoleplayImportUI(QWidget):
             self.btn_finalize.setEnabled(True)
             self.btn_savecorr.setEnabled(True)
             self.btn_llm.setEnabled(True)
+            self.btn_export.setEnabled(True)
             detail = data.get("detail_level")
             if detail:
                 idx = self.detail_combo.findData(detail)
@@ -184,6 +190,7 @@ class RoleplayImportUI(QWidget):
                     self.detail_combo.setCurrentIndex(idx)
         except Exception as e:
             self.llm_out.setPlainText(str(e))
+            self.btn_export.setEnabled(False)
 
     def _finalize(self):
         if not self.current_scene:
@@ -271,22 +278,8 @@ class RoleplayImportUI(QWidget):
         if not self.current_scene:
             QMessageBox.information(self, "Save", "Import a scene first.")
             return
-        rows = self.table.rowCount()
-        lines = []
-        for i in range(rows):
-            spk = self.table.item(i, 1).text() if self.table.item(i, 1) else ""
-            txt = self.table.item(i, 2).text() if self.table.item(i, 2) else ""
-            if spk or txt:
-                lines.append({"speaker": spk, "text": txt})
-
-        # build character meta from desc_box
-        meta = {}
-        description_text = self.desc_box.toPlainText().strip()
-        if description_text:
-            for line in description_text.splitlines():
-                if ":" in line:
-                    n, d = line.split(":", 1)
-                    meta[n.strip()] = d.strip()
+        lines = self._collect_lines()
+        meta = self._collect_character_meta()
 
         def worker():
             import requests
@@ -311,3 +304,49 @@ class RoleplayImportUI(QWidget):
                 self.llm_out.setPlainText(str(e))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _collect_lines(self) -> List[Dict[str, str]]:
+        rows = self.table.rowCount()
+        lines: List[Dict[str, str]] = []
+        for i in range(rows):
+            speaker_item = self.table.item(i, 1)
+            text_item = self.table.item(i, 2)
+            spk = speaker_item.text() if speaker_item else ""
+            txt = text_item.text() if text_item else ""
+            if spk or txt:
+                lines.append({"speaker": spk, "text": txt})
+        return lines
+
+    def _collect_character_meta(self) -> Dict[str, str]:
+        meta: Dict[str, str] = {}
+        description_text = self.desc_box.toPlainText().strip()
+        if description_text:
+            for line in description_text.splitlines():
+                if ":" in line:
+                    n, d = line.split(":", 1)
+                    meta[n.strip()] = d.strip()
+        return meta
+
+    def _export_cleaned_log(self) -> None:
+        lines = self._collect_lines()
+        if not lines:
+            QMessageBox.information(self, "Export", "No lines available to export.")
+            return
+        default_name = "cleaned_roleplay.txt"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Cleaned Transcript",
+            default_name,
+            "Text Files (*.txt);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                for line in lines:
+                    speaker = line.get("speaker") or "Narrator"
+                    text = line.get("text") or ""
+                    handle.write(f"{speaker}: {text}\n")
+            self.llm_out.setPlainText(f"Cleaned transcript saved to {path}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Export Failed", str(exc))

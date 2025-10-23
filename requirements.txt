@@ -16,3 +16,6 @@ packaging>=24.0
 boto3>=1.34
 google-api-python-client>=2.123
 google-auth>=2.33
+psutil>=5.9.8
+passlib[bcrypt]>=1.7.4
+whoosh>=2.7.4

@@ -23,6 +23,7 @@ def load_routers(app):
         "comfyvn.server.modules.settings_api",  # optional
         "comfyvn.server.modules.system_api",  # optional
         "comfyvn.server.modules.events_api",  # optional
+        "comfyvn.server.modules.search_api",  # optional
     ]
     loaded, failed = [], []
 

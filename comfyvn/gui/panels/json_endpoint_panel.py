@@ -143,6 +143,10 @@ class JsonEndpointPanel(QWidget):
         self._copy_url_button = QPushButton("Copy URL")
         self._copy_url_button.clicked.connect(self._copy_full_url)
         controls.addWidget(self._copy_url_button)
+        self._save_button = QPushButton("Save Response…")
+        self._save_button.setEnabled(False)
+        self._save_button.clicked.connect(self._save_response_to_file)
+        controls.addWidget(self._save_button)
         controls.addStretch(1)
         root.addLayout(controls)
 
@@ -162,6 +166,8 @@ class JsonEndpointPanel(QWidget):
         self._output.setReadOnly(True)
         self._output.setWordWrapMode(QTextOption.NoWrap)
         root.addWidget(self._output, 1)
+
+        self._last_response_text: str = ""
 
         if actions_list:
             self._populate_from_action(0)
@@ -283,11 +289,15 @@ class JsonEndpointPanel(QWidget):
         else:
             text = str(payload.get("text", ""))
         self._output.setPlainText(text)
+        self._last_response_text = text
+        self._save_button.setEnabled(bool(text.strip()))
 
     def _handle_failed(self, message: str) -> None:
         self._load_button.setEnabled(True)
         self._status.setText(f"Request failed: {message}")
         self._output.setPlainText(message)
+        self._last_response_text = message
+        self._save_button.setEnabled(bool(message.strip()))
 
     def _cleanup_threads(self) -> None:
         alive = []
@@ -295,3 +305,23 @@ class JsonEndpointPanel(QWidget):
             if thread.isRunning():
                 alive.append(thread)
         self._threads = alive
+
+    def _save_response_to_file(self) -> None:
+        if not self._last_response_text:
+            QMessageBox.information(self, "Save Response", "No response to save yet.")
+            return
+        suggested = f"response_{self._method.currentText().lower()}.json"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Response",
+            str((Path.home() / suggested).resolve()),
+            "JSON/Text Files (*.json *.txt);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(self._last_response_text, encoding="utf-8")
+        except Exception as exc:
+            QMessageBox.warning(self, "Save Response", f"Failed to save file:\n{exc}")
+        else:
+            self._status.setText(f"Response saved to {path}")

@@ -5,9 +5,17 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from PySide6.QtGui import QAction
 
-from comfyvn.server.core.search_index import (INDEX_DIR, MANIFEST, facets,
-                                              reindex, saved_delete, saved_get,
-                                              saved_list, saved_put, search)
+from comfyvn.server.core.search_index import (
+    INDEX_DIR,
+    MANIFEST,
+    facets,
+    reindex,
+    saved_delete,
+    saved_get,
+    saved_list,
+    saved_put,
+    search,
+)
 from comfyvn.server.modules.auth import require_scope
 
 router = APIRouter()
@@ -42,18 +50,27 @@ async def rebuild(
 ):
     body = body or {}
     full = bool(body.get("full", False))
-    return reindex(full=full)
+    try:
+        return reindex(full=full)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/query")
 async def query(body: Dict[str, Any]):
-    return search(body or {})
+    try:
+        return search(body or {})
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/facets")
 async def facets_ep(body: Dict[str, Any]):
     q = str((body or {}).get("q") or "")
-    return {"ok": True, "facets": facets(q)}
+    try:
+        return {"ok": True, "facets": facets(q)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 # Saved searches

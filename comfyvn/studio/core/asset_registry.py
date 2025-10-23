@@ -187,15 +187,18 @@ class AssetRegistry(BaseRegistry):
         text: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
+        select_cols = (
+            "id, uid, type, path_full, path_thumb, hash, bytes, meta, created_at"
+        )
         if asset_type:
             rows = self.fetchall(
-                f"SELECT id, uid, type, path_full, path_thumb, hash, bytes, meta "
+                f"SELECT {select_cols} "
                 f"FROM {self.TABLE} WHERE project_id = ? AND type = ? ORDER BY id DESC",
                 [self.project_id, asset_type],
             )
         else:
             rows = self.fetchall(
-                f"SELECT id, uid, type, path_full, path_thumb, hash, bytes, meta "
+                f"SELECT {select_cols} "
                 f"FROM {self.TABLE} WHERE project_id = ? ORDER BY id DESC",
                 [self.project_id],
             )
@@ -248,7 +251,7 @@ class AssetRegistry(BaseRegistry):
 
     def get_asset(self, uid: str) -> Optional[Dict[str, Any]]:
         row = self.fetchone(
-            f"SELECT id, uid, type, path_full, path_thumb, hash, bytes, meta "
+            f"SELECT id, uid, type, path_full, path_thumb, hash, bytes, meta, created_at "
             f"FROM {self.TABLE} WHERE project_id = ? AND uid = ?",
             [self.project_id, uid],
         )
@@ -759,6 +762,9 @@ class AssetRegistry(BaseRegistry):
             payload["sidecar"] = sidecar_rel.as_posix()
         except Exception:
             payload["sidecar"] = sidecar_path.as_posix()
+        created = payload.pop("created_at", None)
+        if created is not None:
+            payload["created_at"] = created
         return payload
 
     @staticmethod
